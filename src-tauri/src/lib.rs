@@ -1,3 +1,6 @@
+mod airports;
+mod runways;
+
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -39,6 +42,41 @@ pub fn run() {
                 app.handle(),
                 format!("[{}] Startup - App: {} v{}", timestamp, pkg_info.name, pkg_info.version),
             );
+
+            let airports_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Load airports.csv and register into Tauri managed state
+                match airports::AirportsDatabase::load_from_csv("../public/airports.csv") {
+                    Ok(db) => {
+                        append_log(
+                            &airports_app_handle,
+                            format!("Successfully loaded {} airports into backend memory.", db.airports.len()),
+                        );
+                        airports_app_handle.manage(db);
+                    }
+                    Err(err) => {
+                        append_log(&airports_app_handle, format!("Failed to load airports.csv: {}", err));
+                    }
+                }
+            });
+
+            let runways_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Load runways.csv and register into Tauri managed state
+                match runways::RunwaysDatabase::load_from_csv("../public/runways.csv") {
+                    Ok(db) => {
+                        append_log(
+                            &runways_app_handle,
+                            format!("Successfully loaded {} runways into backend memory.", db.runways.len()),
+                        );
+                        runways_app_handle.manage(db);
+                    }
+                    Err(err) => {
+                        append_log(&runways_app_handle, format!("Failed to load runways.csv: {}", err));
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet, get_logs])
