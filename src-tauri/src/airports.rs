@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
-use rstar::{Point, RTree};
+use rstar::{RTree, RTreeObject, AABB, PointDistance};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Airport {
@@ -33,25 +33,26 @@ pub struct Airport {
 
 /// A wrapper for an airport's location to be used with rstar.
 /// It stores the 3D cartesian coordinates and the index of the airport in the main Vec.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct AirportLocation {
     index: usize,
     coords: [f64; 3],
 }
 
-impl Point for AirportLocation {
-    type Scalar = f64;
-    const DIMENSIONS: usize = 3;
+impl RTreeObject for AirportLocation {
+    type Envelope = AABB<[f64; 3]>;
 
-    fn generate(generator: impl Fn(usize) -> Self::Scalar) -> Self {
-        AirportLocation {
-            index: 0, // This won't be used directly by rstar's generation logic for our use case.
-            coords: [generator(0), generator(1), generator(2)],
-        }
+    fn envelope(&self) -> Self::Envelope {
+        AABB::from_point(self.coords)
     }
+}
 
-    fn nth(&self, index: usize) -> Self::Scalar {
-        self.coords[index]
+impl PointDistance for AirportLocation {
+    fn distance_2(&self, point: &[f64; 3]) -> f64 {
+        let d0 = self.coords[0] - point[0];
+        let d1 = self.coords[1] - point[1];
+        let d2 = self.coords[2] - point[2];
+        d0 * d0 + d1 * d1 + d2 * d2
     }
 }
 
@@ -117,5 +118,107 @@ impl AirportsDatabase {
             .take(count)
             .map(|loc| &self.airports[loc.index])
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper function to quickly create a mock airport for testing
+    fn mock_airport(id: i64, ident: &str, lat: f64, lon: f64) -> Airport {
+        Airport {
+            id,
+            ident: ident.to_string(),
+            airport_type: "small_airport".to_string(),
+            name: format!("Airport {}", ident),
+            latitude_deg: Some(lat),
+            longitude_deg: Some(lon),
+            elevation_ft: Some(0),
+            continent: "EU".to_string(),
+            iso_country: "GB".to_string(),
+            iso_region: "GB-ENG".to_string(),
+            municipality: "London".to_string(),
+            scheduled_service: "no".to_string(),
+            gps_code: ident.to_string(),
+            icao_code: ident.to_string(),
+            iata_code: "".to_string(),
+            local_code: "".to_string(),
+            home_link: "".to_string(),
+            wikipedia_link: "".to_string(),
+            keywords: "".to_string(),
+        }
+    }
+
+    /// Helper function to create an in-memory database with some mock data
+    fn create_mock_db() -> AirportsDatabase {
+        let airports = vec![
+            mock_airport(1, "A1", 0.0, 0.0),
+            mock_airport(2, "A2", 10.0, 0.0),
+            mock_airport(3, "A3", 0.0, 10.0),
+        ];
+        
+        let mut by_ident = HashMap::new();
+        let mut airport_locations = Vec::new();
+
+        for (index, airport) in airports.iter().enumerate() {
+            by_ident.insert(airport.ident.clone(), index);
+            if let (Some(lat), Some(lon)) = (airport.latitude_deg, airport.longitude_deg) {
+                airport_locations.push(AirportLocation {
+                    index,
+                    coords: lat_lon_to_cartesian(lat, lon),
+                });
+            }
+        }
+
+        let tree = RTree::bulk_load(airport_locations);
+        AirportsDatabase { airports, by_ident, tree }
+    }
+
+    #[test]
+    fn test_lat_lon_to_cartesian() {
+        // Equator / Prime Meridian
+        let [x, y, z] = lat_lon_to_cartesian(0.0, 0.0);
+        assert!((x - 1.0).abs() < 1e-9);
+        assert!((y - 0.0).abs() < 1e-9);
+        assert!((z - 0.0).abs() < 1e-9);
+
+        // North Pole
+        let [x2, y2, z2] = lat_lon_to_cartesian(90.0, 0.0);
+        assert!((x2 - 0.0).abs() < 1e-9);
+        assert!((y2 - 0.0).abs() < 1e-9);
+        assert!((z2 - 1.0).abs() < 1e-9);
+        
+        // Equator / 90 degrees East
+        let [x3, y3, z3] = lat_lon_to_cartesian(0.0, 90.0);
+        assert!((x3 - 0.0).abs() < 1e-9);
+        assert!((y3 - 1.0).abs() < 1e-9);
+        assert!((z3 - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_by_ident() {
+        let db = create_mock_db();
+        
+        assert!(db.get_by_ident("A1").is_some());
+        assert_eq!(db.get_by_ident("A1").unwrap().name, "Airport A1");
+        
+        assert!(db.get_by_ident("UNKNOWN").is_none());
+    }
+
+    #[test]
+    fn test_find_nearest() {
+        let db = create_mock_db();
+        
+        // Search near 9.0, 0.0, which should be closest to A2 (10.0, 0.0)
+        let nearest = db.find_nearest(9.0, 0.0, 1);
+        assert_eq!(nearest.len(), 1);
+        assert_eq!(nearest[0].ident, "A2");
+
+        // Requesting 2 nearest from 1.0, 0.0 -> Should return A1 then A2
+        let nearest_two = db.find_nearest(1.0, 0.0, 2);
+        assert_eq!(nearest_two.len(), 2);
+        assert_eq!(nearest_two[0].ident, "A1"); 
+        assert_eq!(nearest_two[1].ident, "A2");
     }
 }

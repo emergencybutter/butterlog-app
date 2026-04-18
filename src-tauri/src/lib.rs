@@ -54,6 +54,13 @@ pub fn run() {
                 format!("[{}] Startup - App: {} v{}", timestamp, pkg_info.name, pkg_info.version),
             );
 
+            // Load the icon from the public folder and create the tray icon
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../../public/icon.png"))
+                .expect("Failed to load tray icon");
+            tauri::tray::TrayIconBuilder::with_id("main")
+                .icon(tray_icon)
+                .build(app)?;
+
             let airports_app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 // Load airports.csv and register into Tauri managed state
