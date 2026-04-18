@@ -1,11 +1,12 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
+use rstar::{Point, RTree};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Airport {
     pub id: i64,
     pub ident: String,
@@ -30,9 +31,44 @@ pub struct Airport {
     pub keywords: String,
 }
 
+/// A wrapper for an airport's location to be used with rstar.
+/// It stores the 3D cartesian coordinates and the index of the airport in the main Vec.
+#[derive(Debug, Clone, Copy)]
+struct AirportLocation {
+    index: usize,
+    coords: [f64; 3],
+}
+
+impl Point for AirportLocation {
+    type Scalar = f64;
+    const DIMENSIONS: usize = 3;
+
+    fn generate(generator: impl Fn(usize) -> Self::Scalar) -> Self {
+        AirportLocation {
+            index: 0, // This won't be used directly by rstar's generation logic for our use case.
+            coords: [generator(0), generator(1), generator(2)],
+        }
+    }
+
+    fn nth(&self, index: usize) -> Self::Scalar {
+        self.coords[index]
+    }
+}
+
+/// Converts latitude and longitude (in degrees) to 3D Cartesian coordinates on a unit sphere.
+fn lat_lon_to_cartesian(lat_deg: f64, lon_deg: f64) -> [f64; 3] {
+    let lat_rad = lat_deg.to_radians();
+    let lon_rad = lon_deg.to_radians();
+    let x = lat_rad.cos() * lon_rad.cos();
+    let y = lat_rad.cos() * lon_rad.sin();
+    let z = lat_rad.sin();
+    [x, y, z]
+}
+
 pub struct AirportsDatabase {
     pub airports: Vec<Airport>,
     pub by_ident: HashMap<String, usize>,
+    tree: RTree<AirportLocation>,
 }
 
 impl AirportsDatabase {
@@ -44,20 +80,42 @@ impl AirportsDatabase {
         
         let mut airports = Vec::new();
         let mut by_ident = HashMap::new();
+        let mut airport_locations = Vec::new();
 
-        for result in rdr.deserialize() {
+        for (index, result) in rdr.deserialize().enumerate() {
             let airport: Airport = result?;
-            by_ident.insert(airport.ident.clone(), airports.len());
+
+            // If the airport has valid coordinates, add it to the list for spatial indexing.
+            if let (Some(lat), Some(lon)) = (airport.latitude_deg, airport.longitude_deg) {
+                airport_locations.push(AirportLocation {
+                    index,
+                    coords: lat_lon_to_cartesian(lat, lon),
+                });
+            }
+
+            by_ident.insert(airport.ident.clone(), index);
             airports.push(airport);
         }
 
-        println!("AirportsDatabase: Loaded {} airports in {:?}", airports.len(), start_time.elapsed());
+        // Bulk load the locations into the R-Tree for optimal performance.
+        let tree = RTree::bulk_load(airport_locations);
 
-        Ok(AirportsDatabase { airports, by_ident })
+        println!("AirportsDatabase: Loaded {} airports and built spatial index in {:?}", airports.len(), start_time.elapsed());
+
+        Ok(AirportsDatabase { airports, by_ident, tree })
     }
 
     /// Fetch an airport by its identifier (e.g., ICAO code, local code)
     pub fn get_by_ident(&self, ident: &str) -> Option<&Airport> {
         self.by_ident.get(ident).map(|&idx| &self.airports[idx])
+    }
+
+    /// Finds the `count` nearest airports to a given latitude and longitude.
+    pub fn find_nearest(&self, lat: f64, lon: f64, count: usize) -> Vec<&Airport> {
+        let search_point = lat_lon_to_cartesian(lat, lon);
+        self.tree.nearest_neighbor_iter(&search_point)
+            .take(count)
+            .map(|loc| &self.airports[loc.index])
+            .collect()
     }
 }

@@ -26,6 +26,17 @@ fn get_logs(state: State<'_, LogState>) -> Vec<String> {
     state.0.lock().unwrap().clone()
 }
 
+#[tauri::command]
+fn find_nearest_airports(
+    lat: f64,
+    lon: f64,
+    state: State<'_, airports::AirportsDatabase>,
+) -> Result<Vec<airports::Airport>, String> {
+    // The find_nearest method returns a Vec<&Airport>, so we clone each item to return an owned Vec<Airport>.
+    let nearest = state.find_nearest(lat, lon, 10);
+    Ok(nearest.into_iter().cloned().collect())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -79,7 +90,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, get_logs])
+        .invoke_handler(tauri::generate_handler![greet, get_logs, find_nearest_airports])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
