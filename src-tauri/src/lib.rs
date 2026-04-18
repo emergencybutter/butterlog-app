@@ -1,17 +1,42 @@
 mod airports;
 mod runways;
+mod simconnect_monitor;
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use simconnect_monitor::{FlightMetrics, SimConnectMonitor};
+use std::path::PathBuf;
+
 struct LogState(Mutex<Vec<String>>);
 
-fn append_log(app: &AppHandle, message: String) {
+pub(crate) fn append_log(app: &AppHandle, message: String) {
     let state = app.state::<LogState>();
     let mut logs = state.0.lock().unwrap();
     logs.push(message.clone());
     let _ = app.emit("log-update", message);
+}
+
+#[tauri::command]
+fn start_monitoring(app: AppHandle, state: State<'_, SimConnectMonitor>, log_path: Option<String>) -> Result<(), String> {
+    let path = log_path.map(PathBuf::from);
+    state.start(app, path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn stop_monitoring(state: State<'_, SimConnectMonitor>) {
+    state.stop();
+}
+
+#[tauri::command]
+fn get_metrics(state: State<'_, SimConnectMonitor>) -> FlightMetrics {
+    state.get_metrics()
+}
+
+#[tauri::command]
+fn is_sim_connected(state: State<'_, SimConnectMonitor>) -> bool {
+    state.is_connected()
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -41,6 +66,7 @@ fn find_nearest_airports(
 pub fn run() {
     tauri::Builder::default()
         .manage(LogState(Mutex::new(Vec::new())))
+        .manage(SimConnectMonitor::new())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let pkg_info = app.package_info();
@@ -95,9 +121,21 @@ pub fn run() {
                 }
             });
 
+            // Automatically start SimConnect monitoring
+            let monitor = app.state::<SimConnectMonitor>();
+            let _ = monitor.start(app.handle().clone(), None);
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, get_logs, find_nearest_airports])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            get_logs,
+            find_nearest_airports,
+            start_monitoring,
+            stop_monitoring,
+            get_metrics,
+            is_sim_connected
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
