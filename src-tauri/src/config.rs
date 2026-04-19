@@ -21,8 +21,16 @@ pub struct Config {
 
 impl Config {
     pub fn default_with_app_handle(app: &AppHandle) -> Self {
-        let app_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-        let log_dir = app_dir.join("logs");
+        let log_dir = UserDirs::new()
+            .and_then(|dirs| dirs.document_dir().map(|p| p.join("butterlog")))
+            .or_else(|| {
+                // Fallback if Documents is not found
+                UserDirs::new().map(|dirs| dirs.home_dir().join("Documents").join("butterlog"))
+            })
+            .unwrap_or_else(|| {
+                // Final fallback to app data if everything else fails
+                app.path().app_data_dir().expect("Failed to get app data dir").join("logs")
+            });
         
         let screenshot_dir = UserDirs::new()
             .and_then(|dirs| dirs.video_dir().map(|p| p.join("Captures")))
