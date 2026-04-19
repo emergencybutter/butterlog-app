@@ -3,6 +3,7 @@ mod runways;
 mod simconnect_monitor;
 mod flight_analyzer;
 mod config;
+mod flight_log_manager;
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use simconnect_monitor::{FlightMetrics, SimConnectMonitor};
 use std::path::PathBuf;
 use config::{Config, ConfigManager};
+use flight_log_manager::{FlightSummary, scan_logs};
 
 struct LogState(Mutex<Vec<String>>);
 
@@ -19,6 +21,11 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
     let mut logs = state.0.lock().unwrap();
     logs.push(message.clone());
     let _ = app.emit("log-update", message);
+}
+
+#[tauri::command]
+async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
+    scan_logs(app)
 }
 
 #[tauri::command]
@@ -165,7 +172,8 @@ pub fn run() {
             get_config,
             set_config,
             get_config_async,
-            set_config_async
+            set_config_async,
+            get_flight_summaries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

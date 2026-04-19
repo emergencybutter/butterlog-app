@@ -336,17 +336,21 @@ impl SimConnectMonitor {
                         let mut m = metrics.lock().unwrap();
                         *m = *data;
 
-                        // Log to CSV every second ONLY if flight is ongoing
+                        // Log to CSV every second ONLY if flight is ongoing and there is movement
                         if flight_ongoing {
                             let now = Local::now();
                             if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
                                 last_log_time = now;
                                 
-                                analyzer.add_point(data.latitude, data.longitude);
+                                let has_movement = data.gnd_spd.abs() > 0.1 || data.v_spd.abs() > 10.0;
+                                
+                                if has_movement {
+                                    analyzer.add_point(data.latitude, data.longitude);
 
-                                if let Some(ref mut w) = writer {
-                                    if let Err(e) = Self::write_csv_row(w, &now, data) {
-                                        crate::append_log(app, format!("Failed to write CSV row: {}", e));
+                                    if let Some(ref mut w) = writer {
+                                        if let Err(e) = Self::write_csv_row(w, &now, data) {
+                                            crate::append_log(app, format!("Failed to write CSV row: {}", e));
+                                        }
                                     }
                                 }
                             }

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Settings } from "./Settings";
+import { FlightLogs } from "./FlightLogs";
 import "./App.css";
 
 interface FlightMetrics {
@@ -78,7 +79,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
   const [simConnected, setSimConnected] = useState(false);
-  const [view, setView] = useState<"dashboard" | "settings">("dashboard");
+  const [view, setView] = useState<"dashboard" | "settings" | "history">("dashboard");
 
   useEffect(() => {
     // Fetch existing logs on mount
@@ -117,9 +118,18 @@ function App() {
     );
   }
 
+  if (view === "history") {
+    return (
+      <main className="container">
+        <FlightLogs onBack={() => setView("dashboard")} />
+      </main>
+    );
+  }
+
   return (
     <main className="container">
-      <div style={{ position: "absolute", top: "20px", right: "20px" }}>
+      <div style={{ position: "absolute", top: "20px", right: "20px", display: "flex", gap: "10px" }}>
+        <button onClick={() => setView("history")}>History</button>
         <button onClick={() => setView("settings")}>Settings</button>
       </div>
 
