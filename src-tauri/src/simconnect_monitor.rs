@@ -2,11 +2,11 @@ use simplesimconnect::*;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use chrono::{Local, DateTime, FixedOffset};
-use std::fs::File;
+use chrono::{Local, DateTime};
+use std::fs::{File, create_dir_all};
 use std::io::{Write, BufWriter};
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, serde::Serialize)]
@@ -121,7 +121,7 @@ impl SimConnectMonitor {
                             *connected = true;
                         }
 
-                        if let Err(e) = Self::run_monitor(sc, &metrics, &running_clone, log_path.as_ref()) {
+                        if let Err(e) = Self::run_monitor(&app, sc, &metrics, &running_clone, log_path.as_ref()) {
                             crate::append_log(&app, format!("[{}] Monitor error: {}", Local::now().format("%Y-%m-%d %H:%M:%S"), e));
                         }
 
@@ -158,13 +158,19 @@ impl SimConnectMonitor {
     }
 
     fn run_monitor(
+        app: &AppHandle,
         sc: SimConnect,
         metrics: &Arc<Mutex<FlightMetrics>>,
         running: &Arc<Mutex<bool>>,
-        log_path: Option<&PathBuf>,
+        requested_log_path: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
         let define_id = 1;
         let request_id = 1;
+        let event_sim_start = 1;
+        let event_sim_stop = 2;
+
+        sc.subscribe_to_system_event(event_sim_start, "SimStart")?;
+        sc.subscribe_to_system_event(event_sim_stop, "SimStop")?;
 
         // Register all fields in the exact order they appear in FlightMetrics struct
         sc.add_to_data_definition::<f64>(define_id, "PLANE LATITUDE", "degrees")?;
@@ -242,20 +248,17 @@ impl SimConnectMonitor {
             PERIOD_VISUAL_FRAME,
         )?;
 
-        let mut writer = if let Some(path) = log_path {
+        let mut current_log_path: Option<PathBuf> = requested_log_path.cloned();
+        let mut writer: Option<BufWriter<File>> = if let Some(path) = requested_log_path {
             let file = File::create(path)?;
-            let mut writer = BufWriter::new(file);
-            
-            // Write FORMAT.md headers
-            writeln!(writer, "#airframe_info, log_version=\"1.00\", airframe_name=\"Simulated Aircraft\", unit_software_part_number=\"006-BXXX9-DE\", unit_software_version=\"15.24\", system_software_part_number=\"006-BXXXX-37\", system_id=\"25XXXX67\", mode=NORMAL, simulator_id=\"ButterLogV2\",")?;
-            writeln!(writer, "#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts, volts,  amps,   gals,   gals,      gph,   deg F,     psi,     Hg,    rpm,       %,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt")?;
-            writeln!(writer, "Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1, volt2,  amp1,  FQtyL,  FQtyR, E1 FFlow, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 %Pwr, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 CHT5, E1 CHT6, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4, E1 EGT5, E1 EGT6, E1 TIT1, E1 TIT2,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI,WndSpd,WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas")?;
-            
-            Some(writer)
+            let mut w = BufWriter::new(file);
+            Self::write_header(&mut w)?;
+            Some(w)
         } else {
             None
         };
 
+        let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
         let mut last_log_time = Local::now();
 
         loop {
@@ -268,6 +271,69 @@ impl SimConnectMonitor {
                     return Ok(());
                 }
 
+                if let Some(event) = msg.as_event() {
+                    if event.event_id == event_sim_start {
+                        crate::append_log(app, format!("[{}] Received SimStart event. Starting new flight log.", Local::now().format("%H:%M:%S")));
+                        
+                        // Close existing writer if any
+                        if let Some(mut w) = writer.take() {
+                            let _ = w.flush();
+                        }
+                        analyzer.reset();
+
+                        // Create new log file
+                        let log_dir = app.path().app_data_dir()?.join("logs");
+                        create_dir_all(&log_dir)?;
+                        let filename = format!("butterlog_{}.csv", Local::now().format("%Y%m%d_%H%M%S"));
+                        let path = log_dir.join(filename);
+                        current_log_path = Some(path.clone());
+                        
+                        match File::create(&path) {
+                            Ok(file) => {
+                                let mut w = BufWriter::new(file);
+                                if let Err(e) = Self::write_header(&mut w) {
+                                    crate::append_log(app, format!("Failed to write header to new log: {}", e));
+                                } else {
+                                    writer = Some(w);
+                                    crate::append_log(app, format!("New flight log created at: {:?}", path));
+                                }
+                            }
+                            Err(e) => {
+                                crate::append_log(app, format!("Failed to create new log file: {}", e));
+                            }
+                        }
+                    } else if event.event_id == event_sim_stop {
+                        crate::append_log(app, format!("[{}] Received SimStop event. Closing and analyzing flight log.", Local::now().format("%H:%M:%S")));
+                        
+                        // Close existing writer
+                        if let Some(mut w) = writer.take() {
+                            let _ = w.flush();
+                        }
+
+                        // Perform analysis and rename
+                        if let (Some(path), Some(db)) = (current_log_path.take(), app.try_state::<crate::airports::AirportsDatabase>()) {
+                            let start_icao = analyzer.find_start_icao(&db);
+                            let end_icao = analyzer.find_end_icao(&db);
+                            
+                            if let Some(old_filename) = path.file_name().and_then(|f| f.to_str()) {
+                                let new_filename = old_filename.replace("butterlog_", &format!("butterlog_{}_{}_", start_icao, end_icao));
+                                let new_path = path.with_file_name(new_filename);
+                                
+                                match std::fs::rename(&path, &new_path) {
+                                    Ok(_) => {
+                                        crate::append_log(app, format!("Flight log renamed to: {:?}", new_path.file_name().unwrap()));
+                                    }
+                                    Err(e) => {
+                                        crate::append_log(app, format!("Failed to rename log file: {}", e));
+                                    }
+                                }
+                            }
+                        } else {
+                            crate::append_log(app, "Could not rename log file: path or database not available.".to_string());
+                        }
+                    }
+                }
+
                 if let Some(data) = msg.as_sim_object_data::<FlightMetrics>() {
                     if msg.request_id() == Some(request_id) {
                         let mut m = metrics.lock().unwrap();
@@ -275,10 +341,15 @@ impl SimConnectMonitor {
 
                         // Log to CSV every second
                         let now = Local::now();
-                        if let Some(ref mut w) = writer {
-                            if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
-                                last_log_time = now;
-                                Self::write_csv_row(w, &now, data)?;
+                        if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
+                            last_log_time = now;
+                            
+                            analyzer.add_point(data.latitude, data.longitude);
+
+                            if let Some(ref mut w) = writer {
+                                if let Err(e) = Self::write_csv_row(w, &now, data) {
+                                    crate::append_log(app, format!("Failed to write CSV row: {}", e));
+                                }
                             }
                         }
                     }
@@ -292,6 +363,13 @@ impl SimConnectMonitor {
             w.flush()?;
         }
 
+        Ok(())
+    }
+
+    fn write_header<W: Write>(w: &mut W) -> std::io::Result<()> {
+        writeln!(w, "#airframe_info, log_version=\"1.00\", airframe_name=\"Simulated Aircraft\", unit_software_part_number=\"006-BXXX9-DE\", unit_software_version=\"15.24\", system_software_part_number=\"006-BXXXX-37\", system_id=\"25XXXX67\", mode=NORMAL, simulator_id=\"ButterLogV2\",")?;
+        writeln!(w, "#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts, volts,  amps,   gals,   gals,      gph,   deg F,     psi,     Hg,    rpm,       %,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt")?;
+        writeln!(w, "Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1, volt2,  amp1,  FQtyL,  FQtyR, E1 FFlow, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 %Pwr, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 CHT5, E1 CHT6, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4, E1 EGT5, E1 EGT6, E1 TIT1, E1 TIT2,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI,WndSpd,WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas")?;
         Ok(())
     }
 

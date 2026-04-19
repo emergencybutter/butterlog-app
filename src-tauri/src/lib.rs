@@ -1,6 +1,8 @@
 mod airports;
 mod runways;
 mod simconnect_monitor;
+mod flight_analyzer;
+mod config;
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use simconnect_monitor::{FlightMetrics, SimConnectMonitor};
 use std::path::PathBuf;
+use config::{Config, ConfigManager};
 
 struct LogState(Mutex<Vec<String>>);
 
@@ -16,6 +19,26 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
     let mut logs = state.0.lock().unwrap();
     logs.push(message.clone());
     let _ = app.emit("log-update", message);
+}
+
+#[tauri::command]
+fn get_config(state: State<'_, ConfigManager>) -> Config {
+    state.get_config()
+}
+
+#[tauri::command]
+fn set_config(state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
+    state.update_config(config)
+}
+
+#[tauri::command]
+async fn get_config_async(state: State<'_, ConfigManager>) -> Result<Config, String> {
+    Ok(state.get_config())
+}
+
+#[tauri::command]
+async fn set_config_async(state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
+    state.update_config(config)
 }
 
 #[tauri::command]
@@ -69,6 +92,10 @@ pub fn run() {
         .manage(SimConnectMonitor::new())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Initialize ConfigManager
+            let config_manager = ConfigManager::new(app.handle());
+            app.manage(config_manager);
+
             let pkg_info = app.package_info();
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -134,7 +161,11 @@ pub fn run() {
             start_monitoring,
             stop_monitoring,
             get_metrics,
-            is_sim_connected
+            is_sim_connected,
+            get_config,
+            set_config,
+            get_config_async,
+            set_config_async
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
