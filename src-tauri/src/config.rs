@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
+use directories::UserDirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +19,32 @@ pub struct Config {
     pub webhook_address: String,
 }
 
+impl Config {
+    pub fn default_with_app_handle(app: &AppHandle) -> Self {
+        let app_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+        let log_dir = app_dir.join("logs");
+        
+        let screenshot_dir = UserDirs::new()
+            .and_then(|dirs| dirs.video_dir().map(|p| p.join("Captures")))
+            .or_else(|| {
+                // Fallback for Windows if video_dir is not enough
+                UserDirs::new().map(|dirs| dirs.home_dir().join("Videos").join("Captures"))
+            });
+
+        Self {
+            log_directory: Some(log_dir),
+            screenshot_directory: screenshot_dir,
+            geotag_screenshots: false,
+            screenshot_regex_enabled: true,
+            screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
+            auto_upload_screenshots: false,
+            enable_webhook: false,
+            webhook_address: "".to_string(),
+        }
+    }
+}
+
+// Keep Default trait but it might not be very useful without AppHandle
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -48,16 +75,25 @@ impl ConfigManager {
         }
 
         let config = if config_path.exists() {
+            crate::append_log(app, format!("Loading config from: {:?}", config_path));
             let content = fs::read_to_string(&config_path).unwrap_or_default();
             serde_json::from_str(&content).unwrap_or_default()
         } else {
-            Config::default()
+            crate::append_log(app, format!("No config found at: {:?}. Using defaults.", config_path));
+            Config::default_with_app_handle(app)
         };
 
-        Self {
+        let manager = Self {
             config: Mutex::new(config),
             config_path,
+        };
+        
+        // Save defaults if it's a new config
+        if !manager.config_path.exists() {
+            let _ = manager.save();
         }
+        
+        manager
     }
 
     pub fn save(&self) -> Result<(), String> {

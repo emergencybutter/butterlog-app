@@ -27,3 +27,4 @@ rstar = "0.11"
 simplesimconnect = { path = "../../simplesimconnect" }
 chrono = "0.4"
 anyhow = "1.0"
+directories = "6.0.0"

@@ -248,18 +248,12 @@ impl SimConnectMonitor {
             PERIOD_VISUAL_FRAME,
         )?;
 
-        let mut current_log_path: Option<PathBuf> = requested_log_path.cloned();
-        let mut writer: Option<BufWriter<File>> = if let Some(path) = requested_log_path {
-            let file = File::create(path)?;
-            let mut w = BufWriter::new(file);
-            Self::write_header(&mut w)?;
-            Some(w)
-        } else {
-            None
-        };
+        let mut current_log_path: Option<PathBuf> = None;
+        let mut writer: Option<BufWriter<File>> = None;
 
         let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
         let mut last_log_time = Local::now();
+        let mut flight_ongoing = false;
 
         loop {
             if !*running.lock().unwrap() {
@@ -274,6 +268,7 @@ impl SimConnectMonitor {
                 if let Some(event) = msg.as_event() {
                     if event.event_id == event_sim_start {
                         crate::append_log(app, format!("[{}] Received SimStart event. Starting new flight log.", Local::now().format("%H:%M:%S")));
+                        flight_ongoing = true;
                         
                         // Close existing writer if any
                         if let Some(mut w) = writer.take() {
@@ -282,7 +277,8 @@ impl SimConnectMonitor {
                         analyzer.reset();
 
                         // Create new log file
-                        let log_dir = app.path().app_data_dir()?.join("logs");
+                        let config = app.state::<crate::config::ConfigManager>().get_config();
+                        let log_dir = config.log_directory.unwrap_or_else(|| app.path().app_data_dir().unwrap().join("logs"));
                         create_dir_all(&log_dir)?;
                         let filename = format!("butterlog_{}.csv", Local::now().format("%Y%m%d_%H%M%S"));
                         let path = log_dir.join(filename);
@@ -304,6 +300,7 @@ impl SimConnectMonitor {
                         }
                     } else if event.event_id == event_sim_stop {
                         crate::append_log(app, format!("[{}] Received SimStop event. Closing and analyzing flight log.", Local::now().format("%H:%M:%S")));
+                        flight_ongoing = false;
                         
                         // Close existing writer
                         if let Some(mut w) = writer.take() {
@@ -339,16 +336,18 @@ impl SimConnectMonitor {
                         let mut m = metrics.lock().unwrap();
                         *m = *data;
 
-                        // Log to CSV every second
-                        let now = Local::now();
-                        if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
-                            last_log_time = now;
-                            
-                            analyzer.add_point(data.latitude, data.longitude);
+                        // Log to CSV every second ONLY if flight is ongoing
+                        if flight_ongoing {
+                            let now = Local::now();
+                            if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
+                                last_log_time = now;
+                                
+                                analyzer.add_point(data.latitude, data.longitude);
 
-                            if let Some(ref mut w) = writer {
-                                if let Err(e) = Self::write_csv_row(w, &now, data) {
-                                    crate::append_log(app, format!("Failed to write CSV row: {}", e));
+                                if let Some(ref mut w) = writer {
+                                    if let Err(e) = Self::write_csv_row(w, &now, data) {
+                                        crate::append_log(app, format!("Failed to write CSV row: {}", e));
+                                    }
                                 }
                             }
                         }

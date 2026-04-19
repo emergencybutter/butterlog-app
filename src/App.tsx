@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Settings } from "./Settings";
 import "./App.css";
 
 interface FlightMetrics {
@@ -76,8 +77,8 @@ interface FlightMetrics {
 function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
-  const [isMonitoring] = useState(true);
   const [simConnected, setSimConnected] = useState(false);
+  const [view, setView] = useState<"dashboard" | "settings">("dashboard");
 
   useEffect(() => {
     // Fetch existing logs on mount
@@ -98,7 +99,7 @@ function App() {
         setMetrics(m);
         setSimConnected(connected);
       } catch (e) {
-        console.error("Failed to fetch state", e);
+        // Silently handle if backend is not ready
       }
     }, 200);
 
@@ -108,8 +109,20 @@ function App() {
     };
   }, []);
 
+  if (view === "settings") {
+    return (
+      <main className="container">
+        <Settings onBack={() => setView("dashboard")} />
+      </main>
+    );
+  }
+
   return (
     <main className="container">
+      <div style={{ position: "absolute", top: "20px", right: "20px" }}>
+        <button onClick={() => setView("settings")}>Settings</button>
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "2rem" }}>
         <div style={{
           width: "12px",
