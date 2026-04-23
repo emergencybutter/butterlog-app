@@ -51,74 +51,96 @@ export function Settings({ onBack }: { onBack: () => void }) {
                 <section>
                     <h4>Directories</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <label>Log Directory:</label>
-                        <input 
-                            type="text" 
-                            value={config.logDirectory || ""} 
-                            onChange={(e) => handleChange("logDirectory", e.target.value || null)}
-                            placeholder="Default (App Data)"
-                        />
-                        <label>Screenshot Directory:</label>
-                        <input 
-                            type="text" 
-                            value={config.screenshotDirectory || ""} 
-                            onChange={(e) => handleChange("screenshotDirectory", e.target.value || null)}
-                            placeholder="Default (App Data)"
-                        />
+                        <div className="setting-input-group">
+                            <label>Log Directory:</label>
+                            <input 
+                                type="text" 
+                                className="setting-input"
+                                value={config.logDirectory || ""} 
+                                onChange={(e) => handleChange("logDirectory", e.target.value || null)}
+                                placeholder="Default (App Data)"
+                            />
+                        </div>
+                        <div className="setting-input-group">
+                            <label>Screenshot Directory:</label>
+                            <input 
+                                type="text" 
+                                className="setting-input"
+                                value={config.screenshotDirectory || ""} 
+                                onChange={(e) => handleChange("screenshotDirectory", e.target.value || null)}
+                                placeholder="Default (App Data)"
+                            />
+                        </div>
                     </div>
                 </section>
 
                 <section>
                     <h4>Screenshots</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <label>
-                            <input 
-                                type="checkbox" 
-                                checked={config.geotagScreenshots} 
-                                onChange={(e) => handleChange("geotagScreenshots", e.target.checked)}
-                            /> Geotag Screenshots
-                        </label>
-                        <label>
-                            <input 
-                                type="checkbox" 
-                                checked={config.screenshotRegexEnabled} 
-                                onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
-                            /> Enable Screenshot Window Regex
-                        </label>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.geotagScreenshots} 
+                                    onChange={(e) => handleChange("geotagScreenshots", e.target.checked)}
+                                /> 
+                                <span>Geotag Screenshots</span>
+                            </label>
+                        </div>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.screenshotRegexEnabled} 
+                                    onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
+                                /> 
+                                <span>Enable Screenshot Window Regex</span>
+                            </label>
+                        </div>
                         <input 
                             type="text" 
+                            className="setting-input"
                             value={config.screenshotRegex} 
                             onChange={(e) => handleChange("screenshotRegex", e.target.value)}
                             disabled={!config.screenshotRegexEnabled}
                         />
-                        <label>
-                            <input 
-                                type="checkbox" 
-                                checked={config.autoUploadScreenshots} 
-                                onChange={(e) => handleChange("autoUploadScreenshots", e.target.checked)}
-                            /> Auto-upload Screenshots
-                        </label>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.autoUploadScreenshots} 
+                                    onChange={(e) => handleChange("autoUploadScreenshots", e.target.checked)}
+                                /> 
+                                <span>Auto-upload Screenshots</span>
+                            </label>
+                        </div>
                     </div>
                 </section>
 
                 <section>
                     <h4>Webhooks</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <label>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.enableWebhook} 
+                                    onChange={(e) => handleChange("enableWebhook", e.target.checked)}
+                                /> 
+                                <span>Enable Webhook</span>
+                            </label>
+                        </div>
+                        <div className="setting-input-group">
+                            <label>Webhook Address:</label>
                             <input 
-                                type="checkbox" 
-                                checked={config.enableWebhook} 
-                                onChange={(e) => handleChange("enableWebhook", e.target.checked)}
-                            /> Enable Webhook
-                        </label>
-                        <label>Webhook Address:</label>
-                        <input 
-                            type="text" 
-                            value={config.webhookAddress} 
-                            onChange={(e) => handleChange("webhookAddress", e.target.value)}
-                            placeholder="https://..."
-                            disabled={!config.enableWebhook}
-                        />
+                                type="text" 
+                                className="setting-input"
+                                value={config.webhookAddress} 
+                                onChange={(e) => handleChange("webhookAddress", e.target.value)}
+                                placeholder="https://..."
+                                disabled={!config.enableWebhook}
+                            />
+                        </div>
                     </div>
                 </section>
 

@@ -9,9 +9,15 @@ interface FlightSummary {
     endTime: string;
     durationMinutes: number;
     fileSizeBytes: number;
+    aircraftTitle: string;
+    aircraftType: string;
+    aircraftModel: string;
+    maxAltitude: number;
+    maxGroundSpeed: number;
+    fuelConsumed: number;
 }
 
-export function FlightLogs({ onBack }: { onBack: () => void }) {
+export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSummary) => void }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
@@ -19,6 +25,7 @@ export function FlightLogs({ onBack }: { onBack: () => void }) {
     useEffect(() => {
         invoke<FlightSummary[]>("get_flight_summaries")
             .then(setSummaries)
+            .catch(console.error)
             .finally(() => setLoading(false));
     }, []);
 
@@ -28,7 +35,6 @@ export function FlightLogs({ onBack }: { onBack: () => void }) {
         <div className="logs-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
                 <h2>Flight History</h2>
-                <button onClick={onBack}>Back to Dashboard</button>
             </div>
 
             {summaries.length === 0 ? (
@@ -49,9 +55,12 @@ export function FlightLogs({ onBack }: { onBack: () => void }) {
                                 }}
                             >
                                 <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-                                    <span style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#4caf50" }}>
-                                        {s.startIcao} → {s.endIcao}
-                                    </span>
+                                    <div>
+                                        <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: "2px" }}>{s.aircraftTitle}</div>
+                                        <span style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#4caf50" }}>
+                                            {s.startIcao} → {s.endIcao}
+                                        </span>
+                                    </div>
                                     <span style={{ color: "#aaa", fontSize: "0.9rem" }}>{s.startTime.split(' ')[0]}</span>
                                 </div>
                                 <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
@@ -62,18 +71,28 @@ export function FlightLogs({ onBack }: { onBack: () => void }) {
                             
                             {expandedIndex === i && (
                                 <div style={{ padding: "1rem", borderTop: "1px solid #444", background: "#1a1a1a", fontSize: "0.9rem" }}>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
                                         <div>
                                             <p><span style={{ color: "#888" }}>Departure:</span> {s.startTime}</p>
                                             <p><span style={{ color: "#888" }}>Arrival:</span> {s.endTime}</p>
+                                            <p><span style={{ color: "#888" }}>Aircraft:</span> {s.aircraftTitle} ({s.aircraftModel})</p>
                                         </div>
                                         <div>
-                                            <p><span style={{ color: "#888" }}>File:</span> {s.filename}</p>
-                                            <p><span style={{ color: "#888" }}>Size:</span> {(s.fileSizeBytes / 1024).toFixed(1)} KB</p>
+                                            <p><span style={{ color: "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>
+                                            <p><span style={{ color: "#888" }}>Max Speed:</span> {s.maxGroundSpeed.toFixed(0)} kt (GS)</p>
+                                            <p><span style={{ color: "#888" }}>Fuel Consumed:</span> {s.fuelConsumed.toFixed(1)} gal</p>
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: "1rem", textAlign: "right" }}>
-                                        <button disabled style={{ fontSize: "0.8rem", opacity: 0.5 }}>View Detailed Log (Coming Soon)</button>
+                                    <div style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <span style={{ color: "#555", fontSize: "0.7rem" }}>
+                                            {s.filename} ({(s.fileSizeBytes / 1024).toFixed(1)} KB)
+                                        </span>
+                                        <button 
+                                            onClick={() => onViewDetails(s)}
+                                            style={{ fontSize: "0.8rem" }}
+                                        >
+                                            View Detailed Log
+                                        </button>
                                     </div>
                                 </div>
                             )}

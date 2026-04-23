@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use simconnect_monitor::{FlightMetrics, SimConnectMonitor};
 use std::path::PathBuf;
 use config::{Config, ConfigManager};
-use flight_log_manager::{FlightSummary, scan_logs};
+use flight_log_manager::{FlightSummary, scan_logs, get_flight_data, export_flight_to_csv};
 
 struct LogState(Mutex<Vec<String>>);
 
@@ -173,7 +173,9 @@ pub fn run() {
             set_config,
             get_config_async,
             set_config_async,
-            get_flight_summaries
+            get_flight_summaries,
+            get_flight_data,
+            export_flight_to_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

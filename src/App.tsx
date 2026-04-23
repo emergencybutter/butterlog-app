@@ -3,7 +3,23 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Settings } from "./Settings";
 import { FlightLogs } from "./FlightLogs";
+import { FlightDetails } from "./FlightDetails";
 import "./App.css";
+
+interface FlightSummary {
+    filename: string;
+    startIcao: string;
+    endIcao: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    aircraftTitle: string;
+    aircraftType: string;
+    aircraftModel: string;
+    maxAltitude: number;
+    maxGroundSpeed: number;
+    fuelConsumed: number;
+}
 
 interface FlightMetrics {
   latitude: number;
@@ -73,24 +89,59 @@ interface FlightMetrics {
   hpl_was: number;
   hpl_fd: number;
   vpl_was: number;
+  sim_on_ground: number;
 }
+
+const getWindComponent = (speed: number, dir: number, hdg: number) => {
+  if (speed < 0.5) return "WND CALM";
+  const headwind = speed * Math.cos((dir - hdg) * Math.PI / 180);
+  return `${headwind >= 0 ? "H" : "T"} ${Math.abs(Math.round(headwind))} kt`;
+};
+
+const Icons = {
+  Logs: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+      <polyline points="14 2 14 8 20 8"></polyline>
+      <line x1="16" y1="13" x2="8" y2="13"></line>
+      <line x1="16" y1="17" x2="8" y2="17"></line>
+      <polyline points="10 9 9 9 8 9"></polyline>
+    </svg>
+  ),
+  Status: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"></line>
+      <line x1="12" y1="20" x2="12" y2="4"></line>
+      <line x1="6" y1="20" x2="6" y2="14"></line>
+    </svg>
+  ),
+  Settings: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  )
+};
 
 function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
   const [simConnected, setSimConnected] = useState(false);
-  const [view, setView] = useState<"dashboard" | "settings" | "history">("dashboard");
+  const [view, setView] = useState<"status" | "history" | "settings" | "details">("history");
+  const [selectedFlight, setSelectedFlight] = useState<FlightSummary | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<string>("Parked");
 
   useEffect(() => {
-    // Fetch existing logs on mount
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
 
-    // Listen for new log events from the backend
-    const unlisten = listen<string>("log-update", (event) => {
+    const unlistenLogs = listen<string>("log-update", (event) => {
       setLogs((prevLogs) => [...prevLogs, event.payload]);
     });
 
-    // Poll for metrics and connection status
+    const unlistenPhase = listen<string>("flight-phase-change", (event) => {
+      setCurrentPhase(event.payload);
+    });
+
     const interval = window.setInterval(async () => {
       try {
         const [m, connected] = await Promise.all([
@@ -99,79 +150,134 @@ function App() {
         ]);
         setMetrics(m);
         setSimConnected(connected);
-      } catch (e) {
-        // Silently handle if backend is not ready
-      }
+      } catch (e) { }
     }, 200);
 
     return () => {
-      unlisten.then((f) => f());
+      unlistenLogs.then((f) => f());
+      unlistenPhase.then((f) => f());
       clearInterval(interval);
     };
   }, []);
 
-  if (view === "settings") {
-    return (
-      <main className="container">
-        <Settings onBack={() => setView("dashboard")} />
-      </main>
-    );
-  }
+  const renderContent = () => {
+    switch (view) {
+      case "history":
+        return <FlightLogs 
+          onViewDetails={(flight) => {
+            setSelectedFlight(flight);
+            setView("details");
+          }}
+        />;
+      case "details":
+        return selectedFlight ? (
+          <FlightDetails flight={selectedFlight} onBack={() => setView("history")} />
+        ) : (
+          <div>No flight selected</div>
+        );
+      case "settings":
+        return <Settings onBack={() => setView("status")} />;
+      case "status":
+      default:
+        return (
+          <div className="status-view">
+            {metrics && (
+              <div className="metrics-display" style={{ textAlign: "left", marginBottom: "2rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <h3>Flight Metrics</h3>
+                    <div style={{ background: "#4caf50", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "bold" }}>
+                        PHASE: {currentPhase.toUpperCase()}
+                    </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
+                  {Object.entries(metrics).map(([key, value]) => (
+                    <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
+                      <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{key}:</span>
+                      <span style={{ float: "right", fontFamily: "monospace" }}>
+                        {typeof value === "number" ? value.toFixed(2) : String(value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-  if (view === "history") {
-    return (
-      <main className="container">
-        <FlightLogs onBack={() => setView("dashboard")} />
-      </main>
-    );
-  }
+            <div className="logs-container" style={{ marginTop: "2rem", textAlign: "left" }}>
+              <h3>Backend Logs</h3>
+              <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "200px", overflowY: "auto" }}>
+                {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
+                {logs.map((log, index) => (
+                  <div key={index} style={{ fontFamily: "monospace", fontSize: "0.9rem", color: "#4caf50" }}>{log}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+    }
+  };
 
   return (
-    <main className="container">
-      <div style={{ position: "absolute", top: "20px", right: "20px", display: "flex", gap: "10px" }}>
-        <button onClick={() => setView("history")}>History</button>
-        <button onClick={() => setView("settings")}>Settings</button>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "2rem" }}>
-        <div style={{
-          width: "12px",
-          height: "12px",
-          borderRadius: "50%",
-          backgroundColor: simConnected ? "#4caf50" : "#f44336",
-          boxShadow: simConnected ? "0 0 10px #4caf50" : "none"
-        }} />
-        <span style={{ fontWeight: "bold", color: simConnected ? "#4caf50" : "#f44336" }}>
-          {simConnected ? "MSFS CONNECTED" : "MSFS DISCONNECTED"}
-        </span>
-      </div>
-
-      {metrics && (
-        <div className="metrics-display" style={{ textAlign: "left", marginBottom: "2rem" }}>
-          <h3>Flight Metrics</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
-            {Object.entries(metrics).map(([key, value]) => (
-              <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
-                <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{key}:</span>
-                <span style={{ float: "right", fontFamily: "monospace" }}>
-                  {typeof value === "number" ? value.toFixed(2) : String(value)}
-                </span>
-              </div>
-            ))}
+    <div className="app-container">
+      <div className="app-layout">
+        <nav className="sidebar">
+          <div className="sidebar-top">
+            <div 
+              className={`sidebar-item ${view === 'history' || view === 'details' ? 'active' : ''}`} 
+              onClick={() => {
+                setView('history');
+                setSelectedFlight(null);
+              }}
+              title="Logs"
+            >
+              <span className="icon"><Icons.Logs /></span>
+            </div>
+            <div 
+              className={`sidebar-item ${view === 'status' ? 'active' : ''}`} 
+              onClick={() => setView('status')}
+              title="Status"
+            >
+              <span className="icon"><Icons.Status /></span>
+            </div>
           </div>
-        </div>
-      )}
-
-      <div className="logs-container" style={{ marginTop: "2rem", textAlign: "left" }}>
-        <h3>Backend Logs</h3>
-        <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "200px", overflowY: "auto" }}>
-          {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
-          {logs.map((log, index) => (
-            <div key={index} style={{ fontFamily: "monospace", fontSize: "0.9rem", color: "#4caf50" }}>{log}</div>
-          ))}
-        </div>
+          <div className="sidebar-bottom">
+            <div 
+              className={`sidebar-item ${view === 'settings' ? 'active' : ''}`} 
+              onClick={() => setView('settings')}
+              title="Settings"
+            >
+              <span className="icon"><Icons.Settings /></span>
+            </div>
+          </div>
+        </nav>
+        <main className="main-content">
+          {renderContent()}
+        </main>
       </div>
-    </main>
+      <footer className="status-bar" style={{ backgroundColor: simConnected ? "#007acc" : "#333" }}>
+        <div className="status-bar-item">
+          <div style={{
+            width: "8px",
+            height: "8px",
+            borderRadius: "50%",
+            backgroundColor: simConnected ? "#ffffff" : "#f44336",
+            marginRight: "8px"
+          }} />
+          <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>
+            {simConnected ? "MSFS CONNECTED" : "MSFS DISCONNECTED"}
+          </span>
+        </div>
+        {metrics && (
+          <div className="status-bar-item" style={{ borderLeft: "1px solid rgba(255,255,255,0.1)", paddingLeft: "12px" }}>
+            <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.8)" }}>
+              <span style={{ color: metrics.sim_on_ground > 0.5 ? "#4caf50" : "#ffeb3b", fontWeight: "bold", marginRight: "8px" }}>
+                {metrics.sim_on_ground > 0.5 ? "GND" : "AIR"}
+              </span>
+              | IAS {metrics.ias.toFixed(0)} kt | {getWindComponent(metrics.wnd_spd, metrics.wnd_dr, metrics.hdg)} | GS {metrics.gnd_spd.toFixed(0)} kt | ALT {metrics.alt_msl.toFixed(0)} ft | VS {metrics.v_spd.toFixed(0)} fpm | OAT {metrics.oat.toFixed(0)}°C
+            </span>
+          </div>
+        )}
+      </footer>
+    </div>
   );
 }
 
