@@ -92,6 +92,14 @@ fn find_nearest_airports(
     Ok(nearest.into_iter().cloned().collect())
 }
 
+#[tauri::command]
+fn get_runways(
+    ident: String,
+    state: State<'_, runways::RunwaysDatabase>,
+) -> Result<Vec<runways::Runway>, String> {
+    Ok(state.find_for_ident(&ident))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -177,7 +185,8 @@ pub fn run() {
             get_flight_summaries,
             get_flight_data,
             export_flight_to_csv,
-            import_flight_from_csv
+            import_flight_from_csv,
+            get_runways
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
