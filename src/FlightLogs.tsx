@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 
 interface FlightSummary {
     filename: string;
@@ -20,22 +22,79 @@ interface FlightSummary {
 export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSummary) => void }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
+    const [importing, setImporting] = useState(false);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
-    useEffect(() => {
+    const loadSummaries = () => {
+        setLoading(true);
         invoke<FlightSummary[]>("get_flight_summaries")
             .then(setSummaries)
             .catch(console.error)
             .finally(() => setLoading(false));
+    };
+
+    useEffect(() => {
+        loadSummaries();
+
+        const unlisten = listen("flight-logs-updated", () => {
+            loadSummaries();
+        });
+
+        return () => {
+            unlisten.then(f => f());
+        };
     }, []);
 
-    if (loading) return <div>Scanning logs...</div>;
+    const handleImport = async () => {
+        try {
+            const selected = await open({
+                multiple: false,
+                filters: [{ name: 'CSV', extensions: ['csv'] }]
+            });
+
+            if (selected && typeof selected === 'string') {
+                setImporting(true);
+                await invoke("import_flight_from_csv", { path: selected });
+                // We don't call loadSummaries() here because the event listener will do it
+            }
+
+        } catch (e) {
+            alert(`Import failed: ${e}`);
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    if (loading && !importing) return <div>Scanning logs...</div>;
 
     return (
         <div className="logs-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
                 <h2>Flight History</h2>
+                <button 
+                    onClick={handleImport} 
+                    disabled={importing}
+                    style={{ backgroundColor: "#2196f3" }}
+                >
+                    {importing ? "Importing..." : "Import G1000 Log (CSV)"}
+                </button>
             </div>
+
+            {importing && (
+                <div style={{ 
+                    background: "#2196f3", 
+                    color: "white", 
+                    padding: "10px 20px", 
+                    borderRadius: "8px", 
+                    marginBottom: "20px",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px"
+                }}>
+                    <span className="import-spinner">↻</span> Importing flight data...
+                </div>
+            )}
 
             {summaries.length === 0 ? (
                 <p style={{ textAlign: "center", color: "#888" }}>No flight logs found.</p>

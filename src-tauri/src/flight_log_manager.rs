@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use chrono::NaiveDateTime;
 use crate::config::ConfigManager;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Emitter};
 use rusqlite::{Connection, Row, params};
 use crate::simconnect_monitor::FlightMetrics;
 use directories::UserDirs;
@@ -213,4 +213,247 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
     }
 
     Ok(csv_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<FlightSummary, String> {
+    crate::append_log(&app, format!("Starting import of flight log from: {}", path));
+    
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let lines: Vec<&str> = content.lines().collect();
+
+    if lines.is_empty() {
+        return Err("File is empty".to_string());
+    }
+
+    let airframe_name = parse_airframe_name(&lines);
+    crate::append_log(&app, format!("Detected airframe: {}", airframe_name));
+
+    let mut rows = Vec::new();
+    let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
+
+    for line in lines {
+        if line.starts_with('#') || line.starts_with("Lcl Date") || line.is_empty() {
+            continue;
+        }
+
+        if let Some(row) = parse_csv_line_to_row(line) {
+            analyzer.update(&row.metrics);
+            rows.push(row);
+        }
+    }
+
+    if rows.is_empty() {
+        return Err("No valid data points found in CSV".to_string());
+    }
+
+    crate::append_log(&app, format!("Successfully parsed {} data points. Saving to internal database...", rows.len()));
+
+    let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path).map_err(|e| e.to_string())?;
+    
+    crate::append_log(&app, format!("Import complete. Identified route: {} -> {}", summary.start_icao, summary.end_icao));
+    
+    let _ = app.emit("flight-logs-updated", ());
+    Ok(summary)
+}
+
+fn parse_airframe_name(lines: &[&str]) -> String {
+    for line in lines {
+        if line.starts_with("#airframe_info") {
+            if let Some(idx) = line.find("airframe_name=\"") {
+                let rest = &line[idx + 15..];
+                if let Some(end_idx) = rest.find('\"') {
+                    return rest[..end_idx].to_string();
+                }
+            }
+        }
+    }
+    "Unknown Aircraft".to_string()
+}
+
+fn parse_csv_line_to_row(line: &str) -> Option<FlightLogRow> {
+    let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+    if cols.len() < 70 { return None; }
+
+    let timestamp = format!("{} {}", cols[0], cols[1]);
+    
+    let metrics = FlightMetrics {
+        latitude: cols[4].parse().unwrap_or(0.0),
+        longitude: cols[5].parse().unwrap_or(0.0),
+        alt_b: cols[6].parse().unwrap_or(0.0),
+        baro_a: cols[7].parse().unwrap_or(0.0),
+        alt_msl: cols[8].parse().unwrap_or(0.0),
+        oat: cols[9].parse().unwrap_or(0.0),
+        ias: cols[10].parse().unwrap_or(0.0),
+        gnd_spd: cols[11].parse().unwrap_or(0.0),
+        v_spd: cols[12].parse().unwrap_or(0.0),
+        pitch: cols[13].parse().unwrap_or(0.0),
+        roll: cols[14].parse().unwrap_or(0.0),
+        lat_ac: cols[15].parse().unwrap_or(0.0),
+        norm_ac: cols[16].parse().unwrap_or(0.0),
+        hdg: cols[17].parse().unwrap_or(0.0),
+        trk: cols[18].parse().unwrap_or(0.0),
+        volt1: cols[19].parse().unwrap_or(0.0),
+        volt2: cols[20].parse().unwrap_or(0.0),
+        amp1: cols[21].parse().unwrap_or(0.0),
+        f_qty_l: cols[22].parse().unwrap_or(0.0),
+        f_qty_r: cols[23].parse().unwrap_or(0.0),
+        e1_fflow: cols[24].parse().unwrap_or(0.0),
+        e1_oil_t: cols[25].parse().unwrap_or(0.0),
+        e1_oil_p: cols[26].parse().unwrap_or(0.0),
+        e1_map: cols[27].parse().unwrap_or(0.0),
+        e1_rpm: cols[28].parse().unwrap_or(0.0),
+        e1_pwr: cols[29].parse().unwrap_or(0.0),
+        e1_cht1: cols[30].parse().unwrap_or(0.0),
+        e1_cht2: cols[31].parse().unwrap_or(0.0),
+        e1_cht3: cols[32].parse().unwrap_or(0.0),
+        e1_cht4: cols[33].parse().unwrap_or(0.0),
+        e1_cht5: cols[34].parse().unwrap_or(0.0),
+        e1_cht6: cols[35].parse().unwrap_or(0.0),
+        e1_egt1: cols[36].parse().unwrap_or(0.0),
+        e1_egt2: cols[37].parse().unwrap_or(0.0),
+        e1_egt3: cols[38].parse().unwrap_or(0.0),
+        e1_egt4: cols[39].parse().unwrap_or(0.0),
+        e1_egt5: cols[40].parse().unwrap_or(0.0),
+        e1_egt6: cols[41].parse().unwrap_or(0.0),
+        e1_tit1: cols[42].parse().unwrap_or(0.0),
+        e1_tit2: cols[43].parse().unwrap_or(0.0),
+        alt_gps: cols[44].parse().unwrap_or(0.0),
+        tas: cols[45].parse().unwrap_or(0.0),
+        hsis: 0.0, 
+        crs: cols[47].parse().unwrap_or(0.0),
+        nav1: cols[48].parse().unwrap_or(0.0),
+        nav2: cols[49].parse().unwrap_or(0.0),
+        com1: cols[50].parse().unwrap_or(0.0),
+        com2: cols[51].parse().unwrap_or(0.0),
+        hcdi: cols[52].parse().unwrap_or(0.0),
+        vcdi: cols[53].parse().unwrap_or(0.0),
+        wnd_spd: cols[54].parse().unwrap_or(0.0),
+        wnd_dr: cols[55].parse().unwrap_or(0.0),
+        wpt_dst: cols[56].parse().unwrap_or(0.0),
+        wpt_brg: cols[57].parse().unwrap_or(0.0),
+        mag_var: cols[58].parse().unwrap_or(0.0),
+        afcs_on: if cols[59].to_lowercase() == "true" || cols[59] == "1" { 1.0 } else { 0.0 },
+        roll_m: 0.0,
+        pitch_m: 0.0,
+        roll_c: cols[62].parse().unwrap_or(0.0),
+        pitch_c: cols[63].parse().unwrap_or(0.0),
+        v_spd_g: cols[64].parse().unwrap_or(0.0),
+        gps_fix: 0.0,
+        hal: cols[66].parse().unwrap_or(0.0),
+        val: cols[67].parse().unwrap_or(0.0),
+        hpl_was: cols[68].parse().unwrap_or(0.0),
+        hpl_fd: cols[69].parse().unwrap_or(0.0),
+        vpl_was: cols[70].parse().unwrap_or(0.0),
+        sim_on_ground: if cols[8].parse::<f64>().unwrap_or(0.0) < 500.0 { 1.0 } else { 0.0 },
+    };
+
+    Some(FlightLogRow { timestamp, metrics })
+}
+
+fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightLogRow>, analyzer: &crate::flight_analyzer::FlightAnalyzer, source_path: &str) -> anyhow::Result<FlightSummary> {
+    let app_data_dir = app.path().app_data_dir()?;
+    let log_dir = app_data_dir.join("flightlogs");
+    fs::create_dir_all(&log_dir)?;
+
+    let first_ts = &rows.first().unwrap().timestamp;
+    // Standardize timestamp for filename: 2026-04-20 12:34:56 -> 20260420_123456
+    let filename_ts = first_ts.replace('-', "").replace(':', "").replace(' ', "_");
+    let temp_filename = format!("butterlog_import_{}.db", filename_ts);
+    let path = log_dir.join(&temp_filename);
+
+    let conn = Connection::open(&path)?;
+    
+    // Create tables
+    conn.execute(
+            "CREATE TABLE IF NOT EXISTS metrics (
+                timestamp TEXT PRIMARY KEY,
+                latitude REAL, longitude REAL, 
+                indicated_altitude REAL, altimeter_setting REAL, gps_altitude_msl REAL, outside_air_temp REAL,
+                indicated_airspeed REAL, ground_speed REAL, vertical_speed REAL, pitch_angle REAL, roll_angle REAL, 
+                lateral_acceleration REAL, normal_acceleration REAL,
+                heading REAL, track REAL, volts_1 REAL, volts_2 REAL, amps_1 REAL, 
+                fuel_quantity_left REAL, fuel_quantity_right REAL,
+                engine_1_fuel_flow REAL, engine_1_oil_temp REAL, engine_1_oil_pressure REAL, 
+                engine_1_manifold_pressure REAL, engine_1_rpm REAL, engine_1_percent_power REAL,
+                engine_1_cht_1 REAL, engine_1_cht_2 REAL, engine_1_cht_3 REAL, engine_1_cht_4 REAL, engine_1_cht_5 REAL, engine_1_cht_6 REAL,
+                engine_1_egt_1 REAL, engine_1_egt_2 REAL, engine_1_egt_3 REAL, engine_1_egt_4 REAL, engine_1_egt_5 REAL, engine_1_egt_6 REAL,
+                engine_1_tit_1 REAL, engine_1_tit_2 REAL, 
+                gps_altitude_wgs84 REAL, true_airspeed REAL, hsi_source REAL, selected_course REAL, 
+                nav_1_frequency REAL, nav_2_frequency REAL, com_1_frequency REAL, com_2_frequency REAL, 
+                horizontal_cdi REAL, vertical_cdi REAL, wind_speed REAL, wind_direction REAL,
+                waypoint_distance REAL, waypoint_bearing REAL, magnetic_variation REAL, 
+                autopilot_active REAL, roll_mode REAL, pitch_mode REAL,
+                roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
+                gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
+                horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
+                is_on_ground REAL
+            )",
+            [],
+        )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS summary (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )",
+        [],
+    )?;
+
+    // Insert metrics
+    {
+        let mut stmt = conn.prepare("INSERT OR REPLACE INTO metrics VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61, ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69)")?;
+        
+        for row in rows {
+            let m = row.metrics;
+            stmt.execute(params![
+                row.timestamp, m.latitude, m.longitude, m.alt_b, m.baro_a, m.alt_msl, m.oat,
+                m.ias, m.gnd_spd, m.v_spd, m.pitch, m.roll, m.lat_ac, m.norm_ac,
+                m.hdg, m.trk, m.volt1, m.volt2, m.amp1, m.f_qty_l, m.f_qty_r,
+                m.e1_fflow, m.e1_oil_t, m.e1_oil_p, m.e1_map, m.e1_rpm, m.e1_pwr,
+                m.e1_cht1, m.e1_cht2, m.e1_cht3, m.e1_cht4, m.e1_cht5, m.e1_cht6,
+                m.e1_egt1, m.e1_egt2, m.e1_egt3, m.e1_egt4, m.e1_egt5, m.e1_egt6,
+                m.e1_tit1, m.e1_tit2, m.alt_gps, m.tas, m.hsis, m.crs, m.nav1,
+                m.nav2, m.com1, m.com2, m.hcdi, m.vcdi, m.wnd_spd, m.wnd_dr,
+                m.wpt_dst, m.wpt_brg, m.mag_var, m.afcs_on, m.roll_m, m.pitch_m,
+                m.roll_c, m.pitch_c, m.v_spd_g, m.gps_fix, m.hal, m.val,
+                m.hpl_was, m.hpl_fd, m.vpl_was, m.sim_on_ground
+            ])?;
+        }
+    }
+
+    // Determine ICAOs
+    let (start_icao, end_icao) = if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
+        (analyzer.find_start_icao(&db), analyzer.find_end_icao(&db))
+    } else {
+        ("XXXX".to_string(), "XXXX".to_string())
+    };
+
+    // Populate summary
+    let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+    let import_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let summary_data = [
+        ("departure_icao", start_icao.clone()),
+        ("arrival_icao", end_icao.clone()),
+        ("aircraft_title", aircraft_title.to_string()),
+        ("aircraft_type", "Imported".to_string()),
+        ("aircraft_model", "Imported".to_string()),
+        ("max_altitude", analyzer.max_alt.to_string()),
+        ("max_ground_speed", analyzer.max_gs.to_string()),
+        ("fuel_consumed", fuel_consumed.to_string()),
+        ("source_path", source_path.to_string()),
+        ("import_timestamp", import_time),
+    ];
+
+    for (k, v) in summary_data {
+        conn.execute("INSERT INTO summary (key, value) VALUES (?1, ?2)", params![k, v])?;
+    }
+
+    drop(conn);
+
+    // Rename file
+    let final_filename = format!("butterlog_{}_{}_{}.db", start_icao, end_icao, filename_ts);
+    let final_path = log_dir.join(&final_filename);
+    fs::rename(&path, &final_path)?;
+
+    Ok(parse_db_file(&final_path).unwrap())
 }

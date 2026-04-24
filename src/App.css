@@ -212,3 +212,13 @@ section h4 {
 ::-webkit-scrollbar-thumb:hover {
   background: #444;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.import-spinner {
+  display: inline-block;
+  animation: spin 2s linear infinite;
+}

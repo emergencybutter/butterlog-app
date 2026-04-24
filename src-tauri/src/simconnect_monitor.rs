@@ -289,6 +289,7 @@ impl SimConnectMonitor {
                                         match std::fs::rename(&path, &new_path) {
                                             Ok(_) => {
                                                 crate::append_log(app, format!("Flight log renamed to: {:?}", new_path.file_name().unwrap()));
+                                                let _ = app.emit("flight-logs-updated", ());
                                             }
                                             Err(e) => {
                                                 crate::append_log(app, format!("Failed to rename log file: {}", e));
@@ -362,17 +363,26 @@ impl SimConnectMonitor {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS metrics (
                 timestamp TEXT PRIMARY KEY,
-                latitude REAL, longitude REAL, alt_b REAL, baro_a REAL, alt_msl REAL, oat REAL,
-                ias REAL, gnd_spd REAL, v_spd REAL, pitch REAL, roll REAL, lat_ac REAL, norm_ac REAL,
-                hdg REAL, trk REAL, volt1 REAL, volt2 REAL, amp1 REAL, f_qty_l REAL, f_qty_r REAL,
-                e1_fflow REAL, e1_oil_t REAL, e1_oil_p REAL, e1_map REAL, e1_rpm REAL, e1_pwr REAL,
-                e1_cht1 REAL, e1_cht2 REAL, e1_cht3 REAL, e1_cht4 REAL, e1_cht5 REAL, e1_cht6 REAL,
-                e1_egt1 REAL, e1_egt2 REAL, e1_egt3 REAL, e1_egt4 REAL, e1_egt5 REAL, e1_egt6 REAL,
-                e1_tit1 REAL, e1_tit2 REAL, alt_gps REAL, tas REAL, hsis REAL, crs REAL, nav1 REAL,
-                nav2 REAL, com1 REAL, com2 REAL, hcdi REAL, vcdi REAL, wnd_spd REAL, wnd_dr REAL,
-                wpt_dst REAL, wpt_brg REAL, mag_var REAL, afcs_on REAL, roll_m REAL, pitch_m REAL,
-                roll_c REAL, pitch_c REAL, v_spd_g REAL, gps_fix REAL, hal REAL, val REAL,
-                hpl_was REAL, hpl_fd REAL, vpl_was REAL, sim_on_ground REAL
+                latitude REAL, longitude REAL, 
+                indicated_altitude REAL, altimeter_setting REAL, gps_altitude_msl REAL, outside_air_temp REAL,
+                indicated_airspeed REAL, ground_speed REAL, vertical_speed REAL, pitch_angle REAL, roll_angle REAL, 
+                lateral_acceleration REAL, normal_acceleration REAL,
+                heading REAL, track REAL, volts_1 REAL, volts_2 REAL, amps_1 REAL, 
+                fuel_quantity_left REAL, fuel_quantity_right REAL,
+                engine_1_fuel_flow REAL, engine_1_oil_temp REAL, engine_1_oil_pressure REAL, 
+                engine_1_manifold_pressure REAL, engine_1_rpm REAL, engine_1_percent_power REAL,
+                engine_1_cht_1 REAL, engine_1_cht_2 REAL, engine_1_cht_3 REAL, engine_1_cht_4 REAL, engine_1_cht_5 REAL, engine_1_cht_6 REAL,
+                engine_1_egt_1 REAL, engine_1_egt_2 REAL, engine_1_egt_3 REAL, engine_1_egt_4 REAL, engine_1_egt_5 REAL, engine_1_egt_6 REAL,
+                engine_1_tit_1 REAL, engine_1_tit_2 REAL, 
+                gps_altitude_wgs84 REAL, true_airspeed REAL, hsi_source REAL, selected_course REAL, 
+                nav_1_frequency REAL, nav_2_frequency REAL, com_1_frequency REAL, com_2_frequency REAL, 
+                horizontal_cdi REAL, vertical_cdi REAL, wind_speed REAL, wind_direction REAL,
+                waypoint_distance REAL, waypoint_bearing REAL, magnetic_variation REAL, 
+                autopilot_active REAL, roll_mode REAL, pitch_mode REAL,
+                roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
+                gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
+                horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
+                is_on_ground REAL
             )",
             [],
         )?;
@@ -388,23 +398,32 @@ impl SimConnectMonitor {
 
     fn insert_sqlite_row(conn: &Connection, now: &DateTime<Local>, m: &FlightMetrics) -> rusqlite::Result<()> {
         conn.execute(
-            "INSERT INTO metrics (
-                timestamp, latitude, longitude, alt_b, baro_a, alt_msl, oat,
-                ias, gnd_spd, v_spd, pitch, roll, lat_ac, norm_ac,
-                hdg, trk, volt1, volt2, amp1, f_qty_l, f_qty_r,
-                e1_fflow, e1_oil_t, e1_oil_p, e1_map, e1_rpm, e1_pwr,
-                e1_cht1, e1_cht2, e1_cht3, e1_cht4, e1_cht5, e1_cht6,
-                e1_egt1, e1_egt2, e1_egt3, e1_egt4, e1_egt5, e1_egt6,
-                e1_tit1, e1_tit2, alt_gps, tas, hsis, crs, nav1,
-                nav2, com1, com2, hcdi, vcdi, wnd_spd, wnd_dr,
-                wpt_dst, wpt_brg, mag_var, afcs_on, roll_m, pitch_m,
-                roll_c, pitch_c, v_spd_g, gps_fix, hal, val,
-                hpl_was, hpl_fd, vpl_was, sim_on_ground
+            "INSERT OR REPLACE INTO metrics (
+                timestamp, latitude, longitude, 
+                indicated_altitude, altimeter_setting, gps_altitude_msl, outside_air_temp,
+                indicated_airspeed, ground_speed, vertical_speed, pitch_angle, roll_angle, 
+                lateral_acceleration, normal_acceleration,
+                heading, track, volts_1, volts_2, amps_1, 
+                fuel_quantity_left, fuel_quantity_right,
+                engine_1_fuel_flow, engine_1_oil_temp, engine_1_oil_pressure, 
+                engine_1_manifold_pressure, engine_1_rpm, engine_1_percent_power,
+                engine_1_cht_1, engine_1_cht_2, engine_1_cht_3, engine_1_cht_4, engine_1_cht_5, engine_1_cht_6,
+                engine_1_egt_1, engine_1_egt_2, engine_1_egt_3, engine_1_egt_4, engine_1_egt_5, engine_1_egt_6,
+                engine_1_tit_1, engine_1_tit_2, 
+                gps_altitude_wgs84, true_airspeed, hsi_source, selected_course, 
+                nav_1_frequency, nav_2_frequency, com_1_frequency, com_2_frequency, 
+                horizontal_cdi, vertical_cdi, wind_speed, wind_direction,
+                waypoint_distance, waypoint_bearing, magnetic_variation, 
+                autopilot_active, roll_mode, pitch_mode,
+                roll_command, pitch_command, vertical_speed_target, 
+                gps_fix_type, horizontal_alarm_limit, vertical_alarm_limit,
+                horizontal_protection_level_waas, horizontal_protection_level_fd, vertical_protection_level_waas, 
+                is_on_ground
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
                 ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
                 ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61,
-                ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69, ?70, ?71
+                ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69
             )",
             params![
                 now.format("%Y-%m-%d %H:%M:%S").to_string(), m.latitude, m.longitude, m.alt_b, m.baro_a, m.alt_msl, m.oat,
