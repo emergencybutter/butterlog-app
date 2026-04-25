@@ -276,6 +276,9 @@ impl SimConnectMonitor {
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_altitude", analyzer.max_alt.to_string()]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_ground_speed", analyzer.max_gs.to_string()]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()]);
+                                if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                }
 
                                 // Rename the file with ICAOs
                                 if let Some(path) = current_log_path.take() {

@@ -92,6 +92,77 @@ interface FlightMetrics {
   sim_on_ground: number;
 }
 
+const METRIC_LABELS: Record<string, string> = {
+  latitude: "Latitude",
+  longitude: "Longitude",
+  alt_b: "Indicated Altitude (ft)",
+  baro_a: "Altimeter Setting (inHg)",
+  alt_msl: "Altitude MSL (ft)",
+  oat: "Outside Air Temp (°C)",
+  ias: "Indicated Airspeed (kt)",
+  gnd_spd: "Groundspeed (kt)",
+  v_spd: "Vertical Speed (fpm)",
+  pitch: "Pitch Angle (deg)",
+  roll: "Bank Angle (deg)",
+  lat_ac: "Lateral Acceleration (G)",
+  norm_ac: "Normal Acceleration (G)",
+  hdg: "Heading (deg)",
+  trk: "Track (deg)",
+  volt1: "Bus Voltage 1",
+  volt2: "Bus Voltage 2",
+  amp1: "Bus Amperes 1",
+  f_qty_l: "Fuel Left (gal)",
+  f_qty_r: "Fuel Right (gal)",
+  e1_fflow: "E1 Fuel Flow (gph)",
+  e1_oil_t: "E1 Oil Temp (°F)",
+  e1_oil_p: "E1 Oil Pressure (psi)",
+  e1_map: "E1 Manifold Press (inHg)",
+  e1_rpm: "E1 RPM",
+  e1_pwr: "E1 Power (%)",
+  e1_cht1: "E1 CHT 1",
+  e1_cht2: "E1 CHT 2",
+  e1_cht3: "E1 CHT 3",
+  e1_cht4: "E1 CHT 4",
+  e1_cht5: "E1 CHT 5",
+  e1_cht6: "E1 CHT 6",
+  e1_egt1: "E1 EGT 1",
+  e1_egt2: "E1 EGT 2",
+  e1_egt3: "E1 EGT 3",
+  e1_egt4: "E1 EGT 4",
+  e1_egt5: "E1 EGT 5",
+  e1_egt6: "E1 EGT 6",
+  e1_tit1: "E1 TIT 1",
+  e1_tit2: "E1 TIT 2",
+  alt_gps: "GPS Altitude (ft)",
+  tas: "True Airspeed (kt)",
+  hsis: "HSI Source",
+  crs: "Selected Course (deg)",
+  nav1: "NAV 1 Freq (MHz)",
+  nav2: "NAV 2 Freq (MHz)",
+  com1: "COM 1 Freq (MHz)",
+  com2: "COM 2 Freq (MHz)",
+  hcdi: "Horizontal CDI (fsd)",
+  vcdi: "Vertical CDI (fsd)",
+  wnd_spd: "Wind Speed (kt)",
+  wnd_dr: "Wind Direction (deg)",
+  wpt_dst: "Waypoint Distance (nm)",
+  wpt_brg: "Waypoint Bearing (deg)",
+  mag_var: "Magnetic Variation (deg)",
+  afcs_on: "Autopilot Active",
+  roll_m: "AP Roll Mode",
+  pitch_m: "AP Pitch Mode",
+  roll_c: "Roll Command (deg)",
+  pitch_c: "Pitch Command (deg)",
+  v_spd_g: "VS Target (fpm)",
+  gps_fix: "GPS Fix Type",
+  hal: "H-Alarm Limit (m)",
+  val: "V-Alarm Limit (m)",
+  hpl_was: "HPL WAAS (m)",
+  hpl_fd: "HPL FD (m)",
+  vpl_was: "VPL WAAS (m)",
+  sim_on_ground: "On Ground",
+};
+
 const getWindComponent = (speed: number, dir: number, hdg: number) => {
   if (speed < 0.5) return "WND CALM";
   const headwind = speed * Math.cos((dir - hdg) * Math.PI / 180);
@@ -192,7 +263,7 @@ function App() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
                   {Object.entries(metrics).map(([key, value]) => (
                     <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
-                      <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{key}:</span>
+                      <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{METRIC_LABELS[key] || key}:</span>
                       <span style={{ float: "right", fontFamily: "monospace" }}>
                         {typeof value === "number" ? value.toFixed(2) : String(value)}
                       </span>
@@ -253,30 +324,32 @@ function App() {
           {renderContent()}
         </main>
       </div>
-      <footer className="status-bar" style={{ backgroundColor: simConnected ? "#007acc" : "#333" }}>
-        <div className="status-bar-item">
-          <div style={{
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            backgroundColor: simConnected ? "#ffffff" : "#f44336",
-            marginRight: "8px"
-          }} />
-          <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>
-            {simConnected ? "MSFS CONNECTED" : "MSFS DISCONNECTED"}
-          </span>
-        </div>
-        {metrics && (
-          <div className="status-bar-item" style={{ borderLeft: "1px solid rgba(255,255,255,0.1)", paddingLeft: "12px" }}>
-            <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.8)" }}>
-              <span style={{ color: metrics.sim_on_ground > 0.5 ? "#4caf50" : "#ffeb3b", fontWeight: "bold", marginRight: "8px" }}>
-                {metrics.sim_on_ground > 0.5 ? "GND" : "AIR"}
-              </span>
-              | IAS {metrics.ias.toFixed(0)} kt | {getWindComponent(metrics.wnd_spd, metrics.wnd_dr, metrics.hdg)} | GS {metrics.gnd_spd.toFixed(0)} kt | ALT {metrics.alt_msl.toFixed(0)} ft | VS {metrics.v_spd.toFixed(0)} fpm | OAT {metrics.oat.toFixed(0)}°C
+      {simConnected && (
+        <footer className="status-bar" style={{ backgroundColor: "#007acc" }}>
+          <div className="status-bar-item">
+            <div style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: "#ffffff",
+              marginRight: "8px"
+            }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>
+              MSFS CONNECTED
             </span>
           </div>
-        )}
-      </footer>
+          {metrics && (
+            <div className="status-bar-item" style={{ borderLeft: "1px solid rgba(255,255,255,0.1)", paddingLeft: "12px" }}>
+              <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.8)" }}>
+                <span style={{ color: metrics.sim_on_ground > 0.5 ? "#4caf50" : "#ffeb3b", fontWeight: "bold", marginRight: "8px" }}>
+                  {metrics.sim_on_ground > 0.5 ? "GND" : "AIR"}
+                </span>
+                | IAS {metrics.ias.toFixed(0)} kt | {getWindComponent(metrics.wnd_spd, metrics.wnd_dr, metrics.hdg)} | GS {metrics.gnd_spd.toFixed(0)} kt | ALT {metrics.alt_msl.toFixed(0)} ft | VS {metrics.v_spd.toFixed(0)} fpm | OAT {metrics.oat.toFixed(0)}°C
+              </span>
+            </div>
+          )}
+        </footer>
+      )}
     </div>
   );
 }

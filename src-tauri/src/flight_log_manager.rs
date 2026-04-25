@@ -6,6 +6,8 @@ use crate::config::ConfigManager;
 use tauri::{AppHandle, Manager, Emitter};
 use rusqlite::{Connection, Row, params};
 use crate::simconnect_monitor::FlightMetrics;
+use crate::flight_analyzer::FlightEvent;
+use crate::airports::AirportsDatabase;
 use directories::UserDirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -24,6 +26,7 @@ pub struct FlightSummary {
     pub max_altitude: f64,
     pub max_ground_speed: f64,
     pub fuel_consumed: f64,
+    pub events: Vec<FlightEvent>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -124,6 +127,8 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let max_altitude = get_summary("max_altitude").parse().unwrap_or(0.0);
     let max_ground_speed = get_summary("max_ground_speed").parse().unwrap_or(0.0);
     let fuel_consumed = get_summary("fuel_consumed").parse().unwrap_or(0.0);
+    let events_json = get_summary("flight_events");
+    let events: Vec<FlightEvent> = serde_json::from_str(&events_json).unwrap_or_default();
 
     let mut stmt = conn.prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics").ok()?;
     let (start_time, end_time): (String, String) = stmt.query_row([], |row| {
@@ -149,6 +154,7 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
         max_altitude,
         max_ground_speed,
         fuel_consumed,
+        events,
     })
 }
 
@@ -231,15 +237,20 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
 
     let mut rows = Vec::new();
     let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
+    let airports_db = app.try_state::<AirportsDatabase>();
 
     for line in lines {
         if line.starts_with('#') || line.starts_with("Lcl Date") || line.is_empty() {
             continue;
         }
 
-        if let Some(row) = parse_csv_line_to_row(line) {
+        if let Some(row) = parse_csv_line_to_row(line, airports_db.as_deref()) {
             analyzer.update(&row.metrics);
             rows.push(row);
+            
+            if rows.len() % 500 == 0 {
+                let _ = app.emit("import-progress", rows.len());
+            }
         }
     }
 
@@ -271,18 +282,38 @@ fn parse_airframe_name(lines: &[&str]) -> String {
     "Unknown Aircraft".to_string()
 }
 
-fn parse_csv_line_to_row(line: &str) -> Option<FlightLogRow> {
+fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> Option<FlightLogRow> {
     let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
     if cols.len() < 70 { return None; }
 
     let timestamp = format!("{} {}", cols[0], cols[1]);
+    let lat: f64 = cols[4].parse().unwrap_or(0.0);
+    let lon: f64 = cols[5].parse().unwrap_or(0.0);
+    let alt_msl: f64 = cols[8].parse().unwrap_or(0.0);
+
+    // Better sim_on_ground heuristic based on airport elevation
+    let mut sim_on_ground = 0.0;
+    if let Some(db) = airports_db {
+        if let Some(nearest) = db.find_nearest(lat, lon, 1).first() {
+            let elevation = nearest.elevation_ft.unwrap_or(0) as f64;
+            // If we are within 15ft of the nearest airport elevation AND speed is reasonable for ground
+            if (alt_msl - elevation).abs() < 15.0 {
+                sim_on_ground = 1.0;
+            }
+        }
+    } else {
+        // Fallback to legacy heuristic
+        if alt_msl < 500.0 {
+            sim_on_ground = 1.0;
+        }
+    }
     
     let metrics = FlightMetrics {
-        latitude: cols[4].parse().unwrap_or(0.0),
-        longitude: cols[5].parse().unwrap_or(0.0),
+        latitude: lat,
+        longitude: lon,
         alt_b: cols[6].parse().unwrap_or(0.0),
         baro_a: cols[7].parse().unwrap_or(0.0),
-        alt_msl: cols[8].parse().unwrap_or(0.0),
+        alt_msl,
         oat: cols[9].parse().unwrap_or(0.0),
         ias: cols[10].parse().unwrap_or(0.0),
         gnd_spd: cols[11].parse().unwrap_or(0.0),
@@ -345,7 +376,7 @@ fn parse_csv_line_to_row(line: &str) -> Option<FlightLogRow> {
         hpl_was: cols[68].parse().unwrap_or(0.0),
         hpl_fd: cols[69].parse().unwrap_or(0.0),
         vpl_was: cols[70].parse().unwrap_or(0.0),
-        sim_on_ground: if cols[8].parse::<f64>().unwrap_or(0.0) < 500.0 { 1.0 } else { 0.0 },
+        sim_on_ground,
     };
 
     Some(FlightLogRow { timestamp, metrics })
@@ -442,6 +473,7 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
         ("fuel_consumed", fuel_consumed.to_string()),
         ("source_path", source_path.to_string()),
         ("import_timestamp", import_time),
+        ("flight_events", serde_json::to_string(&analyzer.events).unwrap_or_default()),
     ];
 
     for (k, v) in summary_data {

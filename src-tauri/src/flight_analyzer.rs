@@ -15,6 +15,15 @@ pub enum FlightPhase {
     TaxiIn,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightEvent {
+    pub timestamp: String,
+    pub event_type: String, // "takeoff", "landing", "top_of_climb", "top_of_descent"
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
 pub struct FlightAnalyzer {
     start_coords: Vec<(f64, f64)>,
     end_coords: VecDeque<(f64, f64)>,
@@ -24,6 +33,7 @@ pub struct FlightAnalyzer {
     pub max_gs: f64,
     pub initial_fuel: f64,
     pub final_fuel: f64,
+    pub events: Vec<FlightEvent>,
     landed: bool,
 }
 
@@ -38,6 +48,7 @@ impl FlightAnalyzer {
             max_gs: 0.0,
             initial_fuel: 0.0,
             final_fuel: 0.0,
+            events: Vec::new(),
             landed: false,
         }
     }
@@ -51,6 +62,7 @@ impl FlightAnalyzer {
         self.max_gs = 0.0;
         self.initial_fuel = 0.0;
         self.final_fuel = 0.0;
+        self.events.clear();
         self.landed = false;
     }
 
@@ -91,40 +103,45 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::Takeoff;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                } else if ground_speed < 1.0 {
-                    // Could be waiting at hold short, stay in TaxiOut for now
                 }
             }
             FlightPhase::Takeoff => {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
+                    self.add_event("takeoff", metrics.latitude, metrics.longitude);
                 }
             }
             FlightPhase::Climb => {
                 if !on_ground {
                     if v_spd.abs() < 200.0 && ias > 60.0 {
                         self.current_phase = FlightPhase::Cruise;
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude);
                     } else if v_spd < -400.0 {
                         self.current_phase = FlightPhase::Descent;
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude);
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude);
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
+                    self.add_event("landing", metrics.latitude, metrics.longitude);
                 }
             }
             FlightPhase::Cruise => {
                 if !on_ground {
                     if v_spd < -500.0 {
                         self.current_phase = FlightPhase::Descent;
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude);
                     } else if v_spd > 500.0 {
                         self.current_phase = FlightPhase::Climb;
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
+                    self.add_event("landing", metrics.latitude, metrics.longitude);
                 }
             }
             FlightPhase::Descent => {
                 if !on_ground {
-                    if metrics.alt_msl < 3000.0 && v_spd < -200.0 { // Simplified approach detection
+                    if metrics.alt_msl < 3000.0 && v_spd < -200.0 { 
                          self.current_phase = FlightPhase::Approach;
                     } else if v_spd > 300.0 {
                         self.current_phase = FlightPhase::Climb;
@@ -133,11 +150,13 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
+                    self.add_event("landing", metrics.latitude, metrics.longitude);
                 }
             }
             FlightPhase::Approach => {
                 if on_ground {
                     self.current_phase = FlightPhase::Landing;
+                    self.add_event("landing", metrics.latitude, metrics.longitude);
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                 }
@@ -146,12 +165,15 @@ impl FlightAnalyzer {
                 if on_ground && ground_speed < 30.0 {
                     self.current_phase = FlightPhase::TaxiIn;
                     self.landed = true;
+                } else if !on_ground {
+                    self.current_phase = FlightPhase::Takeoff;
                 }
             }
             FlightPhase::TaxiIn => {
                 if ground_speed < 1.0 {
-                    // Parked after taxi in
-                    // We might want to keep it in TaxiIn until engines off?
+                    // Parked
+                } else if !on_ground {
+                    self.current_phase = FlightPhase::Climb;
                 }
             }
         }
@@ -162,6 +184,15 @@ impl FlightAnalyzer {
         } else {
             None
         }
+    }
+
+    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64) {
+        self.events.push(FlightEvent {
+            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            event_type: event_type.to_string(),
+            latitude: lat,
+            longitude: lon,
+        });
     }
 
     fn add_point(&mut self, lat: f64, lon: f64) {
@@ -176,29 +207,21 @@ impl FlightAnalyzer {
     }
 
     pub fn find_start_icao(&self, db: &AirportsDatabase) -> String {
-        self.find_most_frequent_closest_icao(db, &self.start_coords)
+        self.find_dominant_icao(&self.start_coords, db)
     }
 
     pub fn find_end_icao(&self, db: &AirportsDatabase) -> String {
         let coords: Vec<(f64, f64)> = self.end_coords.iter().cloned().collect();
-        self.find_most_frequent_closest_icao(db, &coords)
+        self.find_dominant_icao(&coords, db)
     }
 
-    fn find_most_frequent_closest_icao(&self, db: &AirportsDatabase, coords: &[(f64, f64)]) -> String {
-        if coords.is_empty() {
-            return "XXXX".to_string();
-        }
+    fn find_dominant_icao(&self, coords: &[(f64, f64)], db: &AirportsDatabase) -> String {
+        if coords.is_empty() { return "XXXX".to_string(); }
         
         let mut counts = HashMap::new();
-        for &(lat, lon) in coords {
-            let nearest = db.find_nearest(lat, lon, 1);
-            if let Some(airport) = nearest.first() {
-                // Use icao_code if not empty, otherwise fallback to ident
-                let code = if !airport.icao_code.is_empty() {
-                    airport.icao_code.clone()
-                } else {
-                    airport.ident.clone()
-                };
+        for (lat, lon) in coords {
+            if let Some(airport) = db.find_nearest(*lat, *lon, 1).first() {
+                let code = airport.ident.clone();
                 *counts.entry(code).or_insert(0) += 1;
             }
         }

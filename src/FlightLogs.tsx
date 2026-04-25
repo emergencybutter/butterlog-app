@@ -17,12 +17,14 @@ interface FlightSummary {
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;
+    events: any[];
 }
 
 export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSummary) => void }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState(false);
+    const [importCount, setImportCount] = useState(0);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
     const loadSummaries = () => {
@@ -36,12 +38,19 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
     useEffect(() => {
         loadSummaries();
 
-        const unlisten = listen("flight-logs-updated", () => {
+        const unlistenUpdated = listen("flight-logs-updated", () => {
             loadSummaries();
+            setImporting(false);
+            setImportCount(0);
+        });
+
+        const unlistenProgress = listen<number>("import-progress", (event) => {
+            setImportCount(event.payload);
         });
 
         return () => {
-            unlisten.then(f => f());
+            unlistenUpdated.then(f => f());
+            unlistenProgress.then(f => f());
         };
     }, []);
 
@@ -54,14 +63,14 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
 
             if (selected && typeof selected === 'string') {
                 setImporting(true);
+                setImportCount(0);
                 await invoke("import_flight_from_csv", { path: selected });
-                // We don't call loadSummaries() here because the event listener will do it
             }
 
         } catch (e) {
             alert(`Import failed: ${e}`);
-        } finally {
             setImporting(false);
+            setImportCount(0);
         }
     };
 
@@ -92,7 +101,7 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                     alignItems: "center",
                     gap: "10px"
                 }}>
-                    <span className="import-spinner">↻</span> Importing flight data...
+                    <span className="import-spinner">↻</span> Importing flight data... ({importCount.toLocaleString()} rows)
                 </div>
             )}
 

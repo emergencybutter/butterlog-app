@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { 
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area 
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine, Label
 } from 'recharts';
 
 interface FlightMetrics {
@@ -22,6 +22,13 @@ interface FlightLogRow {
   metrics: FlightMetrics;
 }
 
+interface FlightEvent {
+    timestamp: string;
+    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
+    latitude: number;
+    longitude: number;
+}
+
 interface FlightSummary {
     filename: string;
     startIcao: string;
@@ -35,6 +42,7 @@ interface FlightSummary {
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;
+    events: FlightEvent[];
 }
 
 interface Runway {
@@ -53,18 +61,16 @@ interface TrajectoryPoint {
     lat: number;
     lon: number;
     onGround: boolean;
-    isEvent?: 'takeoff' | 'touchdown';
+    isEvent?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
 }
 
 function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], title: string }) {
-    if (runways.length === 0) return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>No runway data for {icao}</div>;
+    if (runways.length === 0 && trajectory.length === 0) return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px" }}>No data for {icao}</div>;
 
     const validRunways = runways.filter(r => 
         r.le_latitude_deg !== null && r.le_longitude_deg !== null && 
         r.he_latitude_deg !== null && r.he_longitude_deg !== null
     );
-
-    if (validRunways.length === 0 && trajectory.length === 0) return <div>No data for {icao}</div>;
 
     // Determine bounding box
     const rLats = validRunways.flatMap(r => [r.le_latitude_deg!, r.he_latitude_deg!]);
@@ -75,6 +81,8 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     const allLats = [...rLats, ...tLats];
     const allLons = [...rLons, ...tLons];
 
+    if (allLats.length === 0) return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>No map data</div>;
+
     const minLat = Math.min(...allLats);
     const maxLat = Math.max(...allLats);
     const minLon = Math.min(...allLons);
@@ -83,7 +91,7 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     // Padding & Aspect Ratio
     const latDiff = Math.max(maxLat - minLat, 0.002);
     const lonDiff = Math.max(maxLon - minLon, 0.002);
-    const padding = 0.15;
+    const padding = 0.25;
 
     const mapMinLat = minLat - latDiff * padding;
     const mapMaxLat = maxLat + latDiff * padding;
@@ -96,7 +104,7 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     const scaleX = (lon: number) => (lon - mapMinLon) / (mapMaxLon - mapMinLon) * width;
     const scaleY = (lat: number) => height - (lat - mapMinLat) / (mapMaxLat - mapMinLat) * height;
 
-    const eventPoints = trajectory.filter(p => p.isEvent);
+    const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing');
 
     return (
         <div style={{ textAlign: "center", background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333" }}>
@@ -130,22 +138,21 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
                         fill="none"
                         stroke="#2196f3"
                         strokeWidth="2"
-                        strokeDasharray={0}
                         opacity={0.8}
                     />
                 )}
 
-                {/* Draw Events (Takeoff/Touchdown) */}
+                {/* Draw Events (Red dots for takeoff/landing) */}
                 {eventPoints.map((p, i) => (
                     <g key={`event-${i}`}>
                         <circle 
-                            cx={scaleX(p.lon)} cy={scaleY(p.lat)} r="5" 
-                            fill={p.isEvent === 'takeoff' ? "#4caf50" : "#f44336"} 
-                            stroke="#fff" strokeWidth="1"
+                            cx={scaleX(p.lon)} cy={scaleY(p.lat)} r="6" 
+                            fill="#f44336" 
+                            stroke="#fff" strokeWidth="1.5"
                         />
                         <text 
                             x={scaleX(p.lon)} y={scaleY(p.lat)} 
-                            fill="#fff" fontSize="10" fontWeight="bold" 
+                            fill="#fff" fontSize="9" fontWeight="bold" 
                             dy={p.isEvent === 'takeoff' ? -12 : 20} textAnchor="middle"
                             style={{ textShadow: "0 0 3px #000" }}
                         >
@@ -181,46 +188,43 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
         if (data.length === 0) return { departureTrajectory: [], arrivalTrajectory: [] };
 
-        // Find Takeoff: first point where sim_on_ground goes 1 -> 0
-        let takeoffIdx = -1;
-        for (let i = 1; i < data.length; i++) {
-            if (data[i-1].metrics.sim_on_ground > 0.5 && data[i].metrics.sim_on_ground < 0.5) {
-                takeoffIdx = i;
-                break;
-            }
-        }
-
-        // Find Touchdown: last point where sim_on_ground goes 0 -> 1
-        let touchdownIdx = -1;
-        for (let i = data.length - 1; i > 0; i--) {
-            if (data[i-1].metrics.sim_on_ground < 0.5 && data[i].metrics.sim_on_ground > 0.5) {
-                touchdownIdx = i;
-                break;
-            }
-        }
-
-        const mapToTraj = (row: FlightLogRow, event?: 'takeoff' | 'touchdown'): TrajectoryPoint => ({
+        const mapToTraj = (row: FlightLogRow, eventType?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'): TrajectoryPoint => ({
             lat: row.metrics.latitude,
             lon: row.metrics.longitude,
             onGround: row.metrics.sim_on_ground > 0.5,
-            isEvent: event
+            isEvent: eventType
         });
 
-        // Departure: 60s before takeoff to 60s after (approx)
+        // Find all event indices once for fast lookup
+        const eventIndices = new Map<string, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'>();
+        flight.events.forEach(e => {
+            eventIndices.set(e.timestamp, e.eventType);
+        });
+
+        // Takeoff point (first takeoff)
+        const firstTakeoff = flight.events.find(e => e.eventType === 'takeoff');
+        const takeoffIdx = firstTakeoff ? data.findIndex(row => row.timestamp === firstTakeoff.timestamp) : -1;
+
+        // Landing point (last landing)
+        const lastLanding = [...flight.events].reverse().find(e => e.eventType === 'landing');
+        const landingIdx = lastLanding ? data.findIndex(row => row.timestamp === lastLanding.timestamp) : -1;
+
+        // Departure: Window around first takeoff
         const depStart = Math.max(0, (takeoffIdx > -1 ? takeoffIdx : 0) - 60);
         const depEnd = Math.min(data.length, (takeoffIdx > -1 ? takeoffIdx : 60) + 60);
-        const departureTrajectory = data.slice(depStart, depEnd).map((row, i) => 
-            mapToTraj(row, (depStart + i) === takeoffIdx ? 'takeoff' : undefined)
+        const departureTrajectory = data.slice(depStart, depEnd).map(row => 
+            mapToTraj(row, eventIndices.get(row.timestamp))
         );
 
-        // Arrival: 120s before touchdown to end
-        const arrStart = Math.max(0, (touchdownIdx > -1 ? touchdownIdx : data.length) - 120);
-        const arrivalTrajectory = data.slice(arrStart).map((row, i) => 
-            mapToTraj(row, (arrStart + i) === touchdownIdx ? 'touchdown' : undefined)
+        // Arrival: Window around last landing
+        const arrStart = Math.max(0, (landingIdx > -1 ? landingIdx : data.length) - 120);
+        const arrEnd = Math.min(data.length, (landingIdx > -1 ? landingIdx : data.length) + 30);
+        const arrivalTrajectory = data.slice(arrStart, arrEnd).map(row => 
+            mapToTraj(row, eventIndices.get(row.timestamp))
         );
 
         return { departureTrajectory, arrivalTrajectory };
-    }, [data]);
+    }, [data, flight.events]);
 
     const chartData = useMemo(() => {
         if (data.length === 0) return [];
@@ -235,6 +239,17 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             bank: parseFloat(row.metrics.roll.toFixed(1)),
         }));
     }, [data]);
+
+    // Find first TOC and TOD for chart markings (using first one for simplicity in UI)
+    const tocPoint = useMemo(() => {
+        const toc = flight.events.find(e => e.eventType === 'top_of_climb');
+        return toc ? toc.timestamp.split(' ')[1] : null;
+    }, [flight.events]);
+
+    const todPoint = useMemo(() => {
+        const tod = flight.events.find(e => e.eventType === 'top_of_descent');
+        return tod ? tod.timestamp.split(' ')[1] : null;
+    }, [flight.events]);
 
     const handleExport = async () => {
         setExporting(true);
@@ -324,6 +339,16 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                     contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
                                     itemStyle={{ color: '#fff' }}
                                 />
+                                {tocPoint && (
+                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3">
+                                        <Label value="TOC" position="top" fill="#4caf50" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
+                                {todPoint && (
+                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3">
+                                        <Label value="TOD" position="top" fill="#ff9800" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
                                 <Area type="monotone" dataKey="altitude" stroke="#8884d8" fillOpacity={1} fill="url(#colorAlt)" />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -343,6 +368,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                     contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
                                 />
                                 <Legend />
+                                {tocPoint && <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3" label={{ value: 'TOC', fill: '#4caf50', fontSize: 10 }} />}
+                                {todPoint && <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', fill: '#ff9800', fontSize: 10 }} />}
                                 <Line type="monotone" dataKey="ias" name="Indicated Airspeed" stroke="#4caf50" dot={false} strokeWidth={2} />
                                 <Line type="monotone" dataKey="gs" name="Groundspeed" stroke="#2196f3" dot={false} strokeWidth={2} />
                             </LineChart>
