@@ -71,24 +71,24 @@ impl FlightAnalyzer {
         
         self.add_point(metrics.latitude, metrics.longitude);
         
-        if metrics.alt_msl > self.max_alt {
-            self.max_alt = metrics.alt_msl;
+        if metrics.gps_altitude_msl > self.max_alt {
+            self.max_alt = metrics.gps_altitude_msl;
         }
 
-        if metrics.gnd_spd > self.max_gs {
-            self.max_gs = metrics.gnd_spd;
+        if metrics.ground_speed > self.max_gs {
+            self.max_gs = metrics.ground_speed;
         }
 
-        let current_fuel = metrics.f_qty_l + metrics.f_qty_r;
+        let current_fuel = metrics.fuel_quantity_left + metrics.fuel_quantity_right;
         if self.initial_fuel <= 0.0 && current_fuel > 0.0 {
             self.initial_fuel = current_fuel;
         }
         self.final_fuel = current_fuel;
 
-        let on_ground = metrics.sim_on_ground > 0.5;
-        let ground_speed = metrics.gnd_spd;
-        let ias = metrics.ias;
-        let v_spd = metrics.v_spd;
+        let on_ground = metrics.is_on_ground > 0.5;
+        let ground_speed = metrics.ground_speed;
+        let ias = metrics.indicated_airspeed;
+        let v_spd = metrics.vertical_speed;
 
         match self.current_phase {
             FlightPhase::Parked => {
@@ -141,7 +141,7 @@ impl FlightAnalyzer {
             }
             FlightPhase::Descent => {
                 if !on_ground {
-                    if metrics.alt_msl < 3000.0 && v_spd < -200.0 { 
+                    if metrics.gps_altitude_msl < 3000.0 && v_spd < -200.0 { 
                          self.current_phase = FlightPhase::Approach;
                     } else if v_spd > 300.0 {
                         self.current_phase = FlightPhase::Climb;

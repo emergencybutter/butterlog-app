@@ -13,72 +13,72 @@ use rusqlite::{params, Connection};
 pub struct FlightMetrics {
     pub latitude: f64,
     pub longitude: f64,
-    pub alt_b: f64,
-    pub baro_a: f64,
-    pub alt_msl: f64,
-    pub oat: f64,
-    pub ias: f64,
-    pub gnd_spd: f64,
-    pub v_spd: f64,
-    pub pitch: f64,
-    pub roll: f64,
-    pub lat_ac: f64,
-    pub norm_ac: f64,
-    pub hdg: f64,
-    pub trk: f64,
-    pub volt1: f64,
-    pub volt2: f64,
-    pub amp1: f64,
-    pub f_qty_l: f64,
-    pub f_qty_r: f64,
-    pub e1_fflow: f64,
-    pub e1_oil_t: f64,
-    pub e1_oil_p: f64,
-    pub e1_map: f64,
-    pub e1_rpm: f64,
-    pub e1_pwr: f64,
-    pub e1_cht1: f64,
-    pub e1_cht2: f64,
-    pub e1_cht3: f64,
-    pub e1_cht4: f64,
-    pub e1_cht5: f64,
-    pub e1_cht6: f64,
-    pub e1_egt1: f64,
-    pub e1_egt2: f64,
-    pub e1_egt3: f64,
-    pub e1_egt4: f64,
-    pub e1_egt5: f64,
-    pub e1_egt6: f64,
-    pub e1_tit1: f64,
-    pub e1_tit2: f64,
-    pub alt_gps: f64,
-    pub tas: f64,
-    pub hsis: f64,
-    pub crs: f64,
-    pub nav1: f64,
-    pub nav2: f64,
-    pub com1: f64,
-    pub com2: f64,
-    pub hcdi: f64,
-    pub vcdi: f64,
-    pub wnd_spd: f64,
-    pub wnd_dr: f64,
-    pub wpt_dst: f64,
-    pub wpt_brg: f64,
-    pub mag_var: f64,
-    pub afcs_on: f64,
-    pub roll_m: f64,
-    pub pitch_m: f64,
-    pub roll_c: f64,
-    pub pitch_c: f64,
-    pub v_spd_g: f64,
-    pub gps_fix: f64,
-    pub hal: f64,
-    pub val: f64,
-    pub hpl_was: f64,
-    pub hpl_fd: f64,
-    pub vpl_was: f64,
-    pub sim_on_ground: f64,
+    pub indicated_altitude: f64,
+    pub altimeter_setting: f64,
+    pub gps_altitude_msl: f64,
+    pub outside_air_temp: f64,
+    pub indicated_airspeed: f64,
+    pub ground_speed: f64,
+    pub vertical_speed: f64,
+    pub pitch_angle: f64,
+    pub roll_angle: f64,
+    pub lateral_acceleration: f64,
+    pub normal_acceleration: f64,
+    pub heading: f64,
+    pub track: f64,
+    pub volts_1: f64,
+    pub volts_2: f64,
+    pub amps_1: f64,
+    pub fuel_quantity_left: f64,
+    pub fuel_quantity_right: f64,
+    pub engine_1_fuel_flow: f64,
+    pub engine_1_oil_temp: f64,
+    pub engine_1_oil_pressure: f64,
+    pub engine_1_manifold_pressure: f64,
+    pub engine_1_rpm: f64,
+    pub engine_1_percent_power: f64,
+    pub engine_1_cht_1: f64,
+    pub engine_1_cht_2: f64,
+    pub engine_1_cht_3: f64,
+    pub engine_1_cht_4: f64,
+    pub engine_1_cht_5: f64,
+    pub engine_1_cht_6: f64,
+    pub engine_1_egt_1: f64,
+    pub engine_1_egt_2: f64,
+    pub engine_1_egt_3: f64,
+    pub engine_1_egt_4: f64,
+    pub engine_1_egt_5: f64,
+    pub engine_1_egt_6: f64,
+    pub engine_1_tit_1: f64,
+    pub engine_1_tit_2: f64,
+    pub gps_altitude_wgs84: f64,
+    pub true_airspeed: f64,
+    pub hsi_source: f64,
+    pub selected_course: f64,
+    pub nav_1_frequency: f64,
+    pub nav_2_frequency: f64,
+    pub com_1_frequency: f64,
+    pub com_2_frequency: f64,
+    pub horizontal_cdi: f64,
+    pub vertical_cdi: f64,
+    pub wind_speed: f64,
+    pub wind_direction: f64,
+    pub waypoint_distance: f64,
+    pub waypoint_bearing: f64,
+    pub magnetic_variation: f64,
+    pub autopilot_active: f64,
+    pub roll_mode: f64,
+    pub pitch_mode: f64,
+    pub roll_command: f64,
+    pub pitch_command: f64,
+    pub vertical_speed_target: f64,
+    pub gps_fix_type: f64,
+    pub horizontal_alarm_limit: f64,
+    pub vertical_alarm_limit: f64,
+    pub horizontal_protection_level_waas: f64,
+    pub horizontal_protection_level_fd: f64,
+    pub vertical_protection_level_waas: f64,
+    pub is_on_ground: f64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -184,7 +184,74 @@ impl SimConnectMonitor {
         sc.subscribe_to_system_event(event_sim_start, "SimStart")?;
         sc.subscribe_to_system_event(event_sim_stop, "SimStop")?;
 
-        // ... existing metrics definitions ...
+        // Register all fields in the exact order they appear in FlightMetrics struct
+        sc.add_to_data_definition::<f64>(define_id, "PLANE LATITUDE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE LONGITUDE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "INDICATED ALTITUDE", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "KOHLSMAN SETTING HG", "inHg")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE ALTITUDE", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "AMBIENT TEMPERATURE", "celsius")?;
+        sc.add_to_data_definition::<f64>(define_id, "AIRSPEED INDICATED", "knots")?;
+        sc.add_to_data_definition::<f64>(define_id, "GROUND VELOCITY", "knots")?;
+        sc.add_to_data_definition::<f64>(define_id, "VERTICAL SPEED", "feet per minute")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE PITCH DEGREES", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE BANK DEGREES", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "ACCELERATION BODY X", "G force")?;
+        sc.add_to_data_definition::<f64>(define_id, "ACCELERATION BODY Z", "G force")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS GROUND TRUE TRACK", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "ELECTRICAL MAIN BUS VOLTAGE:1", "volts")?;
+        sc.add_to_data_definition::<f64>(define_id, "ELECTRICAL MAIN BUS VOLTAGE:2", "volts")?;
+        sc.add_to_data_definition::<f64>(define_id, "ELECTRICAL MAIN BUS AMPS:1", "amps")?;
+        sc.add_to_data_definition::<f64>(define_id, "FUEL LEFT QUANTITY", "gallons")?;
+        sc.add_to_data_definition::<f64>(define_id, "FUEL RIGHT QUANTITY", "gallons")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG FUEL FLOW GPH:1", "gallons per hour")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG OIL TEMPERATURE:1", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG OIL PRESSURE:1", "psi")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG MANIFOLD PRESSURE:1", "inHg")?;
+        sc.add_to_data_definition::<f64>(define_id, "GENERAL ENG RPM:1", "rpm")?;
+        sc.add_to_data_definition::<f64>(define_id, "GENERAL ENG PCT MAX RPM:1", "percent")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:1", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:2", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:3", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:4", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:5", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG CYLINDER HEAD TEMPERATURE:6", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:1", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:2", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:3", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:4", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:5", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:6", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG TURBINE INLET TEMPERATURE:1", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "ENG TURBINE INLET TEMPERATURE:2", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS POSITION ALT", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "AIRSPEED TRUE", "knots")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS DRIVES NAV1", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "NAV OBS:1", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "NAV ACTIVE FREQUENCY:1", "MHz")?;
+        sc.add_to_data_definition::<f64>(define_id, "NAV ACTIVE FREQUENCY:2", "MHz")?;
+        sc.add_to_data_definition::<f64>(define_id, "COM ACTIVE FREQUENCY:1", "MHz")?;
+        sc.add_to_data_definition::<f64>(define_id, "COM ACTIVE FREQUENCY:2", "MHz")?;
+        sc.add_to_data_definition::<f64>(define_id, "NAV CDI:1", "number")?;
+        sc.add_to_data_definition::<f64>(define_id, "NAV GSI:1", "number")?;
+        sc.add_to_data_definition::<f64>(define_id, "AMBIENT WIND VELOCITY", "knots")?;
+        sc.add_to_data_definition::<f64>(define_id, "AMBIENT WIND DIRECTION", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "nautical miles")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP BEARING", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "MAGVAR", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT MASTER", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT ROLL HOLD", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT PITCH HOLD", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT BANK HOLD ANGLE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT PITCH HOLD ANGLE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT VERTICAL HOLD VAR", "feet per minute")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS FIX TYPE", "enum")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS HORIZONTAL ERROR", "meters")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS VERTICAL ERROR", "meters")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for HPLwas
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for HPLfd
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for VPLwas
         sc.add_to_data_definition::<f64>(define_id, "SIM ON GROUND", "bool")?;
 
         // Aircraft info definitions
@@ -327,7 +394,7 @@ impl SimConnectMonitor {
                             if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
                                 last_log_time = now;
                                 
-                                let has_movement = data.gnd_spd.abs() > 0.1 || data.v_spd.abs() > 10.0;
+                                let has_movement = data.ground_speed.abs() > 0.1 || data.vertical_speed.abs() > 10.0;
                                 
                                 if has_movement {
                                     if let Some(new_phase) = analyzer.update(data) {
@@ -429,17 +496,17 @@ impl SimConnectMonitor {
                 ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69
             )",
             params![
-                now.format("%Y-%m-%d %H:%M:%S").to_string(), m.latitude, m.longitude, m.alt_b, m.baro_a, m.alt_msl, m.oat,
-                m.ias, m.gnd_spd, m.v_spd, m.pitch, m.roll, m.lat_ac, m.norm_ac,
-                m.hdg, m.trk, m.volt1, m.volt2, m.amp1, m.f_qty_l, m.f_qty_r,
-                m.e1_fflow, m.e1_oil_t, m.e1_oil_p, m.e1_map, m.e1_rpm, m.e1_pwr,
-                m.e1_cht1, m.e1_cht2, m.e1_cht3, m.e1_cht4, m.e1_cht5, m.e1_cht6,
-                m.e1_egt1, m.e1_egt2, m.e1_egt3, m.e1_egt4, m.e1_egt5, m.e1_egt6,
-                m.e1_tit1, m.e1_tit2, m.alt_gps, m.tas, m.hsis, m.crs, m.nav1,
-                m.nav2, m.com1, m.com2, m.hcdi, m.vcdi, m.wnd_spd, m.wnd_dr,
-                m.wpt_dst, m.wpt_brg, m.mag_var, m.afcs_on, m.roll_m, m.pitch_m,
-                m.roll_c, m.pitch_c, m.v_spd_g, m.gps_fix, m.hal, m.val,
-                m.hpl_was, m.hpl_fd, m.vpl_was, m.sim_on_ground
+                now.format("%Y-%m-%d %H:%M:%S").to_string(), m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
+                m.indicated_airspeed, m.ground_speed, m.vertical_speed, m.pitch_angle, m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
+                m.heading, m.track, m.volts_1, m.volts_2, m.amps_1, m.fuel_quantity_left, m.fuel_quantity_right,
+                m.engine_1_fuel_flow, m.engine_1_oil_temp, m.engine_1_oil_pressure, m.engine_1_manifold_pressure, m.engine_1_rpm, m.engine_1_percent_power,
+                m.engine_1_cht_1, m.engine_1_cht_2, m.engine_1_cht_3, m.engine_1_cht_4, m.engine_1_cht_5, m.engine_1_cht_6,
+                m.engine_1_egt_1, m.engine_1_egt_2, m.engine_1_egt_3, m.engine_1_egt_4, m.engine_1_egt_5, m.engine_1_egt_6,
+                m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, m.hsi_source, m.selected_course, m.nav_1_frequency,
+                m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
+                m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
+                m.roll_command, m.pitch_command, m.vertical_speed_target, m.gps_fix_type, m.horizontal_alarm_limit, m.vertical_alarm_limit,
+                m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas, m.is_on_ground
             ],
         )?;
         Ok(())
