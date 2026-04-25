@@ -245,7 +245,9 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
         }
 
         if let Some(row) = parse_csv_line_to_row(line, airports_db.as_deref()) {
-            analyzer.update(&row.metrics);
+            if let Some(new_phase) = analyzer.update(&row.metrics) {
+                crate::append_log(&app, format!("[Import] Detected flight phase: {:?}", new_phase));
+            }
             rows.push(row);
             
             if rows.len() % 500 == 0 {
