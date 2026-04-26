@@ -6,6 +6,13 @@ import { FlightLogs } from "./FlightLogs";
 import { FlightDetails } from "./FlightDetails";
 import "./App.css";
 
+interface FlightEvent {
+    timestamp: string;
+    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
+    latitude: number;
+    longitude: number;
+}
+
 interface FlightSummary {
     filename: string;
     startIcao: string;
@@ -19,6 +26,7 @@ interface FlightSummary {
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;
+    events: FlightEvent[];
 }
 
 interface FlightMetrics {
