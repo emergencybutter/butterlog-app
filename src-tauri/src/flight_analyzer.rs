@@ -1,28 +1,6 @@
 use std::collections::{VecDeque, HashMap};
 use crate::airports::AirportsDatabase;
-use crate::simconnect_monitor::FlightMetrics;
-
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
-pub enum FlightPhase {
-    Parked,
-    TaxiOut,
-    Takeoff,
-    Climb,
-    Cruise,
-    Descent,
-    Approach,
-    Landing,
-    TaxiIn,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FlightEvent {
-    pub timestamp: String,
-    pub event_type: String, // "takeoff", "landing", "top_of_climb", "top_of_descent"
-    pub latitude: f64,
-    pub longitude: f64,
-}
+use crate::models::{FlightMetrics, FlightPhase, FlightEvent};
 
 pub struct FlightAnalyzer {
     start_coords: Vec<(f64, f64)>,

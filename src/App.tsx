@@ -209,8 +209,13 @@ function App() {
   const [view, setView] = useState<"status" | "history" | "settings" | "details">("history");
   const [selectedFlight, setSelectedFlight] = useState<FlightSummary | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>("Parked");
+  const [simType, setSimType] = useState<string>("MSFS");
 
   useEffect(() => {
+    invoke<any>("get_config").then(cfg => {
+      setSimType(cfg.simulatorType === 'msfs' ? 'MSFS' : 'X-PLANE');
+    }).catch(console.error);
+
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
 
     const unlistenLogs = listen<string>("log-update", (event) => {
@@ -343,7 +348,7 @@ function App() {
               marginRight: "8px"
             }} />
             <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>
-              MSFS CONNECTED
+              {simType} CONNECTED
             </span>
           </div>
           {metrics && (

@@ -5,10 +5,95 @@ use chrono::NaiveDateTime;
 use crate::config::ConfigManager;
 use tauri::{AppHandle, Manager, Emitter};
 use rusqlite::{Connection, Row, params};
-use crate::simconnect_monitor::FlightMetrics;
-use crate::flight_analyzer::FlightEvent;
+use crate::models::{FlightMetrics, FlightEvent};
 use crate::airports::AirportsDatabase;
 use directories::UserDirs;
+
+pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS metrics (
+            timestamp TEXT PRIMARY KEY,
+            latitude REAL, longitude REAL, 
+            indicated_altitude REAL, altimeter_setting REAL, gps_altitude_msl REAL, outside_air_temp REAL,
+            indicated_airspeed REAL, ground_speed REAL, vertical_speed REAL, pitch_angle REAL, roll_angle REAL, 
+            lateral_acceleration REAL, normal_acceleration REAL,
+            heading REAL, track REAL, volts_1 REAL, volts_2 REAL, amps_1 REAL, 
+            fuel_quantity_left REAL, fuel_quantity_right REAL,
+            engine_1_fuel_flow REAL, engine_1_oil_temp REAL, engine_1_oil_pressure REAL, 
+            engine_1_manifold_pressure REAL, engine_1_rpm REAL, engine_1_percent_power REAL,
+            engine_1_cht_1 REAL, engine_1_cht_2 REAL, engine_1_cht_3 REAL, engine_1_cht_4 REAL, engine_1_cht_5 REAL, engine_1_cht_6 REAL,
+            engine_1_egt_1 REAL, engine_1_egt_2 REAL, engine_1_egt_3 REAL, engine_1_egt_4 REAL, engine_1_egt_5 REAL, engine_1_egt_6 REAL,
+            engine_1_tit_1 REAL, engine_1_tit_2 REAL, 
+            gps_altitude_wgs84 REAL, true_airspeed REAL, hsi_source REAL, selected_course REAL, 
+            nav_1_frequency REAL, nav_2_frequency REAL, com_1_frequency REAL, com_2_frequency REAL, 
+            horizontal_cdi REAL, vertical_cdi REAL, wind_speed REAL, wind_direction REAL,
+            waypoint_distance REAL, waypoint_bearing REAL, magnetic_variation REAL, 
+            autopilot_active REAL, roll_mode REAL, pitch_mode REAL,
+            roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
+            gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
+            horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
+            is_on_ground REAL,
+            xp_agl REAL DEFAULT 0.0, xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS summary (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )",
+        [],
+    )?;
+    Ok(())
+}
+
+pub fn insert_sqlite_row(conn: &Connection, now_str: &str, m: &FlightMetrics) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO metrics (
+            timestamp, latitude, longitude, 
+            indicated_altitude, altimeter_setting, gps_altitude_msl, outside_air_temp,
+            indicated_airspeed, ground_speed, vertical_speed, pitch_angle, roll_angle, 
+            lateral_acceleration, normal_acceleration,
+            heading, track, volts_1, volts_2, amps_1, 
+            fuel_quantity_left, fuel_quantity_right,
+            engine_1_fuel_flow, engine_1_oil_temp, engine_1_oil_pressure, 
+            engine_1_manifold_pressure, engine_1_rpm, engine_1_percent_power,
+            engine_1_cht_1, engine_1_cht_2, engine_1_cht_3, engine_1_cht_4, engine_1_cht_5, engine_1_cht_6,
+            engine_1_egt_1, engine_1_egt_2, engine_1_egt_3, engine_1_egt_4, engine_1_egt_5, engine_1_egt_6,
+            engine_1_tit_1, engine_1_tit_2, 
+            gps_altitude_wgs84, true_airspeed, hsi_source, selected_course, 
+            nav_1_frequency, nav_2_frequency, com_1_frequency, com_2_frequency, 
+            horizontal_cdi, vertical_cdi, wind_speed, wind_direction,
+            waypoint_distance, waypoint_bearing, magnetic_variation, 
+            autopilot_active, roll_mode, pitch_mode,
+            roll_command, pitch_command, vertical_speed_target, 
+            gps_fix_type, horizontal_alarm_limit, vertical_alarm_limit,
+            horizontal_protection_level_waas, horizontal_protection_level_fd, vertical_protection_level_waas, 
+            is_on_ground,
+            xp_agl, xp_prop_rpm, xp_gear_ratio
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
+            ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
+            ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61,
+            ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69, ?70, ?71, ?72
+        )",
+        params![
+            now_str, m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
+            m.indicated_airspeed, m.ground_speed, m.vertical_speed, m.pitch_angle, m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
+            m.heading, m.track, m.volts_1, m.volts_2, m.amps_1, m.fuel_quantity_left, m.fuel_quantity_right,
+            m.engine_1_fuel_flow, m.engine_1_oil_temp, m.engine_1_oil_pressure, m.engine_1_manifold_pressure, m.engine_1_rpm, m.engine_1_percent_power,
+            m.engine_1_cht_1, m.engine_1_cht_2, m.engine_1_cht_3, m.engine_1_cht_4, m.engine_1_cht_5, m.engine_1_cht_6,
+            m.engine_1_egt_1, m.engine_1_egt_2, m.engine_1_egt_3, m.engine_1_egt_4, m.engine_1_egt_5, m.engine_1_egt_6,
+            m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, m.hsi_source, m.selected_course, m.nav_1_frequency,
+            m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
+            m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
+            m.roll_command, m.pitch_command, m.vertical_speed_target, m.gps_fix_type, m.horizontal_alarm_limit, m.vertical_alarm_limit,
+            m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas, m.is_on_ground,
+            m.xp_agl, m.xp_prop_rpm, m.xp_gear_ratio
+        ],
+    )?;
+    Ok(())
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +219,9 @@ fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
         horizontal_protection_level_fd: row.get(66)?, 
         vertical_protection_level_waas: row.get(67)?, 
         is_on_ground: row.get(68)?,
+        xp_agl: row.get(69).unwrap_or(0.0),
+        xp_prop_rpm: row.get(70).unwrap_or(0.0),
+        xp_gear_ratio: row.get(71).unwrap_or(0.0),
     })
 }
 
@@ -436,6 +524,9 @@ fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> 
         horizontal_protection_level_fd: cols[69].parse().unwrap_or(0.0),
         vertical_protection_level_waas: cols[70].parse().unwrap_or(0.0),
         is_on_ground: sim_on_ground,
+        xp_agl: 0.0,
+        xp_prop_rpm: 0.0,
+        xp_gear_ratio: 0.0,
     };
 
     Some(FlightLogRow { timestamp, metrics })
@@ -454,61 +545,12 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
 
     let conn = Connection::open(&path)?;
     
-    // Create tables
-    conn.execute(
-            "CREATE TABLE IF NOT EXISTS metrics (
-                timestamp TEXT PRIMARY KEY,
-                latitude REAL, longitude REAL, 
-                indicated_altitude REAL, altimeter_setting REAL, gps_altitude_msl REAL, outside_air_temp REAL,
-                indicated_airspeed REAL, ground_speed REAL, vertical_speed REAL, pitch_angle REAL, roll_angle REAL, 
-                lateral_acceleration REAL, normal_acceleration REAL,
-                heading REAL, track REAL, volts_1 REAL, volts_2 REAL, amps_1 REAL, 
-                fuel_quantity_left REAL, fuel_quantity_right REAL,
-                engine_1_fuel_flow REAL, engine_1_oil_temp REAL, engine_1_oil_pressure REAL, 
-                engine_1_manifold_pressure REAL, engine_1_rpm REAL, engine_1_percent_power REAL,
-                engine_1_cht_1 REAL, engine_1_cht_2 REAL, engine_1_cht_3 REAL, engine_1_cht_4 REAL, engine_1_cht_5 REAL, engine_1_cht_6 REAL,
-                engine_1_egt_1 REAL, engine_1_egt_2 REAL, engine_1_egt_3 REAL, engine_1_egt_4 REAL, engine_1_egt_5 REAL, engine_1_egt_6 REAL,
-                engine_1_tit_1 REAL, engine_1_tit_2 REAL, 
-                gps_altitude_wgs84 REAL, true_airspeed REAL, hsi_source REAL, selected_course REAL, 
-                nav_1_frequency REAL, nav_2_frequency REAL, com_1_frequency REAL, com_2_frequency REAL, 
-                horizontal_cdi REAL, vertical_cdi REAL, wind_speed REAL, wind_direction REAL,
-                waypoint_distance REAL, waypoint_bearing REAL, magnetic_variation REAL, 
-                autopilot_active REAL, roll_mode REAL, pitch_mode REAL,
-                roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
-                gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
-                horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
-                is_on_ground REAL
-            )",
-            [],
-        )?;
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS summary (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )",
-        [],
-    )?;
+    // Create tables using centralized function
+    init_sqlite_db(&conn)?;
 
-    // Insert metrics
-    {
-        let mut stmt = conn.prepare("INSERT OR REPLACE INTO metrics VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61, ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69)")?;
-        
-        for row in rows {
-            let m = row.metrics;
-            stmt.execute(params![
-                row.timestamp, m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
-                m.indicated_airspeed, m.ground_speed, m.vertical_speed, m.pitch_angle, m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
-                m.heading, m.track, m.volts_1, m.volts_2, m.amps_1, m.fuel_quantity_left, m.fuel_quantity_right,
-                m.engine_1_fuel_flow, m.engine_1_oil_temp, m.engine_1_oil_pressure, m.engine_1_manifold_pressure, m.engine_1_rpm, m.engine_1_percent_power,
-                m.engine_1_cht_1, m.engine_1_cht_2, m.engine_1_cht_3, m.engine_1_cht_4, m.engine_1_cht_5, m.engine_1_cht_6,
-                m.engine_1_egt_1, m.engine_1_egt_2, m.engine_1_egt_3, m.engine_1_egt_4, m.engine_1_egt_5, m.engine_1_egt_6,
-                m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, m.hsi_source, m.selected_course, m.nav_1_frequency,
-                m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
-                m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
-                m.roll_command, m.pitch_command, m.vertical_speed_target, m.gps_fix_type, m.horizontal_alarm_limit, m.vertical_alarm_limit,
-                m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas, m.is_on_ground
-            ])?;
-        }
+    // Insert metrics using centralized function
+    for row in rows {
+        insert_sqlite_row(&conn, &row.timestamp, &row.metrics)?;
     }
 
     // Determine ICAOs

@@ -6,6 +6,13 @@ use tauri::AppHandle;
 use tauri::Manager;
 use directories::UserDirs;
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SimulatorType {
+    Msfs,
+    Xplane,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -17,6 +24,8 @@ pub struct Config {
     pub auto_upload_screenshots: bool,
     pub enable_webhook: bool,
     pub webhook_address: String,
+    pub simulator_type: SimulatorType,
+    pub xplane_websocket_url: String,
 }
 
 impl Config {
@@ -48,6 +57,8 @@ impl Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_address: "".to_string(),
+            simulator_type: SimulatorType::Msfs,
+            xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
         }
     }
 }
@@ -64,6 +75,8 @@ impl Default for Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_address: "".to_string(),
+            simulator_type: SimulatorType::Msfs,
+            xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
         }
     }
 }

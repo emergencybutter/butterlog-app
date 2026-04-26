@@ -10,6 +10,8 @@ interface Config {
     autoUploadScreenshots: boolean;
     enableWebhook: boolean;
     webhookAddress: string;
+    simulatorType: 'msfs' | 'xplane';
+    xplaneWebsocketUrl: string;
 }
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -114,6 +116,35 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                 <span>Auto-upload Screenshots</span>
                             </label>
                         </div>
+                    </div>
+                </section>
+
+                <section>
+                    <h4>Simulator</h4>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <div className="setting-input-group">
+                            <label>Simulator Type:</label>
+                            <select 
+                                className="setting-input"
+                                value={config.simulatorType}
+                                onChange={(e) => handleChange("simulatorType", e.target.value)}
+                            >
+                                <option value="msfs">Microsoft Flight Simulator (SimConnect)</option>
+                                <option value="xplane">X-Plane 12 (REST/WebSocket)</option>
+                            </select>
+                        </div>
+                        {config.simulatorType === 'xplane' && (
+                            <div className="setting-input-group">
+                                <label>X-Plane WebSocket URL:</label>
+                                <input 
+                                    type="text" 
+                                    className="setting-input"
+                                    value={config.xplaneWebsocketUrl} 
+                                    onChange={(e) => handleChange("xplaneWebsocketUrl", e.target.value)}
+                                    placeholder="ws://localhost:8080/api/v1/telemetry"
+                                />
+                            </div>
+                        )}
                     </div>
                 </section>
 

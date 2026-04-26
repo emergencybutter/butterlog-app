@@ -1,20 +1,46 @@
 mod airports;
 mod runways;
-mod simconnect_monitor;
+mod models;
+mod sim_monitor;
 mod flight_analyzer;
 mod config;
 mod flight_log_manager;
 
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use simconnect_monitor::{FlightMetrics, SimConnectMonitor};
+use models::FlightMetrics;
+use sim_monitor::SimMonitor;
+use sim_monitor::msfs::SimConnectMonitor;
+use sim_monitor::xplane::XPlaneMonitor;
 use std::path::PathBuf;
-use config::{Config, ConfigManager};
+use config::{Config, ConfigManager, SimulatorType};
 use flight_log_manager::{FlightSummary, scan_logs, get_flight_data, export_flight_to_csv, import_flight_from_csv};
 
 struct LogState(Mutex<Vec<String>>);
+
+pub struct UnifiedMonitor {
+    monitor: Mutex<Option<Arc<dyn SimMonitor>>>,
+}
+
+impl UnifiedMonitor {
+    pub fn new() -> Self {
+        Self {
+            monitor: Mutex::new(None),
+        }
+    }
+
+    pub fn set_monitor(&self, monitor: Arc<dyn SimMonitor>) {
+        let mut m = self.monitor.lock().unwrap();
+        *m = Some(monitor);
+    }
+
+    pub fn get_monitor(&self) -> Option<Arc<dyn SimMonitor>> {
+        self.monitor.lock().unwrap().clone()
+    }
+}
 
 pub(crate) fn append_log(app: &AppHandle, message: String) {
     let state = app.state::<LogState>();
@@ -44,29 +70,62 @@ async fn get_config_async(state: State<'_, ConfigManager>) -> Result<Config, Str
 }
 
 #[tauri::command]
-async fn set_config_async(state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
-    state.update_config(config)
+async fn set_config_async(app: AppHandle, state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
+    let old_config = state.get_config();
+    let res = state.update_config(config.clone());
+    
+    if res.is_ok() && old_config.simulator_type != config.simulator_type {
+        // Restart monitor with new sim type
+        let unified = app.state::<UnifiedMonitor>();
+        if let Some(m) = unified.get_monitor() {
+            m.stop();
+        }
+        
+        let new_monitor: Arc<dyn SimMonitor> = match config.simulator_type {
+            SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
+            SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
+        };
+        
+        unified.set_monitor(new_monitor.clone());
+        let _ = new_monitor.start(app.app_handle().clone(), None);
+    }
+    
+    res
 }
 
 #[tauri::command]
-fn start_monitoring(app: AppHandle, state: State<'_, SimConnectMonitor>, log_path: Option<String>) -> Result<(), String> {
-    let path = log_path.map(PathBuf::from);
-    state.start(app, path).map_err(|e| e.to_string())
+fn start_monitoring(app: AppHandle, state: State<'_, UnifiedMonitor>, log_path: Option<String>) -> Result<(), String> {
+    if let Some(m) = state.get_monitor() {
+        let path = log_path.map(PathBuf::from);
+        m.start(app, path).map_err(|e| e.to_string())
+    } else {
+        Err("No monitor initialized".to_string())
+    }
 }
 
 #[tauri::command]
-fn stop_monitoring(state: State<'_, SimConnectMonitor>) {
-    state.stop();
+fn stop_monitoring(state: State<'_, UnifiedMonitor>) {
+    if let Some(m) = state.get_monitor() {
+        m.stop();
+    }
 }
 
 #[tauri::command]
-fn get_metrics(state: State<'_, SimConnectMonitor>) -> FlightMetrics {
-    state.get_metrics()
+fn get_metrics(state: State<'_, UnifiedMonitor>) -> FlightMetrics {
+    if let Some(m) = state.get_monitor() {
+        m.get_metrics()
+    } else {
+        FlightMetrics::default()
+    }
 }
 
 #[tauri::command]
-fn is_sim_connected(state: State<'_, SimConnectMonitor>) -> bool {
-    state.is_connected()
+fn is_sim_connected(state: State<'_, UnifiedMonitor>) -> bool {
+    if let Some(m) = state.get_monitor() {
+        m.is_connected()
+    } else {
+        false
+    }
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -104,7 +163,7 @@ fn get_runways(
 pub fn run() {
     tauri::Builder::default()
         .manage(LogState(Mutex::new(Vec::new())))
-        .manage(SimConnectMonitor::new())
+        .manage(UnifiedMonitor::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -164,9 +223,17 @@ pub fn run() {
                 }
             });
 
-            // Automatically start SimConnect monitoring
-            let monitor = app.state::<SimConnectMonitor>();
-            let _ = monitor.start(app.handle().clone(), None);
+            // Automatically start monitoring based on config
+            let config = app.state::<ConfigManager>().get_config();
+            let unified = app.state::<UnifiedMonitor>();
+            
+            let monitor: Arc<dyn SimMonitor> = match config.simulator_type {
+                SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
+                SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
+            };
+            
+            unified.set_monitor(monitor.clone());
+            let _ = monitor.start(app.app_handle().clone(), None);
 
             Ok(())
         })
