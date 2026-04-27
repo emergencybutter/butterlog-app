@@ -264,16 +264,48 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         }));
     }, [data]);
 
-    // Find first TOC and TOD for chart markings (using first one for simplicity in UI)
+    // Find indices in chartData for event markers
+    const findChartTime = (eventTime: string) => {
+        if (!eventTime) return null;
+        const timePart = eventTime.split(' ')[1];
+        // Try exact match first
+        if (chartData.some(d => d.time === timePart)) return timePart;
+        
+        // Find closest time in sampled chartData
+        let best = null;
+        let minDiff = Infinity;
+        const target = new Date(`1970-01-01T${timePart}`).getTime();
+        
+        for (const d of chartData) {
+            const current = new Date(`1970-01-01T${d.time}`).getTime();
+            const diff = Math.abs(current - target);
+            if (diff < minDiff) {
+                minDiff = diff;
+                best = d.time;
+            }
+        }
+        return minDiff < 10000 ? best : null; // Within 10s
+    };
+
     const tocPoint = useMemo(() => {
         const toc = flight.events.find(e => e.eventType === 'top_of_climb');
-        return toc ? toc.timestamp.split(' ')[1] : null;
-    }, [flight.events]);
+        return toc ? findChartTime(toc.timestamp) : null;
+    }, [flight.events, chartData]);
 
     const todPoint = useMemo(() => {
         const tod = flight.events.find(e => e.eventType === 'top_of_descent');
-        return tod ? tod.timestamp.split(' ')[1] : null;
-    }, [flight.events]);
+        return tod ? findChartTime(tod.timestamp) : null;
+    }, [flight.events, chartData]);
+
+    const takeoffPoint = useMemo(() => {
+        const takeoff = flight.events.find(e => e.eventType === 'takeoff');
+        return takeoff ? findChartTime(takeoff.timestamp) : null;
+    }, [flight.events, chartData]);
+
+    const landingPoint = useMemo(() => {
+        const landing = [...flight.events].reverse().find(e => e.eventType === 'landing');
+        return landing ? findChartTime(landing.timestamp) : null;
+    }, [flight.events, chartData]);
 
     const handleExport = async () => {
         setExporting(true);
@@ -363,6 +395,16 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                     contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
                                     itemStyle={{ color: '#fff' }}
                                 />
+                                {takeoffPoint && (
+                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2}>
+                                        <Label value="LIFT OFF" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
+                                {landingPoint && (
+                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2}>
+                                        <Label value="TOUCHDOWN" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
                                 {tocPoint && (
                                     <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3">
                                         <Label value="TOC" position="top" fill="#4caf50" fontSize={10} fontWeight="bold" />
@@ -392,8 +434,26 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                     contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
                                 />
                                 <Legend />
-                                {tocPoint && <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3" label={{ value: 'TOC', fill: '#4caf50', fontSize: 10 }} />}
-                                {todPoint && <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', fill: '#ff9800', fontSize: 10 }} />}
+                                {takeoffPoint && (
+                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2}>
+                                        <Label value="LIFT OFF" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
+                                {landingPoint && (
+                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2}>
+                                        <Label value="TOUCHDOWN" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
+                                {tocPoint && (
+                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3">
+                                        <Label value="TOC" position="top" fill="#4caf50" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
+                                {todPoint && (
+                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3">
+                                        <Label value="TOD" position="top" fill="#ff9800" fontSize={10} fontWeight="bold" />
+                                    </ReferenceLine>
+                                )}
                                 <Line type="monotone" dataKey="ias" name="Indicated Airspeed" stroke="#4caf50" dot={false} strokeWidth={2} />
                                 <Line type="monotone" dataKey="gs" name="Groundspeed" stroke="#2196f3" dot={false} strokeWidth={2} />
                             </LineChart>
@@ -413,6 +473,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                 <Tooltip 
                                     contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
                                 />
+                                {takeoffPoint && <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'LIFT OFF', fill: '#f44336', fontSize: 10, position: 'top' }} />}
+                                {landingPoint && <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'TOUCHDOWN', fill: '#f44336', fontSize: 10, position: 'top' }} />}
                                 <Line type="monotone" dataKey="vs" name="Vertical Speed" stroke="#f44336" dot={false} strokeWidth={1.5} />
                             </LineChart>
                         </ResponsiveContainer>
