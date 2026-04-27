@@ -44,7 +44,7 @@ impl FlightAnalyzer {
         self.landed = false;
     }
 
-    pub fn update(&mut self, metrics: &FlightMetrics) -> Option<FlightPhase> {
+    pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
         let old_phase = self.current_phase;
         
         self.add_point(metrics.latitude, metrics.longitude);
@@ -86,35 +86,35 @@ impl FlightAnalyzer {
             FlightPhase::Takeoff => {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                    self.add_event("takeoff", metrics.latitude, metrics.longitude);
+                    self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp);
                 }
             }
             FlightPhase::Climb => {
                 if !on_ground {
                     if v_spd.abs() < 200.0 && ias > 60.0 {
                         self.current_phase = FlightPhase::Cruise;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude);
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp);
                     } else if v_spd < -400.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude);
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude);
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp);
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp);
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
                 }
             }
             FlightPhase::Cruise => {
                 if !on_ground {
                     if v_spd < -500.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude);
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp);
                     } else if v_spd > 500.0 {
                         self.current_phase = FlightPhase::Climb;
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
                 }
             }
             FlightPhase::Descent => {
@@ -128,13 +128,13 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
                 }
             }
             FlightPhase::Approach => {
                 if on_ground {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                 }
@@ -164,9 +164,9 @@ impl FlightAnalyzer {
         }
     }
 
-    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64) {
+    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64, timestamp: &str) {
         self.events.push(FlightEvent {
-            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            timestamp: timestamp.to_string(),
             event_type: event_type.to_string(),
             latitude: lat,
             longitude: lon,

@@ -190,9 +190,13 @@ impl SimConnectMonitor {
                              if let Some(db) = app.try_state::<AirportsDatabase>() {
                                 let start_icao = analyzer.find_start_icao(&db);
                                 let end_icao = analyzer.find_end_icao(&db);
+                                let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+                                let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                                 
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
+                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_icao", end_icao]);
+                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_name", end_name]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_title", aircraft_info.title]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_type", aircraft_info.atc_type]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_model", aircraft_info.atc_model]);
@@ -203,24 +207,8 @@ impl SimConnectMonitor {
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
                                 }
 
-                                if let Some(path) = current_log_path.take() {
-                                    if let Some(old_filename) = path.file_name().and_then(|f| f.to_str()) {
-                                        let new_filename = old_filename.replace("butterlog_", &format!("butterlog_{}_{}_", start_icao, end_icao));
-                                        let new_path = path.with_file_name(new_filename);
-                                        
-                                        drop(db_conn.take());
-                                        
-                                        match std::fs::rename(&path, &new_path) {
-                                            Ok(_) => {
-                                                crate::append_log(app, format!("Flight log renamed to: {:?}", new_path.file_name().unwrap()));
-                                                let _ = app.emit("flight-logs-updated", ());
-                                            }
-                                            Err(e) => {
-                                                crate::append_log(app, format!("Failed to rename log file: {}", e));
-                                            }
-                                        }
-                                    }
-                                }
+                                drop(db_conn.take());
+                                let _ = app.emit("flight-logs-updated", ());
                              }
                         }
                         
@@ -294,19 +282,21 @@ impl SimConnectMonitor {
                                 let has_movement = data.ground_speed.abs() > 0.1 || data.vertical_speed.abs() > 10.0;
                                 
                                 if has_movement {
-                                    if let Some(new_phase) = analyzer.update(data) {
+                                    let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+                                    if let Some(new_phase) = analyzer.update(data, &now_str) {
                                         let _ = app.emit("flight-phase-change", new_phase);
 
                                         if new_phase == crate::models::FlightPhase::Takeoff {
                                             if let (Some(ref conn), Some(db)) = (&db_conn, app.try_state::<AirportsDatabase>()) {
                                                 let start_icao = analyzer.find_start_icao(&db);
+                                                let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
                                             }
                                         }
                                     }
 
                                     if let Some(ref conn) = db_conn {
-                                        let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
                                         if let Err(e) = insert_sqlite_row(conn, &now_str, data) {
                                             crate::append_log(app, format!("Failed to insert SQLite row: {}", e));
                                         }

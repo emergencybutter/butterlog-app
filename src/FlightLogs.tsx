@@ -6,7 +6,9 @@ import { listen } from "@tauri-apps/api/event";
 interface FlightSummary {
     filename: string;
     startIcao: string;
+    startAirportName: string;
     endIcao: string;
+    endAirportName: string;
     startTime: string;
     endTime: string;
     durationMinutes: number;
@@ -20,11 +22,17 @@ interface FlightSummary {
     events: any[];
 }
 
+interface ImportProgress {
+    state: 'parsing' | 'saving' | 'finalizing';
+    current: number;
+    total: number;
+}
+
 export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSummary) => void }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState(false);
-    const [importCount, setImportCount] = useState(0);
+    const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
     const loadSummaries = () => {
@@ -41,11 +49,11 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
         const unlistenUpdated = listen("flight-logs-updated", () => {
             loadSummaries();
             setImporting(false);
-            setImportCount(0);
+            setImportProgress(null);
         });
 
-        const unlistenProgress = listen<number>("import-progress", (event) => {
-            setImportCount(event.payload);
+        const unlistenProgress = listen<ImportProgress>("import-progress", (event) => {
+            setImportProgress(event.payload);
         });
 
         return () => {
@@ -57,20 +65,36 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
     const handleImport = async () => {
         try {
             const selected = await open({
-                multiple: false,
+                multiple: true,
                 filters: [{ name: 'CSV', extensions: ['csv'] }]
             });
 
-            if (selected && typeof selected === 'string') {
+            if (selected && Array.isArray(selected)) {
                 setImporting(true);
-                setImportCount(0);
+                for (let i = 0; i < selected.length; i++) {
+                    const path = selected[i];
+                    setImportProgress(null); // Reset for each file
+                    // We can add a "bulk" progress state if we want, but per-file is good
+                    await invoke("import_flight_from_csv", { path });
+                }
+                // Explicitly refresh after all success
+                loadSummaries();
+                setImporting(false);
+                setImportProgress(null);
+            } else if (selected && typeof selected === 'string') {
+                // Fallback for single selection if multiple: true still returns a string in some envs
+                setImporting(true);
+                setImportProgress(null);
                 await invoke("import_flight_from_csv", { path: selected });
+                loadSummaries();
+                setImporting(false);
+                setImportProgress(null);
             }
 
         } catch (e) {
             alert(`Import failed: ${e}`);
             setImporting(false);
-            setImportCount(0);
+            setImportProgress(null);
         }
     };
 
@@ -101,7 +125,11 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                     alignItems: "center",
                     gap: "10px"
                 }}>
-                    <span className="import-spinner">↻</span> Importing flight data... ({importCount.toLocaleString()} rows)
+                    <span className="import-spinner">↻</span> 
+                    {importProgress?.state === 'saving' ? 'Saving to disk...' : 
+                     importProgress?.state === 'finalizing' ? 'Analyzing flight data...' : 
+                     'Ingesting CSV data...'} 
+                    {importProgress ? ` (${importProgress.current.toLocaleString()} / ${importProgress.total.toLocaleString()} rows)` : " (calculating...)"}
                 </div>
             )}
 
@@ -125,9 +153,12 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                 <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                     <div>
                                         <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: "2px" }}>{s.aircraftTitle}</div>
-                                        <span style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#4caf50" }}>
+                                        <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#4caf50" }}>
                                             {s.startIcao} → {s.endIcao}
-                                        </span>
+                                        </div>
+                                        <div style={{ fontSize: "0.7rem", color: "#aaa" }}>
+                                            {s.startAirportName} to {s.endAirportName}
+                                        </div>
                                     </div>
                                     <span style={{ color: "#aaa", fontSize: "0.9rem" }}>{s.startTime.split(' ')[0]}</span>
                                 </div>

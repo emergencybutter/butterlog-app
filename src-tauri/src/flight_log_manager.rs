@@ -100,7 +100,9 @@ pub fn insert_sqlite_row(conn: &Connection, now_str: &str, m: &FlightMetrics) ->
 pub struct FlightSummary {
     pub filename: String,
     pub start_icao: String,
+    pub start_airport_name: String,
     pub end_icao: String,
+    pub end_airport_name: String,
     pub start_time: String,
     pub end_time: String,
     pub duration_minutes: i64,
@@ -126,11 +128,12 @@ pub async fn get_flight_data(app: AppHandle, filename: String) -> Result<Vec<Fli
     let app_data_dir = app.path().app_data_dir().unwrap();
     let log_dir = app_data_dir.join("flightlogs");
 
-    let path = log_dir.join(filename);
+    let path = log_dir.join(&filename);
     if !path.exists() {
         return Err("File not found".to_string());
     }
 
+    crate::append_log(&app, format!("Opening flight log for data retrieval: {}", filename));
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC").map_err(|e| e.to_string())?;
     
@@ -265,7 +268,9 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     };
 
     let start_icao = get_summary("departure_icao");
+    let start_airport_name = get_summary("departure_name");
     let end_icao = get_summary("arrival_icao");
+    let end_airport_name = get_summary("arrival_name");
     let aircraft_title = get_summary("aircraft_title");
     let aircraft_type = get_summary("aircraft_type");
     let aircraft_model = get_summary("aircraft_model");
@@ -288,7 +293,9 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     Some(FlightSummary {
         filename,
         start_icao,
+        start_airport_name,
         end_icao,
+        end_airport_name,
         start_time,
         end_time,
         duration_minutes: duration.num_minutes(),
@@ -384,28 +391,31 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
     let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
     let airports_db = app.try_state::<AirportsDatabase>();
 
+    let total_rows = lines.iter().filter(|l| !l.starts_with('#') && !l.starts_with("Lcl Date") && !l.is_empty()).count();
+    crate::append_log(&app, format!("Successfully parsed {} data points. Saving to internal database...", total_rows));
+
+    let mut current_row = 0;
     for line in lines {
         if line.starts_with('#') || line.starts_with("Lcl Date") || line.is_empty() {
             continue;
         }
 
         if let Some(row) = parse_csv_line_to_row(line, airports_db.as_deref()) {
-            if let Some(new_phase) = analyzer.update(&row.metrics) {
+            if let Some(new_phase) = analyzer.update(&row.metrics, &row.timestamp) {
                 crate::append_log(&app, format!("[Import] Detected flight phase: {:?}", new_phase));
             }
             rows.push(row);
             
-            if rows.len() % 500 == 0 {
-                let _ = app.emit("import-progress", rows.len());
+            current_row += 1;
+            if current_row % 500 == 0 || current_row == total_rows {
+                let _ = app.emit("import-progress", serde_json::json!({
+                    "state": "parsing",
+                    "current": current_row,
+                    "total": total_rows
+                }));
             }
         }
     }
-
-    if rows.is_empty() {
-        return Err("No valid data points found in CSV".to_string());
-    }
-
-    crate::append_log(&app, format!("Successfully parsed {} data points. Saving to internal database...", rows.len()));
 
     let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path).map_err(|e| e.to_string())?;
     
@@ -543,21 +553,46 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
     let temp_filename = format!("butterlog_import_{}.db", filename_ts);
     let path = log_dir.join(&temp_filename);
 
-    let conn = Connection::open(&path)?;
+    let mut conn = Connection::open(&path)?;
     
     // Create tables using centralized function
     init_sqlite_db(&conn)?;
 
-    // Insert metrics using centralized function
-    for row in rows {
-        insert_sqlite_row(&conn, &row.timestamp, &row.metrics)?;
+    // Insert metrics using a transaction for massive performance boost
+    let total_rows = rows.len();
+    {
+        let tx = conn.transaction().map_err(|e| anyhow::anyhow!(e))?;
+        for (i, row) in rows.iter().enumerate() {
+            insert_sqlite_row(&tx, &row.timestamp, &row.metrics).map_err(|e| anyhow::anyhow!(e))?;
+            
+            let current = i + 1;
+            if current % 1000 == 0 || current == total_rows {
+                let _ = app.emit("import-progress", serde_json::json!({
+                    "state": "saving",
+                    "current": current,
+                    "total": total_rows
+                }));
+            }
+        }
+        tx.commit().map_err(|e| anyhow::anyhow!(e))?;
     }
 
-    // Determine ICAOs
-    let (start_icao, end_icao) = if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
-        (analyzer.find_start_icao(&db), analyzer.find_end_icao(&db))
+    // Emit finalizing state
+    let _ = app.emit("import-progress", serde_json::json!({
+        "state": "finalizing",
+        "current": total_rows,
+        "total": total_rows
+    }));
+
+    // Determine ICAOs and Names
+    let (start_icao, start_name, end_icao, end_name) = if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
+        let s_icao = analyzer.find_start_icao(&db);
+        let e_icao = analyzer.find_end_icao(&db);
+        let s_name = db.get_by_ident(&s_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+        let e_name = db.get_by_ident(&e_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+        (s_icao, s_name, e_icao, e_name)
     } else {
-        ("XXXX".to_string(), "XXXX".to_string())
+        ("XXXX".to_string(), "Unknown".to_string(), "XXXX".to_string(), "Unknown".to_string())
     };
 
     // Populate summary
@@ -565,7 +600,9 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
     let import_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let summary_data = [
         ("departure_icao", start_icao.clone()),
+        ("departure_name", start_name.clone()),
         ("arrival_icao", end_icao.clone()),
+        ("arrival_name", end_name.clone()),
         ("aircraft_title", aircraft_title.to_string()),
         ("aircraft_type", "Imported".to_string()),
         ("aircraft_model", "Imported".to_string()),
@@ -583,10 +620,5 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
 
     drop(conn);
 
-    // Rename file
-    let final_filename = format!("butterlog_{}_{}_{}.db", start_icao, end_icao, filename_ts);
-    let final_path = log_dir.join(&final_filename);
-    fs::rename(&path, &final_path)?;
-
-    Ok(parse_db_file(&final_path).unwrap())
+    Ok(parse_db_file(&path).unwrap())
 }

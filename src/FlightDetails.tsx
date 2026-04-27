@@ -32,7 +32,9 @@ interface FlightEvent {
 interface FlightSummary {
     filename: string;
     startIcao: string;
+    startAirportName: string;
     endIcao: string;
+    endAirportName: string;
     startTime: string;
     endTime: string;
     durationMinutes: number;
@@ -188,6 +190,28 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
         if (data.length === 0) return { departureTrajectory: [], arrivalTrajectory: [] };
 
+        // Helper to find closest data index for a given timestamp
+        const findClosestIndex = (timestamp: string) => {
+            // Binary search or simple find if data is sorted
+            let bestIdx = -1;
+            let minDiff = Infinity;
+            
+            const targetTs = new Date(timestamp.replace(' ', 'T')).getTime();
+            
+            for (let i = 0; i < data.length; i++) {
+                const currentTs = new Date(data[i].timestamp.replace(' ', 'T')).getTime();
+                const diff = Math.abs(currentTs - targetTs);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIdx = i;
+                }
+                // Optimization: if diff starts increasing, we passed the target
+                if (diff > minDiff && i > 0) break; 
+            }
+            // Only return if it's within a reasonable window (e.g. 5 seconds)
+            return minDiff < 5000 ? bestIdx : -1;
+        };
+
         const mapToTraj = (row: FlightLogRow, eventType?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'): TrajectoryPoint => ({
             lat: row.metrics.latitude,
             lon: row.metrics.longitude,
@@ -195,32 +219,32 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             isEvent: eventType
         });
 
-        // Find all event indices once for fast lookup
-        const eventIndices = new Map<string, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'>();
-        flight.events.forEach(e => {
-            eventIndices.set(e.timestamp, e.eventType);
-        });
-
-        // Takeoff point (first takeoff)
+        // Find key event indices using closest match
         const firstTakeoff = flight.events.find(e => e.eventType === 'takeoff');
-        const takeoffIdx = firstTakeoff ? data.findIndex(row => row.timestamp === firstTakeoff.timestamp) : -1;
+        const takeoffIdx = firstTakeoff ? findClosestIndex(firstTakeoff.timestamp) : -1;
 
-        // Landing point (last landing)
         const lastLanding = [...flight.events].reverse().find(e => e.eventType === 'landing');
-        const landingIdx = lastLanding ? data.findIndex(row => row.timestamp === lastLanding.timestamp) : -1;
+        const landingIdx = lastLanding ? findClosestIndex(lastLanding.timestamp) : -1;
+
+        // Map all events to their closest indices for the traj mapper
+        const eventIndexMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'>();
+        flight.events.forEach(e => {
+            const idx = findClosestIndex(e.timestamp);
+            if (idx > -1) eventIndexMap.set(idx, e.eventType);
+        });
 
         // Departure: Window around first takeoff
         const depStart = Math.max(0, (takeoffIdx > -1 ? takeoffIdx : 0) - 60);
         const depEnd = Math.min(data.length, (takeoffIdx > -1 ? takeoffIdx : 60) + 60);
-        const departureTrajectory = data.slice(depStart, depEnd).map(row => 
-            mapToTraj(row, eventIndices.get(row.timestamp))
+        const departureTrajectory = data.slice(depStart, depEnd).map((row, i) => 
+            mapToTraj(row, eventIndexMap.get(depStart + i))
         );
 
         // Arrival: Window around last landing
         const arrStart = Math.max(0, (landingIdx > -1 ? landingIdx : data.length) - 120);
         const arrEnd = Math.min(data.length, (landingIdx > -1 ? landingIdx : data.length) + 30);
-        const arrivalTrajectory = data.slice(arrStart, arrEnd).map(row => 
-            mapToTraj(row, eventIndices.get(row.timestamp))
+        const arrivalTrajectory = data.slice(arrStart, arrEnd).map((row, i) => 
+            mapToTraj(row, eventIndexMap.get(arrStart + i))
         );
 
         return { departureTrajectory, arrivalTrajectory };
