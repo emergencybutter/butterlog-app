@@ -16,7 +16,9 @@ interface FlightEvent {
 interface FlightSummary {
     filename: string;
     startIcao: string;
+    startAirportName: string;
     endIcao: string;
+    endAirportName: string;
     startTime: string;
     endTime: string;
     durationMinutes: number;
