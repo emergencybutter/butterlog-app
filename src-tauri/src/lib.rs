@@ -13,7 +13,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
-use config::{Config, ConfigManager, SimulatorType};
+use config::{Config, ConfigManager};
 use flight_log_manager::{
     export_flight_to_csv, get_flight_data, import_flight_from_csv, scan_logs, FlightSummary,
 };
@@ -26,23 +26,34 @@ use std::path::PathBuf;
 struct LogState(Mutex<Vec<String>>);
 
 pub struct UnifiedMonitor {
-    monitor: Mutex<Option<Arc<dyn SimMonitor>>>,
+    monitors: Mutex<Vec<Arc<dyn SimMonitor>>>,
 }
 
 impl UnifiedMonitor {
     pub fn new() -> Self {
         Self {
-            monitor: Mutex::new(None),
+            monitors: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn set_monitor(&self, monitor: Arc<dyn SimMonitor>) {
-        let mut m = self.monitor.lock().unwrap();
-        *m = Some(monitor);
+    pub fn add_monitor(&self, monitor: Arc<dyn SimMonitor>) {
+        let mut m = self.monitors.lock().unwrap();
+        m.push(monitor);
     }
 
-    pub fn get_monitor(&self) -> Option<Arc<dyn SimMonitor>> {
-        self.monitor.lock().unwrap().clone()
+    pub fn get_connected_monitor(&self) -> Option<Arc<dyn SimMonitor>> {
+        let monitors = self.monitors.lock().unwrap();
+        for m in monitors.iter() {
+            if m.is_connected() {
+                return Some(m.clone());
+            }
+        }
+        // Fallback to first one if none connected, for start/stop commands
+        monitors.first().cloned()
+    }
+
+    pub fn get_all_monitors(&self) -> Vec<Arc<dyn SimMonitor>> {
+        self.monitors.lock().unwrap().clone()
     }
 }
 
@@ -75,30 +86,11 @@ async fn get_config_async(state: State<'_, ConfigManager>) -> Result<Config, Str
 
 #[tauri::command]
 async fn set_config_async(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, ConfigManager>,
     config: Config,
 ) -> Result<(), String> {
-    let old_config = state.get_config();
-    let res = state.update_config(config.clone());
-
-    if res.is_ok() && old_config.simulator_type != config.simulator_type {
-        // Restart monitor with new sim type
-        let unified = app.state::<UnifiedMonitor>();
-        if let Some(m) = unified.get_monitor() {
-            m.stop();
-        }
-
-        let new_monitor: Arc<dyn SimMonitor> = match config.simulator_type {
-            SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
-            SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
-        };
-
-        unified.set_monitor(new_monitor.clone());
-        let _ = new_monitor.start(app.app_handle().clone(), None);
-    }
-
-    res
+    state.update_config(config)
 }
 
 #[tauri::command]
@@ -107,24 +99,28 @@ fn start_monitoring(
     state: State<'_, UnifiedMonitor>,
     log_path: Option<String>,
 ) -> Result<(), String> {
-    if let Some(m) = state.get_monitor() {
-        let path = log_path.map(PathBuf::from);
-        m.start(app, path).map_err(|e| e.to_string())
-    } else {
-        Err("No monitor initialized".to_string())
+    let monitors = state.get_all_monitors();
+    if monitors.is_empty() {
+        return Err("No monitors initialized".to_string());
     }
+
+    let path = log_path.map(PathBuf::from);
+    for m in monitors {
+        let _ = m.start(app.clone(), path.clone());
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn stop_monitoring(state: State<'_, UnifiedMonitor>) {
-    if let Some(m) = state.get_monitor() {
+    for m in state.get_all_monitors() {
         m.stop();
     }
 }
 
 #[tauri::command]
 fn get_metrics(state: State<'_, UnifiedMonitor>) -> FlightMetrics {
-    if let Some(m) = state.get_monitor() {
+    if let Some(m) = state.get_connected_monitor() {
         m.get_metrics()
     } else {
         FlightMetrics::default()
@@ -133,11 +129,7 @@ fn get_metrics(state: State<'_, UnifiedMonitor>) -> FlightMetrics {
 
 #[tauri::command]
 fn is_sim_connected(state: State<'_, UnifiedMonitor>) -> bool {
-    if let Some(m) = state.get_monitor() {
-        m.is_connected()
-    } else {
-        false
-    }
+    state.get_all_monitors().iter().any(|m| m.is_connected())
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -283,13 +275,14 @@ pub fn run() {
             let config = app.state::<ConfigManager>().get_config();
             let unified = app.state::<UnifiedMonitor>();
 
-            let monitor: Arc<dyn SimMonitor> = match config.simulator_type {
-                SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
-                SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
-            };
+            let msfs_monitor = Arc::new(SimConnectMonitor::new());
+            let xplane_monitor = Arc::new(XPlaneMonitor::new());
 
-            unified.set_monitor(monitor.clone());
-            let _ = monitor.start(app.app_handle().clone(), None);
+            unified.add_monitor(msfs_monitor.clone());
+            unified.add_monitor(xplane_monitor.clone());
+
+            let _ = msfs_monitor.start(app.app_handle().clone(), None);
+            let _ = xplane_monitor.start(app.app_handle().clone(), None);
 
             if config.start_minimized {
                 if let Some(window) = app.get_webview_window("main") {
