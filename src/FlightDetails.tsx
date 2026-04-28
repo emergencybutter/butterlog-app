@@ -207,6 +207,50 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
                 .leaflet-container {
                     background: #111 !important;
                 }
+                .leaflet-control-attribution {
+                    background: rgba(40, 40, 40, 0.9) !important;
+                    color: #fff !important;
+                    border-radius: 20px !important;
+                    border: 1px solid #555 !important;
+                    margin-bottom: 10px !important;
+                    margin-right: 10px !important;
+                    padding: 0 !important;
+                    font-size: 10px !important;
+                    max-width: 18px;
+                    height: 18px;
+                    line-height: 18px;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s, padding 0.4s;
+                    cursor: pointer;
+                    display: flex !important;
+                    align-items: center;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+                }
+                .leaflet-control-attribution:hover {
+                    max-width: 600px;
+                    background: #222 !important;
+                    padding: 0 10px !important;
+                }
+                .leaflet-control-attribution a {
+                    color: #4db8ff !important;
+                    text-decoration: none;
+                }
+                .leaflet-control-attribution a:hover {
+                    text-decoration: underline;
+                }
+                .leaflet-control-attribution::before {
+                    content: "i";
+                    font-family: serif;
+                    font-style: italic;
+                    font-weight: bold;
+                    min-width: 18px;
+                    text-align: center;
+                    font-size: 12px;
+                }
+                .leaflet-control-attribution .leaflet-control-attribution-prefix {
+                    display: none;
+                }
             `}</style>
         </div>
     );
