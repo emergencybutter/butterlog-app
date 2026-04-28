@@ -116,7 +116,7 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
 
     return (
-        <div style={{ textAlign: "center", background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333" }}>
+        <div style={{ textAlign: "center", background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
             <h4 style={{ margin: "0 0 15px 0", color: "#888" }}>{title} ({icao})</h4>
             <div style={{ height: "350px", borderRadius: "4px", overflow: "hidden" }}>
                 <MapContainer 
@@ -422,10 +422,10 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
 
             <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
                 {/* Altitude Chart */}
-                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Altitude Profile (ft)</h3>
-                    <div style={{ width: '100%', height: 250 }}>
-                        <ResponsiveContainer>
+                    <div style={{ width: '100%', height: 250, minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <AreaChart data={chartData}>
                                 <defs>
                                     <linearGradient id="colorAlt" x1="0" y1="0" x2="0" y2="1">
@@ -467,10 +467,10 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
 
                 {/* Speed Chart */}
-                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Airspeed & Groundspeed (kt)</h3>
-                    <div style={{ width: '100%', height: 250 }}>
-                        <ResponsiveContainer>
+                    <div style={{ width: '100%', height: 250, minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <LineChart data={chartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                 <XAxis dataKey="time" stroke="#666" fontSize={12} tick={{fill: '#666'}} />
@@ -507,10 +507,10 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
 
                 {/* Vertical Speed Chart */}
-                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Vertical Speed (fpm)</h3>
-                    <div style={{ width: '100%', height: 200 }}>
-                        <ResponsiveContainer>
+                    <div style={{ width: '100%', height: 200, minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <LineChart data={chartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                 <XAxis dataKey="time" stroke="#666" fontSize={12} tick={{fill: '#666'}} />
@@ -528,10 +528,10 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
                     {/* Pitch Chart */}
-                    <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                    <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Pitch Angle (deg)</h3>
-                        <div style={{ width: '100%', height: 200 }}>
-                            <ResponsiveContainer>
+                        <div style={{ width: '100%', height: 200, minWidth: 0 }}>
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <LineChart data={chartData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                     <XAxis dataKey="time" stroke="#666" fontSize={10} tick={{fill: '#666'}} />
@@ -544,10 +544,10 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     </div>
 
                     {/* Bank Chart */}
-                    <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                    <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Bank Angle (deg)</h3>
-                        <div style={{ width: '100%', height: 200 }}>
-                            <ResponsiveContainer>
+                        <div style={{ width: '100%', height: 200, minWidth: 0 }}>
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <LineChart data={chartData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                     <XAxis dataKey="time" stroke="#666" fontSize={10} tick={{fill: '#666'}} />
