@@ -1,10 +1,10 @@
+use rstar::{PointDistance, RTree, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
-use rstar::{RTree, RTreeObject, AABB, PointDistance};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Airport {
@@ -78,7 +78,7 @@ impl AirportsDatabase {
         let start_time = Instant::now();
         let file = File::open(path)?;
         let mut rdr = csv::ReaderBuilder::new().from_reader(file);
-        
+
         let mut airports = Vec::new();
         let mut by_ident = HashMap::new();
         let mut airport_locations = Vec::new();
@@ -101,9 +101,17 @@ impl AirportsDatabase {
         // Bulk load the locations into the R-Tree for optimal performance.
         let tree = RTree::bulk_load(airport_locations);
 
-        println!("AirportsDatabase: Loaded {} airports and built spatial index in {:?}", airports.len(), start_time.elapsed());
+        println!(
+            "AirportsDatabase: Loaded {} airports and built spatial index in {:?}",
+            airports.len(),
+            start_time.elapsed()
+        );
 
-        Ok(AirportsDatabase { airports, by_ident, tree })
+        Ok(AirportsDatabase {
+            airports,
+            by_ident,
+            tree,
+        })
     }
 
     /// Fetch an airport by its identifier (e.g., ICAO code, local code)
@@ -114,7 +122,8 @@ impl AirportsDatabase {
     /// Finds the `count` nearest airports to a given latitude and longitude.
     pub fn find_nearest(&self, lat: f64, lon: f64, count: usize) -> Vec<&Airport> {
         let search_point = lat_lon_to_cartesian(lat, lon);
-        self.tree.nearest_neighbor_iter(&search_point)
+        self.tree
+            .nearest_neighbor_iter(&search_point)
             .take(count)
             .map(|loc| &self.airports[loc.index])
             .collect()
@@ -157,7 +166,7 @@ mod tests {
             mock_airport(2, "A2", 10.0, 0.0),
             mock_airport(3, "A3", 0.0, 10.0),
         ];
-        
+
         let mut by_ident = HashMap::new();
         let mut airport_locations = Vec::new();
 
@@ -172,7 +181,11 @@ mod tests {
         }
 
         let tree = RTree::bulk_load(airport_locations);
-        AirportsDatabase { airports, by_ident, tree }
+        AirportsDatabase {
+            airports,
+            by_ident,
+            tree,
+        }
     }
 
     #[test]
@@ -188,7 +201,7 @@ mod tests {
         assert!((x2 - 0.0).abs() < 1e-9);
         assert!((y2 - 0.0).abs() < 1e-9);
         assert!((z2 - 1.0).abs() < 1e-9);
-        
+
         // Equator / 90 degrees East
         let [x3, y3, z3] = lat_lon_to_cartesian(0.0, 90.0);
         assert!((x3 - 0.0).abs() < 1e-9);
@@ -199,17 +212,17 @@ mod tests {
     #[test]
     fn test_get_by_ident() {
         let db = create_mock_db();
-        
+
         assert!(db.get_by_ident("A1").is_some());
         assert_eq!(db.get_by_ident("A1").unwrap().name, "Airport A1");
-        
+
         assert!(db.get_by_ident("UNKNOWN").is_none());
     }
 
     #[test]
     fn test_find_nearest() {
         let db = create_mock_db();
-        
+
         // Search near 9.0, 0.0, which should be closest to A2 (10.0, 0.0)
         let nearest = db.find_nearest(9.0, 0.0, 1);
         assert_eq!(nearest.len(), 1);
@@ -218,7 +231,7 @@ mod tests {
         // Requesting 2 nearest from 1.0, 0.0 -> Should return A1 then A2
         let nearest_two = db.find_nearest(1.0, 0.0, 2);
         assert_eq!(nearest_two.len(), 2);
-        assert_eq!(nearest_two[0].ident, "A1"); 
+        assert_eq!(nearest_two[0].ident, "A1");
         assert_eq!(nearest_two[1].ident, "A2");
     }
 }

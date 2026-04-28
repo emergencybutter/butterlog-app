@@ -1,10 +1,10 @@
+use directories::UserDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
-use directories::UserDirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -26,6 +26,8 @@ pub struct Config {
     pub webhook_address: String,
     pub simulator_type: SimulatorType,
     pub xplane_websocket_url: String,
+    pub open_at_login: bool,
+    pub start_minimized: bool,
 }
 
 impl Config {
@@ -38,9 +40,12 @@ impl Config {
             })
             .unwrap_or_else(|| {
                 // Final fallback to app data if everything else fails
-                app.path().app_data_dir().expect("Failed to get app data dir").join("logs")
+                app.path()
+                    .app_data_dir()
+                    .expect("Failed to get app data dir")
+                    .join("logs")
             });
-        
+
         let screenshot_dir = UserDirs::new()
             .and_then(|dirs| dirs.video_dir().map(|p| p.join("Captures")))
             .or_else(|| {
@@ -59,6 +64,8 @@ impl Config {
             webhook_address: "".to_string(),
             simulator_type: SimulatorType::Msfs,
             xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
+            open_at_login: false,
+            start_minimized: false,
         }
     }
 }
@@ -77,6 +84,8 @@ impl Default for Config {
             webhook_address: "".to_string(),
             simulator_type: SimulatorType::Msfs,
             xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
+            open_at_login: false,
+            start_minimized: false,
         }
     }
 }
@@ -88,9 +97,12 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     pub fn new(app: &AppHandle) -> Self {
-        let app_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+        let app_dir = app
+            .path()
+            .app_data_dir()
+            .expect("Failed to get app data dir");
         let config_path = app_dir.join("config.json");
-        
+
         if !app_dir.exists() {
             fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
         }
@@ -100,7 +112,10 @@ impl ConfigManager {
             let content = fs::read_to_string(&config_path).unwrap_or_default();
             serde_json::from_str(&content).unwrap_or_default()
         } else {
-            crate::append_log(app, format!("No config found at: {:?}. Using defaults.", config_path));
+            crate::append_log(
+                app,
+                format!("No config found at: {:?}. Using defaults.", config_path),
+            );
             Config::default_with_app_handle(app)
         };
 
@@ -108,12 +123,12 @@ impl ConfigManager {
             config: Mutex::new(config),
             config_path,
         };
-        
+
         // Save defaults if it's a new config
         if !manager.config_path.exists() {
             let _ = manager.save();
         }
-        
+
         manager
     }
 

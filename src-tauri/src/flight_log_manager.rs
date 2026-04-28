@@ -1,13 +1,13 @@
+use crate::airports::AirportsDatabase;
+use crate::config::ConfigManager;
+use crate::models::{FlightEvent, FlightMetrics};
+use chrono::NaiveDateTime;
+use directories::UserDirs;
+use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use chrono::NaiveDateTime;
-use crate::config::ConfigManager;
-use tauri::{AppHandle, Manager, Emitter};
-use rusqlite::{Connection, Row, params};
-use crate::models::{FlightMetrics, FlightEvent};
-use crate::airports::AirportsDatabase;
-use directories::UserDirs;
+use tauri::{AppHandle, Emitter, Manager};
 
 pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(
@@ -47,7 +47,11 @@ pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn insert_sqlite_row(conn: &Connection, now_str: &str, m: &FlightMetrics) -> rusqlite::Result<()> {
+pub fn insert_sqlite_row(
+    conn: &Connection,
+    now_str: &str,
+    m: &FlightMetrics,
+) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO metrics (
             timestamp, latitude, longitude, 
@@ -122,7 +126,10 @@ pub struct FlightLogRow {
 }
 
 #[tauri::command]
-pub async fn get_flight_data(app: AppHandle, filename: String) -> Result<Vec<FlightLogRow>, String> {
+pub async fn get_flight_data(
+    app: AppHandle,
+    filename: String,
+) -> Result<Vec<FlightLogRow>, String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
     let log_dir = app_data_dir.join("flightlogs");
 
@@ -131,16 +138,23 @@ pub async fn get_flight_data(app: AppHandle, filename: String) -> Result<Vec<Fli
         return Err("File not found".to_string());
     }
 
-    crate::append_log(&app, format!("Opening flight log for data retrieval: {}", filename));
+    crate::append_log(
+        &app,
+        format!("Opening flight log for data retrieval: {}", filename),
+    );
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC").map_err(|e| e.to_string())?;
-    
-    let rows = stmt.query_map([], |row| {
-        Ok(FlightLogRow {
-            timestamp: row.get(0)?,
-            metrics: map_row_to_metrics(row)?,
+    let mut stmt = conn
+        .prepare("SELECT * FROM metrics ORDER BY timestamp ASC")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(FlightLogRow {
+                timestamp: row.get(0)?,
+                metrics: map_row_to_metrics(row)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut result = Vec::new();
     for row in rows {
@@ -152,73 +166,73 @@ pub async fn get_flight_data(app: AppHandle, filename: String) -> Result<Vec<Fli
 
 fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
     Ok(FlightMetrics {
-        latitude: row.get(1)?, 
-        longitude: row.get(2)?, 
-        indicated_altitude: row.get(3)?, 
-        altimeter_setting: row.get(4)?, 
-        gps_altitude_msl: row.get(5)?, 
+        latitude: row.get(1)?,
+        longitude: row.get(2)?,
+        indicated_altitude: row.get(3)?,
+        altimeter_setting: row.get(4)?,
+        gps_altitude_msl: row.get(5)?,
         outside_air_temp: row.get(6)?,
-        indicated_airspeed: row.get(7)?, 
-        ground_speed: row.get(8)?, 
-        vertical_speed: row.get(9)?, 
-        pitch_angle: row.get(10)?, 
-        roll_angle: row.get(11)?, 
-        lateral_acceleration: row.get(12)?, 
+        indicated_airspeed: row.get(7)?,
+        ground_speed: row.get(8)?,
+        vertical_speed: row.get(9)?,
+        pitch_angle: row.get(10)?,
+        roll_angle: row.get(11)?,
+        lateral_acceleration: row.get(12)?,
         normal_acceleration: row.get(13)?,
-        heading: row.get(14)?, 
-        track: row.get(15)?, 
-        volts_1: row.get(16)?, 
-        volts_2: row.get(17)?, 
-        amps_1: row.get(18)?, 
-        fuel_quantity_left: row.get(19)?, 
+        heading: row.get(14)?,
+        track: row.get(15)?,
+        volts_1: row.get(16)?,
+        volts_2: row.get(17)?,
+        amps_1: row.get(18)?,
+        fuel_quantity_left: row.get(19)?,
         fuel_quantity_right: row.get(20)?,
-        engine_1_fuel_flow: row.get(21)?, 
-        engine_1_oil_temp: row.get(22)?, 
-        engine_1_oil_pressure: row.get(23)?, 
-        engine_1_manifold_pressure: row.get(24)?, 
-        engine_1_rpm: row.get(25)?, 
+        engine_1_fuel_flow: row.get(21)?,
+        engine_1_oil_temp: row.get(22)?,
+        engine_1_oil_pressure: row.get(23)?,
+        engine_1_manifold_pressure: row.get(24)?,
+        engine_1_rpm: row.get(25)?,
         engine_1_percent_power: row.get(26)?,
-        engine_1_cht_1: row.get(27)?, 
-        engine_1_cht_2: row.get(28)?, 
-        engine_1_cht_3: row.get(29)?, 
-        engine_1_cht_4: row.get(30)?, 
-        engine_1_cht_5: row.get(31)?, 
+        engine_1_cht_1: row.get(27)?,
+        engine_1_cht_2: row.get(28)?,
+        engine_1_cht_3: row.get(29)?,
+        engine_1_cht_4: row.get(30)?,
+        engine_1_cht_5: row.get(31)?,
         engine_1_cht_6: row.get(32)?,
-        engine_1_egt_1: row.get(33)?, 
-        engine_1_egt_2: row.get(34)?, 
-        engine_1_egt_3: row.get(35)?, 
-        engine_1_egt_4: row.get(36)?, 
-        engine_1_egt_5: row.get(37)?, 
+        engine_1_egt_1: row.get(33)?,
+        engine_1_egt_2: row.get(34)?,
+        engine_1_egt_3: row.get(35)?,
+        engine_1_egt_4: row.get(36)?,
+        engine_1_egt_5: row.get(37)?,
         engine_1_egt_6: row.get(38)?,
-        engine_1_tit_1: row.get(39)?, 
-        engine_1_tit_2: row.get(40)?, 
-        gps_altitude_wgs84: row.get(41)?, 
-        true_airspeed: row.get(42)?, 
-        hsi_source: row.get(43)?, 
-        selected_course: row.get(44)?, 
+        engine_1_tit_1: row.get(39)?,
+        engine_1_tit_2: row.get(40)?,
+        gps_altitude_wgs84: row.get(41)?,
+        true_airspeed: row.get(42)?,
+        hsi_source: row.get(43)?,
+        selected_course: row.get(44)?,
         nav_1_frequency: row.get(45)?,
-        nav_2_frequency: row.get(46)?, 
-        com_1_frequency: row.get(47)?, 
-        com_2_frequency: row.get(48)?, 
-        horizontal_cdi: row.get(49)?, 
-        vertical_cdi: row.get(50)?, 
-        wind_speed: row.get(51)?, 
+        nav_2_frequency: row.get(46)?,
+        com_1_frequency: row.get(47)?,
+        com_2_frequency: row.get(48)?,
+        horizontal_cdi: row.get(49)?,
+        vertical_cdi: row.get(50)?,
+        wind_speed: row.get(51)?,
         wind_direction: row.get(52)?,
-        waypoint_distance: row.get(53)?, 
-        waypoint_bearing: row.get(54)?, 
-        magnetic_variation: row.get(55)?, 
-        autopilot_active: row.get(56)?, 
-        roll_mode: row.get(57)?, 
+        waypoint_distance: row.get(53)?,
+        waypoint_bearing: row.get(54)?,
+        magnetic_variation: row.get(55)?,
+        autopilot_active: row.get(56)?,
+        roll_mode: row.get(57)?,
         pitch_mode: row.get(58)?,
-        roll_command: row.get(59)?, 
-        pitch_command: row.get(60)?, 
-        vertical_speed_target: row.get(61)?, 
-        gps_fix_type: row.get(62)?, 
-        horizontal_alarm_limit: row.get(63)?, 
+        roll_command: row.get(59)?,
+        pitch_command: row.get(60)?,
+        vertical_speed_target: row.get(61)?,
+        gps_fix_type: row.get(62)?,
+        horizontal_alarm_limit: row.get(63)?,
         vertical_alarm_limit: row.get(64)?,
-        horizontal_protection_level_waas: row.get(65)?, 
-        horizontal_protection_level_fd: row.get(66)?, 
-        vertical_protection_level_waas: row.get(67)?, 
+        horizontal_protection_level_waas: row.get(65)?,
+        horizontal_protection_level_fd: row.get(66)?,
+        vertical_protection_level_waas: row.get(67)?,
         is_on_ground: row.get(68)?,
         xp_agl: row.get(69).unwrap_or(0.0),
         xp_prop_rpm: row.get(70).unwrap_or(0.0),
@@ -257,12 +271,16 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
 fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let filename = path.file_name()?.to_str()?.to_string();
     let metadata = fs::metadata(path).ok()?;
-    
+
     let conn = Connection::open(path).ok()?;
-    
+
     let get_summary = |key: &str| -> String {
-        conn.query_row("SELECT value FROM summary WHERE key = ?1", params![key], |r| r.get::<_, String>(0))
-            .unwrap_or_else(|_| "Unknown".to_string())
+        conn.query_row(
+            "SELECT value FROM summary WHERE key = ?1",
+            params![key],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| "Unknown".to_string())
     };
 
     let start_icao = get_summary("departure_icao");
@@ -276,22 +294,29 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let events_json = get_summary("flight_events");
     let events: Vec<FlightEvent> = serde_json::from_str(&events_json).unwrap_or_default();
 
-    let mut stmt = conn.prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics").ok()?;
-    let time_res: rusqlite::Result<(Option<String>, Option<String>)> = stmt.query_row([], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    });
+    let mut stmt = conn
+        .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
+        .ok()?;
+    let time_res: rusqlite::Result<(Option<String>, Option<String>)> =
+        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)));
 
     let (start_time, end_time) = match time_res {
         Ok((Some(s), Some(e))) => (s, e),
         _ => (
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-        )
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        ),
     };
-    
+
     let duration_minutes = if let (Ok(start_dt), Ok(end_dt)) = (
-        NaiveDateTime::parse_from_str(&start_time.split('.').next().unwrap_or(&start_time), "%Y-%m-%d %H:%M:%S"),
-        NaiveDateTime::parse_from_str(&end_time.split('.').next().unwrap_or(&end_time), "%Y-%m-%d %H:%M:%S")
+        NaiveDateTime::parse_from_str(
+            &start_time.split('.').next().unwrap_or(&start_time),
+            "%Y-%m-%d %H:%M:%S",
+        ),
+        NaiveDateTime::parse_from_str(
+            &end_time.split('.').next().unwrap_or(&end_time),
+            "%Y-%m-%d %H:%M:%S",
+        ),
     ) {
         end_dt.signed_duration_since(start_dt).num_minutes()
     } else {
@@ -323,9 +348,13 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
     let config = app.state::<ConfigManager>().get_config();
     let export_dir = config.log_directory.clone().unwrap_or_else(|| {
-        UserDirs::new().unwrap().document_dir().unwrap().join("butterlog")
+        UserDirs::new()
+            .unwrap()
+            .document_dir()
+            .unwrap()
+            .join("butterlog")
     });
-    
+
     if !export_dir.exists() {
         fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
     }
@@ -337,14 +366,19 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
     let csv_filename = filename.replace(".db", ".csv");
     let csv_path = export_dir.join(&csv_filename);
-    
+
     // Get aircraft info from summary table
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-    let airframe_name = conn.query_row("SELECT value FROM summary WHERE key = 'aircraft_title'", [], |r| r.get::<_, String>(0))
+    let airframe_name = conn
+        .query_row(
+            "SELECT value FROM summary WHERE key = 'aircraft_title'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
         .unwrap_or_else(|_| "Simulated Aircraft".to_string());
 
     let data = get_flight_data(app, filename).await?;
-    
+
     use std::io::Write;
     let mut file = fs::File::create(&csv_path).map_err(|e| e.to_string())?;
 
@@ -359,7 +393,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
         let time = ts_parts[1];
         let m = row.metrics;
 
-        let utc_offset = "+00:00"; 
+        let utc_offset = "+00:00";
 
         writeln!(file, "{}, {}, {}, {}, {:.6}, {:.6}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.3}, {:.3}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.2}, {:.2}, {:.1}, {:.1}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {}, {:.0}, {:.3}, {:.3}, {:.3}, {:.3}, {:.2}, {:.2}, {:.1}, {:.1}, {:.2}, {:.1}, {:.2}, {}, {}, {}, {:.1}, {:.1}, {:.1}, {}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}",
             date, time, utc_offset, "", m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
@@ -381,8 +415,11 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
 #[tauri::command]
 pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<FlightSummary, String> {
-    crate::append_log(&app, format!("Starting import of flight log from: {}", path));
-    
+    crate::append_log(
+        &app,
+        format!("Starting import of flight log from: {}", path),
+    );
+
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -397,8 +434,17 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
     let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
     let airports_db = app.try_state::<AirportsDatabase>();
 
-    let total_rows = lines.iter().filter(|l| !l.starts_with('#') && !l.starts_with("Lcl Date") && !l.is_empty()).count();
-    crate::append_log(&app, format!("Successfully parsed {} data points. Saving to internal database...", total_rows));
+    let total_rows = lines
+        .iter()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("Lcl Date") && !l.is_empty())
+        .count();
+    crate::append_log(
+        &app,
+        format!(
+            "Successfully parsed {} data points. Saving to internal database...",
+            total_rows
+        ),
+    );
 
     let mut current_row = 0;
     for line in lines {
@@ -408,25 +454,38 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
 
         if let Some(row) = parse_csv_line_to_row(line, airports_db.as_deref()) {
             if let Some(new_phase) = analyzer.update(&row.metrics, &row.timestamp) {
-                crate::append_log(&app, format!("[Import] Detected flight phase: {:?}", new_phase));
+                crate::append_log(
+                    &app,
+                    format!("[Import] Detected flight phase: {:?}", new_phase),
+                );
             }
             rows.push(row);
-            
+
             current_row += 1;
             if current_row % 500 == 0 || current_row == total_rows {
-                let _ = app.emit("import-progress", serde_json::json!({
-                    "state": "parsing",
-                    "current": current_row,
-                    "total": total_rows
-                }));
+                let _ = app.emit(
+                    "import-progress",
+                    serde_json::json!({
+                        "state": "parsing",
+                        "current": current_row,
+                        "total": total_rows
+                    }),
+                );
             }
         }
     }
 
-    let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path).map_err(|e| e.to_string())?;
-    
-    crate::append_log(&app, format!("Import complete. Identified route: {} -> {}", summary.start_icao, summary.end_icao));
-    
+    let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path)
+        .map_err(|e| e.to_string())?;
+
+    crate::append_log(
+        &app,
+        format!(
+            "Import complete. Identified route: {} -> {}",
+            summary.start_icao, summary.end_icao
+        ),
+    );
+
     let _ = app.emit("flight-logs-updated", ());
     Ok(summary)
 }
@@ -445,9 +504,14 @@ fn parse_airframe_name(lines: &[&str]) -> String {
     "Unknown Aircraft".to_string()
 }
 
-fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> Option<FlightLogRow> {
+fn parse_csv_line_to_row(
+    line: &str,
+    airports_db: Option<&AirportsDatabase>,
+) -> Option<FlightLogRow> {
     let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-    if cols.len() < 70 { return None; }
+    if cols.len() < 70 {
+        return None;
+    }
 
     let timestamp = format!("{} {}", cols[0], cols[1]);
     let lat: f64 = cols[4].parse().unwrap_or(0.0);
@@ -470,7 +534,7 @@ fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> 
             sim_on_ground = 1.0;
         }
     }
-    
+
     let metrics = FlightMetrics {
         latitude: lat,
         longitude: lon,
@@ -514,7 +578,7 @@ fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> 
         engine_1_tit_2: cols[43].parse().unwrap_or(0.0),
         gps_altitude_wgs84: cols[44].parse().unwrap_or(0.0),
         true_airspeed: cols[45].parse().unwrap_or(0.0),
-        hsi_source: 0.0, 
+        hsi_source: 0.0,
         selected_course: cols[47].parse().unwrap_or(0.0),
         nav_1_frequency: cols[48].parse().unwrap_or(0.0),
         nav_2_frequency: cols[49].parse().unwrap_or(0.0),
@@ -527,7 +591,11 @@ fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> 
         waypoint_distance: cols[56].parse().unwrap_or(0.0),
         waypoint_bearing: cols[57].parse().unwrap_or(0.0),
         magnetic_variation: cols[58].parse().unwrap_or(0.0),
-        autopilot_active: if cols[59].to_lowercase() == "true" || cols[59] == "1" { 1.0 } else { 0.0 },
+        autopilot_active: if cols[59].to_lowercase() == "true" || cols[59] == "1" {
+            1.0
+        } else {
+            0.0
+        },
         roll_mode: 0.0,
         pitch_mode: 0.0,
         roll_command: cols[62].parse().unwrap_or(0.0),
@@ -548,7 +616,13 @@ fn parse_csv_line_to_row(line: &str, airports_db: Option<&AirportsDatabase>) -> 
     Some(FlightLogRow { timestamp, metrics })
 }
 
-fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightLogRow>, analyzer: &crate::flight_analyzer::FlightAnalyzer, source_path: &str) -> anyhow::Result<FlightSummary> {
+fn save_imported_flight(
+    app: &AppHandle,
+    aircraft_title: &str,
+    rows: Vec<FlightLogRow>,
+    analyzer: &crate::flight_analyzer::FlightAnalyzer,
+    source_path: &str,
+) -> anyhow::Result<FlightSummary> {
     let app_data_dir = app.path().app_data_dir()?;
     let log_dir = app_data_dir.join("flightlogs");
     fs::create_dir_all(&log_dir)?;
@@ -560,7 +634,7 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
     let path = log_dir.join(&temp_filename);
 
     let mut conn = Connection::open(&path)?;
-    
+
     // Create tables using centralized function
     init_sqlite_db(&conn)?;
 
@@ -570,36 +644,54 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
         let tx = conn.transaction().map_err(|e| anyhow::anyhow!(e))?;
         for (i, row) in rows.iter().enumerate() {
             insert_sqlite_row(&tx, &row.timestamp, &row.metrics).map_err(|e| anyhow::anyhow!(e))?;
-            
+
             let current = i + 1;
             if current % 1000 == 0 || current == total_rows {
-                let _ = app.emit("import-progress", serde_json::json!({
-                    "state": "saving",
-                    "current": current,
-                    "total": total_rows
-                }));
+                let _ = app.emit(
+                    "import-progress",
+                    serde_json::json!({
+                        "state": "saving",
+                        "current": current,
+                        "total": total_rows
+                    }),
+                );
             }
         }
         tx.commit().map_err(|e| anyhow::anyhow!(e))?;
     }
 
     // Emit finalizing state
-    let _ = app.emit("import-progress", serde_json::json!({
-        "state": "finalizing",
-        "current": total_rows,
-        "total": total_rows
-    }));
+    let _ = app.emit(
+        "import-progress",
+        serde_json::json!({
+            "state": "finalizing",
+            "current": total_rows,
+            "total": total_rows
+        }),
+    );
 
     // Determine ICAOs and Names
-    let (start_icao, start_name, end_icao, end_name) = if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
-        let s_icao = analyzer.find_start_icao(&db);
-        let e_icao = analyzer.find_end_icao(&db);
-        let s_name = db.get_by_ident(&s_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
-        let e_name = db.get_by_ident(&e_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
-        (s_icao, s_name, e_icao, e_name)
-    } else {
-        ("XXXX".to_string(), "Unknown".to_string(), "XXXX".to_string(), "Unknown".to_string())
-    };
+    let (start_icao, start_name, end_icao, end_name) =
+        if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
+            let s_icao = analyzer.find_start_icao(&db);
+            let e_icao = analyzer.find_end_icao(&db);
+            let s_name = db
+                .get_by_ident(&s_icao)
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let e_name = db
+                .get_by_ident(&e_icao)
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            (s_icao, s_name, e_icao, e_name)
+        } else {
+            (
+                "XXXX".to_string(),
+                "Unknown".to_string(),
+                "XXXX".to_string(),
+                "Unknown".to_string(),
+            )
+        };
 
     // Populate summary
     let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
@@ -615,11 +707,17 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
         ("fuel_consumed", fuel_consumed.to_string()),
         ("source_path", source_path.to_string()),
         ("import_timestamp", import_time),
-        ("flight_events", serde_json::to_string(&analyzer.events).unwrap_or_default()),
+        (
+            "flight_events",
+            serde_json::to_string(&analyzer.events).unwrap_or_default(),
+        ),
     ];
 
     for (k, v) in summary_data {
-        conn.execute("INSERT INTO summary (key, value) VALUES (?1, ?2)", params![k, v])?;
+        conn.execute(
+            "INSERT INTO summary (key, value) VALUES (?1, ?2)",
+            params![k, v],
+        )?;
     }
 
     drop(conn);

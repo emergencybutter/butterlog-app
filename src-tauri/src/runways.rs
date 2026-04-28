@@ -48,20 +48,30 @@ impl RunwaysDatabase {
 
         for result in rdr.deserialize() {
             let runway: Runway = result?;
-            by_airport_ident.entry(runway.airport_ident.clone()).or_default().push(runways.len());
+            by_airport_ident
+                .entry(runway.airport_ident.clone())
+                .or_default()
+                .push(runways.len());
             runways.push(runway);
         }
 
-        println!("RunwaysDatabase: Loaded {} runways in {:?}", runways.len(), start_time.elapsed());
+        println!(
+            "RunwaysDatabase: Loaded {} runways in {:?}",
+            runways.len(),
+            start_time.elapsed()
+        );
 
-        Ok(RunwaysDatabase { runways, by_airport_ident })
-        }
+        Ok(RunwaysDatabase {
+            runways,
+            by_airport_ident,
+        })
+    }
 
-        pub fn find_for_ident(&self, ident: &str) -> Vec<Runway> {
+    pub fn find_for_ident(&self, ident: &str) -> Vec<Runway> {
         if let Some(indices) = self.by_airport_ident.get(ident) {
             indices.iter().map(|&i| self.runways[i].clone()).collect()
         } else {
             Vec::new()
         }
-        }
-        }
+    }
+}

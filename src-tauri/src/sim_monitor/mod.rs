@@ -1,6 +1,6 @@
-use tauri::AppHandle;
-use std::path::PathBuf;
 use crate::models::FlightMetrics;
+use std::path::PathBuf;
+use tauri::AppHandle;
 
 pub mod msfs;
 pub mod xplane;
@@ -19,8 +19,8 @@ pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let lat1 = lat1.to_radians();
     let lat2 = lat2.to_radians();
 
-    let a = (d_lat / 2.0).sin() * (d_lat / 2.0).sin() +
-            (d_lon / 2.0).sin() * (d_lon / 2.0).sin() * lat1.cos() * lat2.cos();
+    let a = (d_lat / 2.0).sin() * (d_lat / 2.0).sin()
+        + (d_lon / 2.0).sin() * (d_lon / 2.0).sin() * lat1.cos() * lat2.cos();
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
     r * c
 }

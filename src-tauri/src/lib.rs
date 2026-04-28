@@ -1,25 +1,27 @@
 mod airports;
-mod runways;
-mod models;
-mod sim_monitor;
-mod flight_analyzer;
 mod config;
+mod flight_analyzer;
 mod flight_log_manager;
+mod models;
+mod runways;
+mod sim_monitor;
 
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
+use config::{Config, ConfigManager, SimulatorType};
+use flight_log_manager::{
+    export_flight_to_csv, get_flight_data, import_flight_from_csv, scan_logs, FlightSummary,
+};
 use models::FlightMetrics;
-use sim_monitor::SimMonitor;
 use sim_monitor::msfs::SimConnectMonitor;
 use sim_monitor::xplane::XPlaneMonitor;
+use sim_monitor::SimMonitor;
 use std::path::PathBuf;
-use config::{Config, ConfigManager, SimulatorType};
-use flight_log_manager::{FlightSummary, scan_logs, get_flight_data, export_flight_to_csv, import_flight_from_csv};
 
 struct LogState(Mutex<Vec<String>>);
 
@@ -72,31 +74,39 @@ async fn get_config_async(state: State<'_, ConfigManager>) -> Result<Config, Str
 }
 
 #[tauri::command]
-async fn set_config_async(app: AppHandle, state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
+async fn set_config_async(
+    app: AppHandle,
+    state: State<'_, ConfigManager>,
+    config: Config,
+) -> Result<(), String> {
     let old_config = state.get_config();
     let res = state.update_config(config.clone());
-    
+
     if res.is_ok() && old_config.simulator_type != config.simulator_type {
         // Restart monitor with new sim type
         let unified = app.state::<UnifiedMonitor>();
         if let Some(m) = unified.get_monitor() {
             m.stop();
         }
-        
+
         let new_monitor: Arc<dyn SimMonitor> = match config.simulator_type {
             SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
             SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
         };
-        
+
         unified.set_monitor(new_monitor.clone());
         let _ = new_monitor.start(app.app_handle().clone(), None);
     }
-    
+
     res
 }
 
 #[tauri::command]
-fn start_monitoring(app: AppHandle, state: State<'_, UnifiedMonitor>, log_path: Option<String>) -> Result<(), String> {
+fn start_monitoring(
+    app: AppHandle,
+    state: State<'_, UnifiedMonitor>,
+    log_path: Option<String>,
+) -> Result<(), String> {
     if let Some(m) = state.get_monitor() {
         let path = log_path.map(PathBuf::from);
         m.start(app, path).map_err(|e| e.to_string())
@@ -164,6 +174,7 @@ fn get_runways(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(LogState(Mutex::new(Vec::new())))
         .manage(UnifiedMonitor::new())
         .plugin(tauri_plugin_opener::init())
@@ -181,7 +192,10 @@ pub fn run() {
 
             append_log(
                 app.handle(),
-                format!("[{}] Startup - App: {} v{}", timestamp, pkg_info.name, pkg_info.version),
+                format!(
+                    "[{}] Startup - App: {} v{}",
+                    timestamp, pkg_info.name, pkg_info.version
+                ),
             );
 
             // Tray menu
@@ -190,8 +204,9 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             // Load the icon from the public folder and create the tray icon
-            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../../public/icon.png"))
-                .expect("Failed to load tray icon");
+            let tray_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../../public/icon.png"))
+                    .expect("Failed to load tray icon");
             TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
                 .menu(&menu)
@@ -225,12 +240,18 @@ pub fn run() {
                     Ok(db) => {
                         append_log(
                             &airports_app_handle,
-                            format!("Successfully loaded {} airports into backend memory.", db.airports.len()),
+                            format!(
+                                "Successfully loaded {} airports into backend memory.",
+                                db.airports.len()
+                            ),
                         );
                         airports_app_handle.manage(db);
                     }
                     Err(err) => {
-                        append_log(&airports_app_handle, format!("Failed to load airports.csv: {}", err));
+                        append_log(
+                            &airports_app_handle,
+                            format!("Failed to load airports.csv: {}", err),
+                        );
                     }
                 }
             });
@@ -242,12 +263,18 @@ pub fn run() {
                     Ok(db) => {
                         append_log(
                             &runways_app_handle,
-                            format!("Successfully loaded {} runways into backend memory.", db.runways.len()),
+                            format!(
+                                "Successfully loaded {} runways into backend memory.",
+                                db.runways.len()
+                            ),
                         );
                         runways_app_handle.manage(db);
                     }
                     Err(err) => {
-                        append_log(&runways_app_handle, format!("Failed to load runways.csv: {}", err));
+                        append_log(
+                            &runways_app_handle,
+                            format!("Failed to load runways.csv: {}", err),
+                        );
                     }
                 }
             });
@@ -255,14 +282,20 @@ pub fn run() {
             // Automatically start monitoring based on config
             let config = app.state::<ConfigManager>().get_config();
             let unified = app.state::<UnifiedMonitor>();
-            
+
             let monitor: Arc<dyn SimMonitor> = match config.simulator_type {
                 SimulatorType::Msfs => Arc::new(SimConnectMonitor::new()),
                 SimulatorType::Xplane => Arc::new(XPlaneMonitor::new()),
             };
-            
+
             unified.set_monitor(monitor.clone());
             let _ = monitor.start(app.app_handle().clone(), None);
+
+            if config.start_minimized {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
 
             Ok(())
         })

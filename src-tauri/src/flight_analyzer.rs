@@ -1,6 +1,6 @@
-use std::collections::{VecDeque, HashMap};
 use crate::airports::AirportsDatabase;
-use crate::models::{FlightMetrics, FlightPhase, FlightEvent};
+use crate::models::{FlightEvent, FlightMetrics, FlightPhase};
+use std::collections::{HashMap, VecDeque};
 
 pub struct FlightAnalyzer {
     start_coords: Vec<(f64, f64)>,
@@ -46,9 +46,9 @@ impl FlightAnalyzer {
 
     pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
         let old_phase = self.current_phase;
-        
+
         self.add_point(metrics.latitude, metrics.longitude);
-        
+
         if metrics.gps_altitude_msl > self.max_alt {
             self.max_alt = metrics.gps_altitude_msl;
         }
@@ -93,11 +93,26 @@ impl FlightAnalyzer {
                 if !on_ground {
                     if v_spd.abs() < 200.0 && ias > 60.0 {
                         self.current_phase = FlightPhase::Cruise;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp);
+                        self.add_event(
+                            "top_of_climb",
+                            metrics.latitude,
+                            metrics.longitude,
+                            timestamp,
+                        );
                     } else if v_spd < -400.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp);
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp);
+                        self.add_event(
+                            "top_of_climb",
+                            metrics.latitude,
+                            metrics.longitude,
+                            timestamp,
+                        );
+                        self.add_event(
+                            "top_of_descent",
+                            metrics.latitude,
+                            metrics.longitude,
+                            timestamp,
+                        );
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
@@ -108,7 +123,12 @@ impl FlightAnalyzer {
                 if !on_ground {
                     if v_spd < -500.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp);
+                        self.add_event(
+                            "top_of_descent",
+                            metrics.latitude,
+                            metrics.longitude,
+                            timestamp,
+                        );
                     } else if v_spd > 500.0 {
                         self.current_phase = FlightPhase::Climb;
                     }
@@ -119,8 +139,8 @@ impl FlightAnalyzer {
             }
             FlightPhase::Descent => {
                 if !on_ground {
-                    if metrics.gps_altitude_msl < 3000.0 && v_spd < -200.0 { 
-                         self.current_phase = FlightPhase::Approach;
+                    if metrics.gps_altitude_msl < 3000.0 && v_spd < -200.0 {
+                        self.current_phase = FlightPhase::Approach;
                     } else if v_spd > 300.0 {
                         self.current_phase = FlightPhase::Climb;
                     } else if v_spd.abs() < 200.0 {
@@ -177,7 +197,7 @@ impl FlightAnalyzer {
         if self.start_coords.len() < 300 {
             self.start_coords.push((lat, lon));
         }
-        
+
         if self.end_coords.len() >= 300 {
             self.end_coords.pop_front();
         }
@@ -194,8 +214,10 @@ impl FlightAnalyzer {
     }
 
     fn find_dominant_icao(&self, coords: &[(f64, f64)], db: &AirportsDatabase) -> String {
-        if coords.is_empty() { return "XXXX".to_string(); }
-        
+        if coords.is_empty() {
+            return "XXXX".to_string();
+        }
+
         let mut counts = HashMap::new();
         for (lat, lon) in coords {
             if let Some(airport) = db.find_nearest(*lat, *lon, 1).first() {
@@ -203,8 +225,9 @@ impl FlightAnalyzer {
                 *counts.entry(code).or_insert(0) += 1;
             }
         }
-        
-        counts.into_iter()
+
+        counts
+            .into_iter()
             .max_by_key(|&(_, count)| count)
             .map(|(icao, _)| icao)
             .unwrap_or_else(|| "XXXX".to_string())

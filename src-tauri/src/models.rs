@@ -137,7 +137,7 @@ pub struct FlightMetrics {
     pub vertical_protection_level_waas: f64,
     #[serde(rename = "sim_on_ground")]
     pub is_on_ground: f64,
-    
+
     // X-Plane 12 specific fields (Flat Columns)
     pub xp_agl: f64,
     pub xp_prop_rpm: f64,

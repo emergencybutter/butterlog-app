@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 
 interface Config {
     logDirectory: string | null;
@@ -12,6 +13,8 @@ interface Config {
     webhookAddress: string;
     simulatorType: 'msfs' | 'xplane';
     xplaneWebsocketUrl: string;
+    openAtLogin: boolean;
+    startMinimized: boolean;
 }
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -20,13 +23,32 @@ export function Settings({ onBack }: { onBack: () => void }) {
 
     useEffect(() => {
         invoke<Config>("get_config")
-            .then(setConfig)
+            .then(async (cfg) => {
+                // Double check actual autostart status
+                try {
+                    const active = await isEnabled();
+                    setConfig({ ...cfg, openAtLogin: active });
+                } catch (e) {
+                    setConfig(cfg);
+                }
+            })
             .catch(err => setStatus("Error loading config: " + err));
     }, []);
 
     const handleSave = async () => {
         if (!config) return;
         try {
+            // Handle autostart plugin
+            try {
+                if (config.openAtLogin) {
+                    await enable();
+                } else {
+                    await disable();
+                }
+            } catch (e) {
+                console.error("Failed to update autostart:", e);
+            }
+
             await invoke("set_config", { config });
             setStatus("Settings saved successfully!");
             setTimeout(() => setStatus(""), 3000);
@@ -50,6 +72,32 @@ export function Settings({ onBack }: { onBack: () => void }) {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                <section>
+                    <h4>App Behavior</h4>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.openAtLogin} 
+                                    onChange={(e) => handleChange("openAtLogin", e.target.checked)}
+                                /> 
+                                <span>Start automatically on login</span>
+                            </label>
+                        </div>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.startMinimized} 
+                                    onChange={(e) => handleChange("startMinimized", e.target.checked)}
+                                /> 
+                                <span>Start minimized to tray</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
                 <section>
                     <h4>Directories</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
