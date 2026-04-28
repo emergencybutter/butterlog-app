@@ -206,16 +206,13 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
   const [simConnected, setSimConnected] = useState(false);
+  const [connectedSims, setConnectedSims] = useState<string[]>([]);
   const [view, setView] = useState<"status" | "history" | "settings" | "details">("history");
   const [selectedFlight, setSelectedFlight] = useState<FlightSummary | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>("Parked");
-  const [simType, setSimType] = useState<string>("MSFS");
+  const [flightOngoing, setFlightOngoing] = useState(false);
 
   useEffect(() => {
-    invoke<any>("get_config").then(cfg => {
-      setSimType(cfg.simulatorType === 'msfs' ? 'MSFS' : 'X-PLANE');
-    }).catch(console.error);
-
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
 
     const unlistenLogs = listen<string>("log-update", (event) => {
@@ -228,12 +225,16 @@ function App() {
 
     const interval = window.setInterval(async () => {
       try {
-        const [m, connected] = await Promise.all([
+        const [m, connected, ongoing, sims] = await Promise.all([
           invoke<FlightMetrics>("get_metrics"),
-          invoke<boolean>("is_sim_connected")
+          invoke<boolean>("is_sim_connected"),
+          invoke<boolean>("is_flight_ongoing"),
+          invoke<string[]>("get_connected_sims")
         ]);
         setMetrics(m);
         setSimConnected(connected);
+        setFlightOngoing(ongoing);
+        setConnectedSims(sims);
       } catch (e) { }
     }, 200);
 
@@ -243,6 +244,11 @@ function App() {
       clearInterval(interval);
     };
   }, []);
+
+  const getSimNameDisplay = () => {
+    if (connectedSims.length === 0) return "SIM";
+    return connectedSims.map(s => s.toUpperCase()).join(" + ");
+  };
 
   const renderContent = () => {
     switch (view) {
@@ -265,7 +271,7 @@ function App() {
       default:
         return (
           <div className="status-view">
-            {metrics && (
+            {metrics && flightOngoing && (
               <div className="metrics-display" style={{ textAlign: "left", marginBottom: "2rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <h3>Flight Metrics</h3>
@@ -283,6 +289,20 @@ function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {!flightOngoing && simConnected && (
+              <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
+                <div style={{ fontSize: "1.2rem", color: "#4caf50", fontWeight: "bold", marginBottom: "0.5rem" }}>{getSimNameDisplay()} CONNECTED</div>
+                <div style={{ color: "#888" }}>Waiting for flight movement to start logging...</div>
+              </div>
+            )}
+
+            {!simConnected && (
+              <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
+                <div style={{ fontSize: "1.2rem", color: "#f44336", fontWeight: "bold", marginBottom: "0.5rem" }}>DISCONNECTED</div>
+                <div style={{ color: "#888" }}>Start your flight simulator to begin logging.</div>
               </div>
             )}
 
@@ -348,7 +368,7 @@ function App() {
               marginRight: "8px"
             }} />
             <span style={{ fontSize: "0.75rem", fontWeight: "bold" }}>
-              {simType} CONNECTED
+              {getSimNameDisplay()} CONNECTED
             </span>
           </div>
           {metrics && (

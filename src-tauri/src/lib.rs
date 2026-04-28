@@ -132,6 +132,21 @@ fn is_sim_connected(state: State<'_, UnifiedMonitor>) -> bool {
     state.get_all_monitors().iter().any(|m| m.is_connected())
 }
 
+#[tauri::command]
+fn get_connected_sims(state: State<'_, UnifiedMonitor>) -> Vec<String> {
+    state
+        .get_all_monitors()
+        .iter()
+        .filter(|m| m.is_connected())
+        .map(|m| m.id().to_string())
+        .collect()
+}
+
+#[tauri::command]
+fn is_flight_ongoing(state: State<'_, UnifiedMonitor>) -> bool {
+    state.get_all_monitors().iter().any(|m| m.is_monitoring())
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(app: AppHandle, name: &str) -> String {
@@ -306,6 +321,8 @@ pub fn run() {
             stop_monitoring,
             get_metrics,
             is_sim_connected,
+            get_connected_sims,
+            is_flight_ongoing,
             get_config,
             set_config,
             get_config_async,

@@ -18,6 +18,7 @@ pub struct XPlaneMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
     running: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
+    monitoring: Arc<Mutex<bool>>,
 }
 
 impl XPlaneMonitor {
@@ -26,6 +27,7 @@ impl XPlaneMonitor {
             metrics: Arc::new(Mutex::new(FlightMetrics::default())),
             running: Arc::new(Mutex::new(false)),
             connected: Arc::new(Mutex::new(false)),
+            monitoring: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -34,6 +36,7 @@ impl XPlaneMonitor {
         metrics: Arc<Mutex<FlightMetrics>>,
         running: Arc<Mutex<bool>>,
         connected: Arc<Mutex<bool>>,
+        monitoring: Arc<Mutex<bool>>,
         _requested_log_path: Option<PathBuf>,
     ) -> anyhow::Result<()> {
         let url = "ws://localhost:8080/api/v1/telemetry"; // Default port for common XP REST plugins
@@ -85,6 +88,10 @@ impl XPlaneMonitor {
 
                     let mut last_log_time = Local::now();
                     let mut flight_ongoing = false;
+                    {
+                        let mut m = monitoring.lock().unwrap();
+                        *m = false;
+                    }
                     let mut db_conn: Option<Connection> = None;
                     let mut current_log_path: Option<PathBuf> = None;
                     let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
@@ -159,6 +166,10 @@ impl XPlaneMonitor {
                                 let ongoing = m.is_on_ground < 0.5 || m.ground_speed > 10.0;
                                 if ongoing && !flight_ongoing {
                                     flight_ongoing = true;
+                                    {
+                                        let mut m = monitoring.lock().unwrap();
+                                        *m = true;
+                                    }
                                     crate::append_log(
                                         &app,
                                         format!(
@@ -282,6 +293,11 @@ impl XPlaneMonitor {
                                                 }
 
                                                 drop(db_conn.take());
+                                                flight_ongoing = false;
+                                                {
+                                                    let mut m = monitoring.lock().unwrap();
+                                                    *m = false;
+                                                }
                                                 let _ = app.emit("flight-logs-updated", ());
                                             }
                                         }
@@ -295,6 +311,10 @@ impl XPlaneMonitor {
                     {
                         let mut c = connected.lock().unwrap();
                         *c = false;
+                    }
+                    {
+                        let mut m = monitoring.lock().unwrap();
+                        *m = false;
                     }
                     crate::append_log(&app, "[X-Plane] Connection closed.".to_string());
                 }
@@ -312,6 +332,10 @@ impl XPlaneMonitor {
 }
 
 impl SimMonitor for XPlaneMonitor {
+    fn id(&self) -> &'static str {
+        "xplane"
+    }
+
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()> {
         let mut running = self.running.lock().unwrap();
         if *running {
@@ -322,6 +346,7 @@ impl SimMonitor for XPlaneMonitor {
         let metrics = self.metrics.clone();
         let running_clone = self.running.clone();
         let connected_clone = self.connected.clone();
+        let monitoring_clone = self.monitoring.clone();
 
         thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -330,9 +355,15 @@ impl SimMonitor for XPlaneMonitor {
                 .unwrap();
 
             rt.block_on(async {
-                let _ =
-                    Self::run_monitor_async(app, metrics, running_clone, connected_clone, log_path)
-                        .await;
+                let _ = Self::run_monitor_async(
+                    app,
+                    metrics,
+                    running_clone,
+                    connected_clone,
+                    monitoring_clone,
+                    log_path,
+                )
+                .await;
             });
         });
 
@@ -350,5 +381,9 @@ impl SimMonitor for XPlaneMonitor {
 
     fn is_connected(&self) -> bool {
         *self.connected.lock().unwrap()
+    }
+
+    fn is_monitoring(&self) -> bool {
+        *self.monitoring.lock().unwrap()
     }
 }

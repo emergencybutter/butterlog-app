@@ -6,10 +6,12 @@ pub mod msfs;
 pub mod xplane;
 
 pub trait SimMonitor: Send + Sync {
+    fn id(&self) -> &'static str;
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()>;
     fn stop(&self);
     fn get_metrics(&self) -> FlightMetrics;
     fn is_connected(&self) -> bool;
+    fn is_monitoring(&self) -> bool;
 }
 
 pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {

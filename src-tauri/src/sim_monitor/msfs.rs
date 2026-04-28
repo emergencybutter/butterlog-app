@@ -16,6 +16,7 @@ pub struct SimConnectMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
     running: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
+    monitoring: Arc<Mutex<bool>>,
 }
 
 impl SimConnectMonitor {
@@ -24,6 +25,7 @@ impl SimConnectMonitor {
             metrics: Arc::new(Mutex::new(FlightMetrics::default())),
             running: Arc::new(Mutex::new(false)),
             connected: Arc::new(Mutex::new(false)),
+            monitoring: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -32,6 +34,7 @@ impl SimConnectMonitor {
         sc: SimConnect,
         metrics: &Arc<Mutex<FlightMetrics>>,
         running: &Arc<Mutex<bool>>,
+        monitoring: &Arc<Mutex<bool>>,
         _requested_log_path: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
         let define_id = 1;
@@ -162,6 +165,10 @@ impl SimConnectMonitor {
         let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
         let mut last_log_time = Local::now();
         let mut flight_ongoing = false;
+        {
+            let mut m = monitoring.lock().unwrap();
+            *m = false;
+        }
 
         loop {
             if !*running.lock().unwrap() {
@@ -183,6 +190,10 @@ impl SimConnectMonitor {
                             ),
                         );
                         flight_ongoing = true;
+                        {
+                            let mut m = monitoring.lock().unwrap();
+                            *m = true;
+                        }
 
                         db_conn = None;
                         analyzer.reset();
@@ -240,6 +251,10 @@ impl SimConnectMonitor {
                             ),
                         );
                         flight_ongoing = false;
+                        {
+                            let mut m = monitoring.lock().unwrap();
+                            *m = false;
+                        }
 
                         if let Some(ref conn) = db_conn {
                             if let Some(db) = app.try_state::<AirportsDatabase>() {
@@ -328,6 +343,10 @@ impl SimConnectMonitor {
                                 ),
                             );
                             flight_ongoing = true;
+                            {
+                                let mut m = monitoring.lock().unwrap();
+                                *m = true;
+                            }
                             db_conn = None;
                             analyzer.reset();
                             aircraft_info = AircraftInfo::default();
@@ -468,6 +487,10 @@ impl SimConnectMonitor {
 }
 
 impl SimMonitor for SimConnectMonitor {
+    fn id(&self) -> &'static str {
+        "msfs"
+    }
+
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()> {
         let mut running = self.running.lock().unwrap();
         if *running {
@@ -478,6 +501,7 @@ impl SimMonitor for SimConnectMonitor {
         let metrics = self.metrics.clone();
         let running_clone = self.running.clone();
         let connected_clone = self.connected.clone();
+        let monitoring_clone = self.monitoring.clone();
 
         thread::spawn(move || loop {
             if !*running_clone.lock().unwrap() {
@@ -498,9 +522,14 @@ impl SimMonitor for SimConnectMonitor {
                         *connected = true;
                     }
 
-                    if let Err(e) =
-                        Self::run_monitor(&app, sc, &metrics, &running_clone, log_path.as_ref())
-                    {
+                    if let Err(e) = Self::run_monitor(
+                        &app,
+                        sc,
+                        &metrics,
+                        &running_clone,
+                        &monitoring_clone,
+                        log_path.as_ref(),
+                    ) {
                         crate::append_log(
                             &app,
                             format!(
@@ -514,6 +543,10 @@ impl SimMonitor for SimConnectMonitor {
                     {
                         let mut connected = connected_clone.lock().unwrap();
                         *connected = false;
+                    }
+                    {
+                        let mut monitoring = monitoring_clone.lock().unwrap();
+                        *monitoring = false;
                     }
                 }
                 Err(_) => {}
@@ -536,5 +569,9 @@ impl SimMonitor for SimConnectMonitor {
 
     fn is_connected(&self) -> bool {
         *self.connected.lock().unwrap()
+    }
+
+    fn is_monitoring(&self) -> bool {
+        *self.monitoring.lock().unwrap()
     }
 }
