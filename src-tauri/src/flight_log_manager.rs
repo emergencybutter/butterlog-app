@@ -108,8 +108,6 @@ pub struct FlightSummary {
     pub duration_minutes: i64,
     pub file_size_bytes: u64,
     pub aircraft_title: String,
-    pub aircraft_type: String,
-    pub aircraft_model: String,
     pub max_altitude: f64,
     pub max_ground_speed: f64,
     pub fuel_consumed: f64,
@@ -272,8 +270,6 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let end_icao = get_summary("arrival_icao");
     let end_airport_name = get_summary("arrival_name");
     let aircraft_title = get_summary("aircraft_title");
-    let aircraft_type = get_summary("aircraft_type");
-    let aircraft_model = get_summary("aircraft_model");
     let max_altitude = get_summary("max_altitude").parse().unwrap_or(0.0);
     let max_ground_speed = get_summary("max_ground_speed").parse().unwrap_or(0.0);
     let fuel_consumed = get_summary("fuel_consumed").parse().unwrap_or(0.0);
@@ -281,14 +277,26 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let events: Vec<FlightEvent> = serde_json::from_str(&events_json).unwrap_or_default();
 
     let mut stmt = conn.prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics").ok()?;
-    let (start_time, end_time): (String, String) = stmt.query_row([], |row| {
+    let time_res: rusqlite::Result<(Option<String>, Option<String>)> = stmt.query_row([], |row| {
         Ok((row.get(0)?, row.get(1)?))
-    }).ok()?;
+    });
+
+    let (start_time, end_time) = match time_res {
+        Ok((Some(s), Some(e))) => (s, e),
+        _ => (
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+        )
+    };
     
-    let start_dt = NaiveDateTime::parse_from_str(&start_time, "%Y-%m-%d %H:%M:%S").ok()?;
-    let end_dt = NaiveDateTime::parse_from_str(&end_time, "%Y-%m-%d %H:%M:%S").ok()?;
-    
-    let duration = end_dt.signed_duration_since(start_dt);
+    let duration_minutes = if let (Ok(start_dt), Ok(end_dt)) = (
+        NaiveDateTime::parse_from_str(&start_time.split('.').next().unwrap_or(&start_time), "%Y-%m-%d %H:%M:%S"),
+        NaiveDateTime::parse_from_str(&end_time.split('.').next().unwrap_or(&end_time), "%Y-%m-%d %H:%M:%S")
+    ) {
+        end_dt.signed_duration_since(start_dt).num_minutes()
+    } else {
+        0
+    };
 
     Some(FlightSummary {
         filename,
@@ -298,11 +306,9 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
         end_airport_name,
         start_time,
         end_time,
-        duration_minutes: duration.num_minutes(),
+        duration_minutes,
         file_size_bytes: metadata.len(),
         aircraft_title,
-        aircraft_type,
-        aircraft_model,
         max_altitude,
         max_ground_speed,
         fuel_consumed,
@@ -604,8 +610,6 @@ fn save_imported_flight(app: &AppHandle, aircraft_title: &str, rows: Vec<FlightL
         ("arrival_icao", end_icao.clone()),
         ("arrival_name", end_name.clone()),
         ("aircraft_title", aircraft_title.to_string()),
-        ("aircraft_type", "Imported".to_string()),
-        ("aircraft_model", "Imported".to_string()),
         ("max_altitude", analyzer.max_alt.to_string()),
         ("max_ground_speed", analyzer.max_gs.to_string()),
         ("fuel_consumed", fuel_consumed.to_string()),

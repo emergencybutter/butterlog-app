@@ -126,6 +126,7 @@ impl XPlaneMonitor {
                                             let _ = init_sqlite_db(&conn);
                                             db_conn = Some(conn);
                                             crate::append_log(&app, format!("[X-Plane] Created new flight log: {:?}", path.file_name().unwrap()));
+                                            let _ = app.emit("flight-logs-updated", ());
                                         }
                                         Err(e) => {
                                             crate::append_log(&app, format!("[X-Plane] Failed to create log file: {}", e));
@@ -133,7 +134,6 @@ impl XPlaneMonitor {
                                     }
 
                                     if let Some(title) = data["sim/aircraft/view/acf_title"].as_str() { aircraft_info.title = title.to_string(); }
-                                    if let Some(model) = data["sim/aircraft/view/acf_ICAO"].as_str() { aircraft_info.atc_model = model.to_string(); aircraft_info.atc_type = model.to_string(); }
                                 }
 
                                 if flight_ongoing {
@@ -177,12 +177,9 @@ impl XPlaneMonitor {
                                             
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_icao", end_icao]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_name", end_name]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_title", aircraft_info.title]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_type", aircraft_info.atc_type]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_model", aircraft_info.atc_model]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_altitude", analyzer.max_alt.to_string()]);
+
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_ground_speed", analyzer.max_gs.to_string()]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()]);
                                             if let Ok(events_json) = serde_json::to_string(&analyzer.events) {

@@ -115,9 +115,7 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "SIM ON GROUND", "bool")?;
 
         // Aircraft info definitions
-        sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "")?;
-        sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC TYPE", "")?;
-        sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC MODEL", "")?;
+        sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "string256")?;
 
         sc.request_data_on_sim_object(
             request_id,
@@ -176,6 +174,7 @@ impl SimConnectMonitor {
                                 } else {
                                     db_conn = Some(conn);
                                     crate::append_log(app, format!("New internal flight log created at: {:?}", path));
+                                    let _ = app.emit("flight-logs-updated", ());
                                 }
                             }
                             Err(e) => {
@@ -198,8 +197,6 @@ impl SimConnectMonitor {
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_icao", end_icao]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_name", end_name]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_title", aircraft_info.title]);
-                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_type", aircraft_info.atc_type]);
-                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_model", aircraft_info.atc_model]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_altitude", analyzer.max_alt.to_string()]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_ground_speed", analyzer.max_gs.to_string()]);
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()]);
@@ -217,10 +214,9 @@ impl SimConnectMonitor {
                 }
 
                 if msg.request_id() == Some(aircraft_request_id) {
-                    if let Some(data) = msg.as_sim_object_data::<[u8; 768]>() {
-                        aircraft_info.title = String::from_utf8_lossy(&data[0..256]).trim_matches(char::from(0)).trim().to_string();
-                        aircraft_info.atc_type = String::from_utf8_lossy(&data[256..512]).trim_matches(char::from(0)).trim().to_string();
-                        aircraft_info.atc_model = String::from_utf8_lossy(&data[512..768]).trim_matches(char::from(0)).trim().to_string();
+                    if let Some(data) = msg.as_sim_object_data::<[u8; 256]>() {
+                        let s = String::from_utf8_lossy(data);
+                        aircraft_info.title = s.split('\0').next().unwrap_or("").trim().to_string();
                     }
                 }
 
@@ -254,6 +250,7 @@ impl SimConnectMonitor {
                             if let Ok(conn) = Connection::open(&path) {
                                 let _ = init_sqlite_db(&conn);
                                 db_conn = Some(conn);
+                                let _ = app.emit("flight-logs-updated", ());
                             }
                         }
 
@@ -299,6 +296,29 @@ impl SimConnectMonitor {
                                     if let Some(ref conn) = db_conn {
                                         if let Err(e) = insert_sqlite_row(conn, &now_str, data) {
                                             crate::append_log(app, format!("Failed to insert SQLite row: {}", e));
+                                        }
+                                    }
+                                } else if flight_ongoing && data.is_on_ground > 0.5 {
+                                    // Flight was ongoing but now speed is ~0 on ground. Update summary periodically or on stop.
+                                    if let Some(ref conn) = db_conn {
+                                        if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                            let start_icao = analyzer.find_start_icao(&db);
+                                            let end_icao = analyzer.find_end_icao(&db);
+                                            let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+                                            let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+                                            
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_icao", end_icao]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_name", end_name]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_title", aircraft_info.title]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_altitude", analyzer.max_alt.to_string()]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_ground_speed", analyzer.max_gs.to_string()]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()]);
+                                            if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                            }
+                                            let _ = app.emit("flight-logs-updated", ());
                                         }
                                     }
                                 }

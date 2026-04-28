@@ -14,8 +14,6 @@ interface FlightSummary {
     durationMinutes: number;
     fileSizeBytes: number;
     aircraftTitle: string;
-    aircraftType: string;
-    aircraftModel: string;
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;
@@ -174,7 +172,7 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                         <div>
                                             <p><span style={{ color: "#888" }}>Departure:</span> {s.startTime}</p>
                                             <p><span style={{ color: "#888" }}>Arrival:</span> {s.endTime}</p>
-                                            <p><span style={{ color: "#888" }}>Aircraft:</span> {s.aircraftTitle} ({s.aircraftModel})</p>
+                                            <p><span style={{ color: "#888" }}>Aircraft:</span> {s.aircraftTitle}</p>
                                         </div>
                                         <div>
                                             <p><span style={{ color: "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>

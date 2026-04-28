@@ -147,8 +147,6 @@ pub struct FlightMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AircraftInfo {
     pub title: String,
-    pub atc_type: String,
-    pub atc_model: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

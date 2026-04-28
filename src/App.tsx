@@ -21,8 +21,6 @@ interface FlightSummary {
     endTime: string;
     durationMinutes: number;
     aircraftTitle: string;
-    aircraftType: string;
-    aircraftModel: string;
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;
