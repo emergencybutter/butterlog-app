@@ -3,6 +3,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { 
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine, Label
 } from 'recharts';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, Tooltip as LeafletTooltip } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default marker icons in Leaflet
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconUrl: markerIcon,
+    iconRetinaUrl: markerIcon2x,
+    shadowUrl: markerShadow,
+});
 
 interface FlightMetrics {
   latitude: number;
@@ -64,103 +80,134 @@ interface TrajectoryPoint {
     isEvent?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
 }
 
-function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], title: string }) {
-    if (runways.length === 0 && trajectory.length === 0) return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px" }}>No data for {icao}</div>;
+function MapAutoBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
+    const map = useMap();
+    useEffect(() => {
+        if (bounds) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+        }
+    }, [bounds, map]);
+    return null;
+}
 
-    const validRunways = runways.filter(r => 
+function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], title: string }) {
+    const validRunways = useMemo(() => runways.filter(r => 
         r.le_latitude_deg !== null && r.le_longitude_deg !== null && 
         r.he_latitude_deg !== null && r.he_longitude_deg !== null
-    );
+    ), [runways]);
 
-    // Determine bounding box
-    const rLats = validRunways.flatMap(r => [r.le_latitude_deg!, r.he_latitude_deg!]);
-    const rLons = validRunways.flatMap(r => [r.le_longitude_deg!, r.he_longitude_deg!]);
-    const tLats = trajectory.map(p => p.lat);
-    const tLons = trajectory.map(p => p.lon);
-    
-    const allLats = [...rLats, ...tLats];
-    const allLons = [...rLons, ...tLons];
+    const bounds = useMemo(() => {
+        const points: L.LatLngExpression[] = [];
+        validRunways.forEach(r => {
+            points.push([r.le_latitude_deg!, r.le_longitude_deg!]);
+            points.push([r.he_latitude_deg!, r.he_longitude_deg!]);
+        });
+        trajectory.forEach(p => points.push([p.lat, p.lon]));
+        
+        if (points.length === 0) return null;
+        return L.latLngBounds(points);
+    }, [validRunways, trajectory]);
 
-    if (allLats.length === 0) return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>No map data</div>;
-
-    const minLat = Math.min(...allLats);
-    const maxLat = Math.max(...allLats);
-    const minLon = Math.min(...allLons);
-    const maxLon = Math.max(...allLons);
-
-    // Padding & Aspect Ratio
-    const latDiff = Math.max(maxLat - minLat, 0.002);
-    const lonDiff = Math.max(maxLon - minLon, 0.002);
-    const padding = 0.25;
-
-    const mapMinLat = minLat - latDiff * padding;
-    const mapMaxLat = maxLat + latDiff * padding;
-    const mapMinLon = minLon - lonDiff * padding;
-    const mapMaxLon = maxLon + lonDiff * padding;
-
-    const width = 350;
-    const height = 350;
-
-    const scaleX = (lon: number) => (lon - mapMinLon) / (mapMaxLon - mapMinLon) * width;
-    const scaleY = (lat: number) => height - (lat - mapMinLat) / (mapMaxLat - mapMinLat) * height;
+    if (!bounds) {
+        return <div style={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px", background: "#1a1a1a" }}>No map data for {icao}</div>;
+    }
 
     const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing');
+    const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
 
     return (
         <div style={{ textAlign: "center", background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333" }}>
             <h4 style={{ margin: "0 0 15px 0", color: "#888" }}>{title} ({icao})</h4>
-            <svg width="100%" height="auto" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: "400px" }}>
-                {/* Draw Runways */}
-                {validRunways.map((r, i) => {
-                    const x1 = scaleX(r.le_longitude_deg!);
-                    const y1 = scaleY(r.le_latitude_deg!);
-                    const x2 = scaleX(r.he_longitude_deg!);
-                    const y2 = scaleY(r.he_latitude_deg!);
-                    
-                    return (
-                        <g key={`rwy-${i}`}>
-                            <line 
-                                x1={x1} y1={y1} x2={x2} y2={y2} 
-                                stroke="#444" 
-                                strokeWidth={r.width_ft ? Math.max(3, r.width_ft / 15) : 6} 
-                                strokeLinecap="square"
-                            />
-                            <text x={x1} y={y1} fill="#666" fontSize="10" dy="-8" textAnchor="middle" fontWeight="bold">{r.le_ident}</text>
-                            <text x={x2} y={y2} fill="#666" fontSize="10" dy="16" textAnchor="middle" fontWeight="bold">{r.he_ident}</text>
-                        </g>
-                    );
-                })}
-
-                {/* Draw Trajectory */}
-                {trajectory.length > 1 && (
-                    <polyline
-                        points={trajectory.map(p => `${scaleX(p.lon)},${scaleY(p.lat)}`).join(' ')}
-                        fill="none"
-                        stroke="#2196f3"
-                        strokeWidth="2"
-                        opacity={0.8}
+            <div style={{ height: "350px", borderRadius: "4px", overflow: "hidden" }}>
+                <MapContainer 
+                    bounds={bounds} 
+                    style={{ height: "100%", width: "100%" }}
+                    zoomControl={true}
+                    scrollWheelZoom={true}
+                >
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                     />
-                )}
-
-                {/* Draw Events (Red dots for takeoff/landing) */}
-                {eventPoints.map((p, i) => (
-                    <g key={`event-${i}`}>
-                        <circle 
-                            cx={scaleX(p.lon)} cy={scaleY(p.lat)} r="6" 
-                            fill="#f44336" 
-                            stroke="#fff" strokeWidth="1.5"
-                        />
-                        <text 
-                            x={scaleX(p.lon)} y={scaleY(p.lat)} 
-                            fill="#fff" fontSize="9" fontWeight="bold" 
-                            dy={p.isEvent === 'takeoff' ? -12 : 20} textAnchor="middle"
-                            style={{ textShadow: "0 0 3px #000" }}
+                    
+                    {/* Runways */}
+                    {validRunways.map((r, i) => (
+                        <Polyline 
+                            key={`rwy-${i}`}
+                            positions={[[r.le_latitude_deg!, r.le_longitude_deg!], [r.he_latitude_deg!, r.he_longitude_deg!]]}
+                            color="#666"
+                            weight={Math.max(4, (r.width_ft || 100) / 15)}
+                            opacity={0.8}
                         >
-                            {p.isEvent === 'takeoff' ? "LIFT OFF" : "TOUCHDOWN"}
-                        </text>
-                    </g>
-                ))}
-            </svg>
+                            <LeafletTooltip permanent direction="center" opacity={0.7} className="runway-label">
+                                {r.le_ident} / {r.he_ident}
+                            </LeafletTooltip>
+                        </Polyline>
+                    ))}
+
+                    {/* Flight Path */}
+                    {trajPath.length > 1 && (
+                        <Polyline 
+                            positions={trajPath}
+                            color="#2196f3"
+                            weight={3}
+                            opacity={0.8}
+                        />
+                    )}
+
+                    {/* Events */}
+                    {eventPoints.map((p, i) => (
+                        <Marker 
+                            key={`event-${i}`} 
+                            position={[p.lat, p.lon]}
+                            icon={L.divIcon({
+                                className: 'custom-event-marker',
+                                html: `<div style="background-color: #f44336; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                iconSize: [12, 12],
+                                iconAnchor: [6, 6]
+                            })}
+                        >
+                            <Popup>
+                                <strong>{p.isEvent?.toUpperCase().replace('_', ' ')}</strong>
+                            </Popup>
+                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className="event-label">
+                                {p.isEvent === 'takeoff' ? "LIFT OFF" : "TOUCHDOWN"}
+                            </LeafletTooltip>
+                        </Marker>
+                    ))}
+
+                    <MapAutoBounds bounds={bounds} />
+                </MapContainer>
+            </div>
+            <style>{`
+                .runway-label {
+                    background: transparent;
+                    border: none;
+                    box-shadow: none;
+                    color: #fff;
+                    font-weight: bold;
+                    font-size: 10px;
+                    text-shadow: 1px 1px 2px #000;
+                }
+                .runway-label::before {
+                    display: none;
+                }
+                .event-label {
+                    background: rgba(244, 67, 54, 0.8);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label::before {
+                    border-top-color: rgba(244, 67, 54, 0.8);
+                }
+                .leaflet-container {
+                    background: #111 !important;
+                }
+            `}</style>
         </div>
     );
 }
