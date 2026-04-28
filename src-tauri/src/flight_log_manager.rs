@@ -284,7 +284,11 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     };
 
     let start_icao = get_summary("departure_icao");
-    let start_airport_name = get_summary("departure_name");
+    let start_airport_name = if start_icao == "Airborne" {
+        "Airborne".to_string()
+    } else {
+        get_summary("departure_name")
+    };
     let end_icao = get_summary("arrival_icao");
     let end_airport_name = get_summary("arrival_name");
     let aircraft_title = get_summary("aircraft_title");
@@ -675,10 +679,13 @@ fn save_imported_flight(
         if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
             let s_icao = analyzer.find_start_icao(&db);
             let e_icao = analyzer.find_end_icao(&db);
-            let s_name = db
-                .get_by_ident(&s_icao)
-                .map(|a| a.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+            let s_name = if s_icao == "Airborne" {
+                "Airborne".to_string()
+            } else {
+                db.get_by_ident(&s_icao)
+                    .map(|a| a.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string())
+            };
             let e_name = db
                 .get_by_ident(&e_icao)
                 .map(|a| a.name.clone())

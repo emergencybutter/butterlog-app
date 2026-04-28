@@ -245,10 +245,13 @@ impl SimConnectMonitor {
                             if let Some(db) = app.try_state::<AirportsDatabase>() {
                                 let start_icao = analyzer.find_start_icao(&db);
                                 let end_icao = analyzer.find_end_icao(&db);
-                                let start_name = db
-                                    .get_by_ident(&start_icao)
-                                    .map(|a| a.name.clone())
-                                    .unwrap_or_else(|| "Unknown".to_string());
+                                let start_name = if start_icao == "Airborne" {
+                                    "Airborne".to_string()
+                                } else {
+                                    db.get_by_ident(&start_icao)
+                                        .map(|a| a.name.clone())
+                                        .unwrap_or_else(|| "Unknown".to_string())
+                                };
                                 let end_name = db
                                     .get_by_ident(&end_icao)
                                     .map(|a| a.name.clone())
@@ -395,10 +398,13 @@ impl SimConnectMonitor {
                                                 (&db_conn, app.try_state::<AirportsDatabase>())
                                             {
                                                 let start_icao = analyzer.find_start_icao(&db);
-                                                let start_name = db
-                                                    .get_by_ident(&start_icao)
-                                                    .map(|a| a.name.clone())
-                                                    .unwrap_or_else(|| "Unknown".to_string());
+                                                let start_name = if start_icao == "Airborne" {
+                                                    "Airborne".to_string()
+                                                } else {
+                                                    db.get_by_ident(&start_icao)
+                                                        .map(|a| a.name.clone())
+                                                        .unwrap_or_else(|| "Unknown".to_string())
+                                                };
                                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
                                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
                                             }
@@ -419,10 +425,13 @@ impl SimConnectMonitor {
                                         if let Some(db) = app.try_state::<AirportsDatabase>() {
                                             let start_icao = analyzer.find_start_icao(&db);
                                             let end_icao = analyzer.find_end_icao(&db);
-                                            let start_name = db
-                                                .get_by_ident(&start_icao)
-                                                .map(|a| a.name.clone())
-                                                .unwrap_or_else(|| "Unknown".to_string());
+                                            let start_name = if start_icao == "Airborne" {
+                                                "Airborne".to_string()
+                                            } else {
+                                                db.get_by_ident(&start_icao)
+                                                    .map(|a| a.name.clone())
+                                                    .unwrap_or_else(|| "Unknown".to_string())
+                                            };
                                             let end_name = db
                                                 .get_by_ident(&end_icao)
                                                 .map(|a| a.name.clone())

@@ -13,6 +13,7 @@ pub struct FlightAnalyzer {
     pub final_fuel: f64,
     pub events: Vec<FlightEvent>,
     landed: bool,
+    airborne_start: bool,
 }
 
 impl FlightAnalyzer {
@@ -28,6 +29,7 @@ impl FlightAnalyzer {
             final_fuel: 0.0,
             events: Vec::new(),
             landed: false,
+            airborne_start: false,
         }
     }
 
@@ -42,6 +44,7 @@ impl FlightAnalyzer {
         self.final_fuel = 0.0;
         self.events.clear();
         self.landed = false;
+        self.airborne_start = false;
     }
 
     pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
@@ -74,6 +77,7 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::TaxiOut;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
+                    self.airborne_start = true;
                 }
             }
             FlightPhase::TaxiOut => {
@@ -205,6 +209,9 @@ impl FlightAnalyzer {
     }
 
     pub fn find_start_icao(&self, db: &AirportsDatabase) -> String {
+        if self.airborne_start {
+            return "Airborne".to_string();
+        }
         self.find_dominant_icao(&self.start_coords, db)
     }
 

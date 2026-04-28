@@ -256,10 +256,13 @@ impl XPlaneMonitor {
                                             if let Some(db) = app.try_state::<AirportsDatabase>() {
                                                 let start_icao = analyzer.find_start_icao(&db);
                                                 let end_icao = analyzer.find_end_icao(&db);
-                                                let start_name = db
-                                                    .get_by_ident(&start_icao)
-                                                    .map(|a| a.name.clone())
-                                                    .unwrap_or_else(|| "Unknown".to_string());
+                                                let start_name = if start_icao == "Airborne" {
+                                                    "Airborne".to_string()
+                                                } else {
+                                                    db.get_by_ident(&start_icao)
+                                                        .map(|a| a.name.clone())
+                                                        .unwrap_or_else(|| "Unknown".to_string())
+                                                };
                                                 let end_name = db
                                                     .get_by_ident(&end_icao)
                                                     .map(|a| a.name.clone())
