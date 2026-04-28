@@ -9,7 +9,9 @@ mod flight_log_manager;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
 use models::FlightMetrics;
 use sim_monitor::SimMonitor;
@@ -182,11 +184,38 @@ pub fn run() {
                 format!("[{}] Startup - App: {} v{}", timestamp, pkg_info.name, pkg_info.version),
             );
 
+            // Tray menu
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Open Window", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
             // Load the icon from the public folder and create the tray icon
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../../public/icon.png"))
                 .expect("Failed to load tray icon");
-            tauri::tray::TrayIconBuilder::with_id("main")
+            TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
                 .build(app)?;
 
             let airports_app_handle = app.handle().clone();
@@ -236,6 +265,12 @@ pub fn run() {
             let _ = monitor.start(app.app_handle().clone(), None);
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             greet,
