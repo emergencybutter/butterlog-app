@@ -32,6 +32,7 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
     const [importing, setImporting] = useState(false);
     const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+    const [showIncomplete, setShowIncomplete] = useState(false);
 
     const loadSummaries = () => {
         setLoading(true);
@@ -98,9 +99,14 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
 
     if (loading && !importing) return <div>Scanning logs...</div>;
 
+    const filteredSummaries = summaries.filter(s => {
+        if (showIncomplete) return true;
+        return s.startIcao !== "Airborne" && s.endIcao !== "Airborne";
+    });
+
     return (
         <div className="logs-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                 <h2>Flight History</h2>
                 <button 
                     onClick={handleImport} 
@@ -109,6 +115,18 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                 >
                     {importing ? "Importing..." : "Import G1000 Log (CSV)"}
                 </button>
+            </div>
+
+            <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                <input 
+                    type="checkbox" 
+                    id="showIncomplete" 
+                    checked={showIncomplete} 
+                    onChange={(e) => setShowIncomplete(e.target.checked)} 
+                />
+                <label htmlFor="showIncomplete" style={{ fontSize: "0.9rem", color: "#aaa", cursor: "pointer" }}>
+                    Show incomplete flights (airborne start/end)
+                </label>
             </div>
 
             {importing && (
@@ -131,11 +149,11 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                 </div>
             )}
 
-            {summaries.length === 0 ? (
+            {filteredSummaries.length === 0 ? (
                 <p style={{ textAlign: "center", color: "#888" }}>No flight logs found.</p>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {summaries.map((s, i) => (
+                    {filteredSummaries.map((s, i) => (
                         <div key={s.filename} style={{ background: "#2a2a2a", borderRadius: "8px", overflow: "hidden", border: "1px solid #444" }}>
                             <div 
                                 onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
