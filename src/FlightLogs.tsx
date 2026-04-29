@@ -117,14 +117,14 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                 </button>
             </div>
 
-            <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "8px" }}>
-                <input 
-                    type="checkbox" 
-                    id="showIncomplete" 
-                    checked={showIncomplete} 
-                    onChange={(e) => setShowIncomplete(e.target.checked)} 
-                />
-                <label htmlFor="showIncomplete" style={{ fontSize: "0.9rem", color: "#aaa", cursor: "pointer" }}>
+            <div style={{ marginBottom: "1.5rem" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem", color: "#aaa", cursor: "pointer" }}>
+                    <input 
+                        type="checkbox" 
+                        checked={showIncomplete} 
+                        onChange={(e) => setShowIncomplete(e.target.checked)}
+                        style={{ margin: 0, width: "auto", cursor: "pointer" }}
+                    />
                     Show incomplete flights (airborne start/end)
                 </label>
             </div>
