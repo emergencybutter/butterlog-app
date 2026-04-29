@@ -256,6 +256,66 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     );
 }
 
+function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: number}[], events: FlightEvent[] }) {
+    const bounds = useMemo(() => {
+        if (trajectory.length === 0) return null;
+        const points: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
+        return L.latLngBounds(points);
+    }, [trajectory]);
+
+    if (!bounds) return null;
+
+    const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
+
+    return (
+        <div style={{ background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333", marginBottom: "2rem" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "15px", color: "#888" }}>Full Flight Path</h3>
+            <div style={{ height: "400px", borderRadius: "4px", overflow: "hidden" }}>
+                <MapContainer 
+                    bounds={bounds} 
+                    style={{ height: "100%", width: "100%" }}
+                    zoomControl={true}
+                    scrollWheelZoom={true}
+                >
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    />
+                    
+                    {trajPath.length > 1 && (
+                        <Polyline 
+                            positions={trajPath}
+                            color="#2196f3"
+                            weight={3}
+                            opacity={0.8}
+                        />
+                    )}
+
+                    {events.map((e, i) => (
+                        <Marker 
+                            key={`event-full-${i}`} 
+                            position={[e.latitude, e.longitude]}
+                            icon={L.divIcon({
+                                className: 'custom-event-marker',
+                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : '#4caf50'}; width: 10px; height: 10px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                iconSize: [10, 10],
+                                iconAnchor: [5, 5]
+                            })}
+                        >
+                            <Popup>
+                                <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
+                                {e.timestamp.split(' ')[1]}
+                            </Popup>
+                        </Marker>
+                    ))}
+
+                    <MapAutoBounds bounds={bounds} />
+                </MapContainer>
+            </div>
+        </div>
+    );
+}
+
 export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBack: () => void }) {
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
@@ -396,6 +456,15 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         return landing ? findChartTime(landing.timestamp) : null;
     }, [flight.events, chartData]);
 
+    const fullTrajectory = useMemo(() => {
+        if (data.length === 0) return [];
+        const sampleRate = Math.max(1, Math.floor(data.length / 500));
+        return data.filter((_, i) => i % sampleRate === 0).map(row => ({
+            lat: row.metrics.latitude,
+            lon: row.metrics.longitude
+        }));
+    }, [data]);
+
     const handleExport = async () => {
         setExporting(true);
         try {
@@ -448,6 +517,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     <div style={{ fontSize: "1.5rem", fontWeight: "bold" }}>{flight.durationMinutes} min</div>
                 </div>
             </div>
+
+            <FullFlightMap trajectory={fullTrajectory} events={flight.events} />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "2rem" }}>
                 <RunwayMap 

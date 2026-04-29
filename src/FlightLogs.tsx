@@ -169,7 +169,7 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                 <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                     <div>
                                         <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: "2px" }}>{s.aircraftTitle}</div>
-                                        <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#4caf50" }}>
+                                        <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#eee" }}>
                                             {s.startIcao} → {s.endIcao}
                                         </div>
                                         <div style={{ fontSize: "0.7rem", color: "#aaa" }}>
