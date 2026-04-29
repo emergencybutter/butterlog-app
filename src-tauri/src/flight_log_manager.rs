@@ -721,10 +721,13 @@ fn save_imported_flight(
                     .map(|a| a.name.clone())
                     .unwrap_or_else(|| "Unknown".to_string())
             };
-            let e_name = db
-                .get_by_ident(&e_icao)
-                .map(|a| a.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+            let e_name = if e_icao == "Airborne" {
+                "Airborne".to_string()
+            } else {
+                db.get_by_ident(&e_icao)
+                    .map(|a| a.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string())
+            };
             (s_icao, s_name, e_icao, e_name)
         } else {
             (

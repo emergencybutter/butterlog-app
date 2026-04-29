@@ -279,10 +279,13 @@ impl XPlaneMonitor {
                                                         .map(|a| a.name.clone())
                                                         .unwrap_or_else(|| "Unknown".to_string())
                                                 };
-                                                let end_name = db
-                                                    .get_by_ident(&end_icao)
-                                                    .map(|a| a.name.clone())
-                                                    .unwrap_or_else(|| "Unknown".to_string());
+                                                let end_name = if end_icao == "Airborne" {
+                                                    "Airborne".to_string()
+                                                } else {
+                                                    db.get_by_ident(&end_icao)
+                                                        .map(|a| a.name.clone())
+                                                        .unwrap_or_else(|| "Unknown".to_string())
+                                                };
 
                                                 let summary_data = [
                                                     ("departure_icao", start_icao),
