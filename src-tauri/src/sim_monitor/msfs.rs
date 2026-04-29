@@ -272,43 +272,36 @@ impl SimConnectMonitor {
                                     .map(|a| a.name.clone())
                                     .unwrap_or_else(|| "Unknown".to_string());
 
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["departure_icao", start_icao],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["departure_name", start_name],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["arrival_icao", end_icao],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["arrival_name", end_name],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["aircraft_title", aircraft_info.title],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["max_altitude", analyzer.max_alt.to_string()],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params!["max_ground_speed", analyzer.max_gs.to_string()],
-                                );
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
-                                    params![
+                                let summary_data = [
+                                    ("departure_icao", start_icao),
+                                    ("departure_name", start_name),
+                                    ("arrival_icao", end_icao),
+                                    ("arrival_name", end_name),
+                                    ("aircraft_title", aircraft_info.title.clone()),
+                                    ("max_altitude", analyzer.max_alt.to_string()),
+                                    ("max_ground_speed", analyzer.max_gs.to_string()),
+                                    (
                                         "fuel_consumed",
-                                        (analyzer.initial_fuel - analyzer.final_fuel).to_string()
-                                    ],
-                                );
+                                        (analyzer.initial_fuel - analyzer.final_fuel).to_string(),
+                                    ),
+                                ];
+
+                                for (k, v) in summary_data {
+                                    if let Err(e) = conn.execute(
+                                        "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
+                                        params![k, v],
+                                    ) {
+                                        crate::append_log(
+                                            app,
+                                            format!("Failed to update summary key {}: {}", k, e),
+                                        );
+                                    }
+                                }
+
                                 if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]) {
+                                        crate::append_log(app, format!("Failed to update flight events: {}", e));
+                                    }
                                 }
 
                                 drop(db_conn.take());
@@ -424,8 +417,12 @@ impl SimConnectMonitor {
                                                         .map(|a| a.name.clone())
                                                         .unwrap_or_else(|| "Unknown".to_string())
                                                 };
-                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
-                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
+                                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]) {
+                                                    crate::append_log(app, format!("Failed to update departure ICAO: {}", e));
+                                                }
+                                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]) {
+                                                    crate::append_log(app, format!("Failed to update departure name: {}", e));
+                                                }
                                             }
                                         }
                                     }
@@ -456,18 +453,42 @@ impl SimConnectMonitor {
                                                 .map(|a| a.name.clone())
                                                 .unwrap_or_else(|| "Unknown".to_string());
 
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_icao", start_icao]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["departure_name", start_name]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_icao", end_icao]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["arrival_name", end_name]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["aircraft_title", aircraft_info.title]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_altitude", analyzer.max_alt.to_string()]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["max_ground_speed", analyzer.max_gs.to_string()]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()]);
+                                            let summary_data = [
+                                                ("departure_icao", start_icao),
+                                                ("departure_name", start_name),
+                                                ("arrival_icao", end_icao),
+                                                ("arrival_name", end_name),
+                                                ("aircraft_title", aircraft_info.title.clone()),
+                                                ("max_altitude", analyzer.max_alt.to_string()),
+                                                ("max_ground_speed", analyzer.max_gs.to_string()),
+                                                (
+                                                    "fuel_consumed",
+                                                    (analyzer.initial_fuel - analyzer.final_fuel)
+                                                        .to_string(),
+                                                ),
+                                            ];
+
+                                            for (k, v) in summary_data {
+                                                if let Err(e) = conn.execute(
+                                                    "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
+                                                    params![k, v],
+                                                ) {
+                                                    crate::append_log(
+                                                        app,
+                                                        format!(
+                                                            "Failed to update summary key {}: {}",
+                                                            k, e
+                                                        ),
+                                                    );
+                                                }
+                                            }
+
                                             if let Ok(events_json) =
                                                 serde_json::to_string(&analyzer.events)
                                             {
-                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]) {
+                                                    crate::append_log(app, format!("Failed to update flight events: {}", e));
+                                                }
                                             }
                                             let _ = app.emit("flight-logs-updated", ());
                                         }

@@ -142,10 +142,18 @@ pub async fn get_flight_data(
         &app,
         format!("Opening flight log for data retrieval: {}", filename),
     );
-    let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(path).map_err(|e| {
+        let err = e.to_string();
+        crate::append_log(&app, format!("Database error (open): {}", err));
+        err
+    })?;
     let mut stmt = conn
         .prepare("SELECT * FROM metrics ORDER BY timestamp ASC")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err = e.to_string();
+            crate::append_log(&app, format!("Database error (prepare): {}", err));
+            err
+        })?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -154,7 +162,11 @@ pub async fn get_flight_data(
                 metrics: map_row_to_metrics(row)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err = e.to_string();
+            crate::append_log(&app, format!("Database error (query_map): {}", err));
+            err
+        })?;
 
     let mut result = Vec::new();
     for row in rows {
@@ -372,7 +384,11 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
     let csv_path = export_dir.join(&csv_filename);
 
     // Get aircraft info from summary table
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| {
+        let err = e.to_string();
+        crate::append_log(&app, format!("Export failed (open db): {}", err));
+        err
+    })?;
     let airframe_name = conn
         .query_row(
             "SELECT value FROM summary WHERE key = 'aircraft_title'",
@@ -381,10 +397,14 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
         )
         .unwrap_or_else(|_| "Simulated Aircraft".to_string());
 
-    let data = get_flight_data(app, filename).await?;
+    let data = get_flight_data(app.clone(), filename).await?;
 
     use std::io::Write;
-    let mut file = fs::File::create(&csv_path).map_err(|e| e.to_string())?;
+    let mut file = fs::File::create(&csv_path).map_err(|e| {
+        let err = e.to_string();
+        crate::append_log(&app, format!("Export failed (create file): {}", err));
+        err
+    })?;
 
     // Write header from FORMATS.md
     writeln!(file, "#airframe_info, log_version=\"1.00\", airframe_name=\"{}\", unit_software_part_number=\"006-BXXX9-DE\", unit_software_version=\"15.24\", system_software_part_number=\"006-BXXXX-37\", system_id=\"25XXXX67\", mode=NORMAL, simulator_id=\"ButterLogV2\",", airframe_name).map_err(|e| e.to_string())?;
@@ -419,9 +439,14 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
 #[tauri::command]
 pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<FlightSummary, String> {
+    let import_filename = PathBuf::from(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+
     crate::append_log(
         &app,
-        format!("Starting import of flight log from: {}", path),
+        format!("Starting import of flight log [{}]: {}", import_filename, path),
     );
 
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -432,7 +457,10 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
     }
 
     let airframe_name = parse_airframe_name(&lines);
-    crate::append_log(&app, format!("Detected airframe: {}", airframe_name));
+    crate::append_log(
+        &app,
+        format!("[{}] Detected airframe: {}", import_filename, airframe_name),
+    );
 
     let mut rows = Vec::new();
     let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
@@ -445,8 +473,8 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
     crate::append_log(
         &app,
         format!(
-            "Successfully parsed {} data points. Saving to internal database...",
-            total_rows
+            "[{}] Successfully parsed {} data points. Saving to internal database...",
+            import_filename, total_rows
         ),
     );
 
@@ -480,13 +508,20 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
     }
 
     let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err = e.to_string();
+            crate::append_log(
+                &app,
+                format!("[{}] Import failed (save_imported_flight): {}", import_filename, err),
+            );
+            err
+        })?;
 
     crate::append_log(
         &app,
         format!(
-            "Import complete. Identified route: {} -> {}",
-            summary.start_icao, summary.end_icao
+            "[{}] Import complete. Identified route: {} -> {}",
+            import_filename, summary.start_icao, summary.end_icao
         ),
     );
 
@@ -722,7 +757,7 @@ fn save_imported_flight(
 
     for (k, v) in summary_data {
         conn.execute(
-            "INSERT INTO summary (key, value) VALUES (?1, ?2)",
+            "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
             params![k, v],
         )?;
     }
