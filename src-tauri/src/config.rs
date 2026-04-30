@@ -141,3 +141,18 @@ impl ConfigManager {
         self.save()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(config.screenshot_regex, deserialized.screenshot_regex);
+        assert_eq!(config.open_at_login, deserialized.open_at_login);
+    }
+}

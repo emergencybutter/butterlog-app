@@ -291,3 +291,169 @@ impl FlightAnalyzer {
             .unwrap_or_else(|| "XXXX".to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_metrics() -> FlightMetrics {
+        FlightMetrics {
+            latitude: 0.0,
+            longitude: 0.0,
+            indicated_altitude: 1000.0,
+            altimeter_setting: 29.92,
+            gps_altitude_msl: 1000.0,
+            outside_air_temp: 15.0,
+            indicated_airspeed: 0.0,
+            ground_speed: 0.0,
+            vertical_speed: 0.0,
+            pitch_angle: 0.0,
+            roll_angle: 0.0,
+            lateral_acceleration: 0.0,
+            normal_acceleration: 1.0,
+            heading: 0.0,
+            track: 0.0,
+            volts_1: 28.0,
+            volts_2: 28.0,
+            amps_1: 0.0,
+            fuel_quantity_left: 20.0,
+            fuel_quantity_right: 20.0,
+            engine_1_fuel_flow: 0.0,
+            engine_1_oil_temp: 180.0,
+            engine_1_oil_pressure: 60.0,
+            engine_1_manifold_pressure: 10.0,
+            engine_1_rpm: 0.0,
+            engine_1_percent_power: 0.0,
+            engine_1_cht_1: 0.0,
+            engine_1_cht_2: 0.0,
+            engine_1_cht_3: 0.0,
+            engine_1_cht_4: 0.0,
+            engine_1_cht_5: 0.0,
+            engine_1_cht_6: 0.0,
+            engine_1_egt_1: 0.0,
+            engine_1_egt_2: 0.0,
+            engine_1_egt_3: 0.0,
+            engine_1_egt_4: 0.0,
+            engine_1_egt_5: 0.0,
+            engine_1_egt_6: 0.0,
+            engine_1_tit_1: 0.0,
+            engine_1_tit_2: 0.0,
+            gps_altitude_wgs84: 1000.0,
+            true_airspeed: 0.0,
+            hsi_source: 0.0,
+            selected_course: 0.0,
+            nav_1_frequency: 110.5,
+            nav_2_frequency: 110.5,
+            com_1_frequency: 121.5,
+            com_2_frequency: 121.5,
+            horizontal_cdi: 0.0,
+            vertical_cdi: 0.0,
+            wind_speed: 0.0,
+            wind_direction: 0.0,
+            waypoint_distance: 0.0,
+            waypoint_bearing: 0.0,
+            magnetic_variation: 0.0,
+            autopilot_active: 0.0,
+            roll_mode: 0.0,
+            pitch_mode: 0.0,
+            roll_command: 0.0,
+            pitch_command: 0.0,
+            vertical_speed_target: 0.0,
+            gps_fix_type: 3.0,
+            horizontal_alarm_limit: 0.0,
+            vertical_alarm_limit: 0.0,
+            horizontal_protection_level_waas: 0.0,
+            horizontal_protection_level_fd: 0.0,
+            vertical_protection_level_waas: 0.0,
+            is_on_ground: 1.0,
+            xp_agl: 0.0,
+            xp_prop_rpm: 0.0,
+            xp_gear_ratio: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_duration_calculation() {
+        let mut analyzer = FlightAnalyzer::new();
+        analyzer.update(&mock_metrics(), "2026-04-30 12:00:00");
+        analyzer.update(&mock_metrics(), "2026-04-30 12:45:30");
+
+        assert_eq!(analyzer.get_duration_minutes(), 45);
+    }
+
+    #[test]
+    fn test_phase_transitions() {
+        let mut analyzer = FlightAnalyzer::new();
+        let mut metrics = mock_metrics();
+
+        // Initial state: Parked
+        assert_eq!(analyzer.current_phase, FlightPhase::Parked);
+
+        // Taxi Out
+        metrics.ground_speed = 5.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:01");
+        assert_eq!(analyzer.current_phase, FlightPhase::TaxiOut);
+
+        // Takeoff
+        metrics.indicated_airspeed = 50.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:02");
+        assert_eq!(analyzer.current_phase, FlightPhase::Takeoff);
+
+        // Climb
+        metrics.is_on_ground = 0.0;
+        metrics.vertical_speed = 500.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:03");
+        assert_eq!(analyzer.current_phase, FlightPhase::Climb);
+        assert_eq!(analyzer.events.len(), 1);
+        assert_eq!(analyzer.events[0].event_type, "takeoff");
+
+        // Cruise
+        metrics.vertical_speed = 50.0;
+        metrics.indicated_airspeed = 100.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:04");
+        assert_eq!(analyzer.current_phase, FlightPhase::Cruise);
+        assert_eq!(analyzer.events.len(), 2);
+        assert_eq!(analyzer.events[1].event_type, "top_of_climb");
+
+        // Descent
+        metrics.vertical_speed = -600.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:05");
+        assert_eq!(analyzer.current_phase, FlightPhase::Descent);
+        assert_eq!(analyzer.events.len(), 3);
+        assert_eq!(analyzer.events[2].event_type, "top_of_descent");
+
+        // Approach
+        metrics.gps_altitude_msl = 2500.0;
+        metrics.vertical_speed = -300.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:06");
+        assert_eq!(analyzer.current_phase, FlightPhase::Approach);
+
+        // Landing
+        metrics.is_on_ground = 1.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:07");
+        assert_eq!(analyzer.current_phase, FlightPhase::Landing);
+        assert_eq!(analyzer.events.len(), 4);
+        assert_eq!(analyzer.events[3].event_type, "landing");
+
+        // Taxi In
+        metrics.ground_speed = 10.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:08");
+        assert_eq!(analyzer.current_phase, FlightPhase::TaxiIn);
+    }
+
+    #[test]
+    fn test_autopilot_events() {
+        let mut analyzer = FlightAnalyzer::new();
+        let mut metrics = mock_metrics();
+
+        metrics.autopilot_active = 1.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:00");
+        assert_eq!(analyzer.events.len(), 1);
+        assert_eq!(analyzer.events[0].event_type, "autopilot_on");
+
+        metrics.autopilot_active = 0.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:01");
+        assert_eq!(analyzer.events.len(), 2);
+        assert_eq!(analyzer.events[1].event_type, "autopilot_off");
+    }
+}
