@@ -251,6 +251,25 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
                 .leaflet-control-attribution .leaflet-control-attribution-prefix {
                     display: none;
                 }
+                .leaflet-bar {
+                    border: 1px solid #444 !important;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.5) !important;
+                }
+                .leaflet-bar a {
+                    background-color: #333 !important;
+                    color: #fff !important;
+                    border-bottom: 1px solid #444 !important;
+                    transition: background-color 0.2s, border-color 0.2s !important;
+                }
+                .leaflet-bar a:hover {
+                    background-color: #444 !important;
+                    color: #4caf50 !important;
+                    border-color: #4caf50 !important;
+                }
+                .leaflet-bar a.leaflet-disabled {
+                    background-color: #222 !important;
+                    color: #555 !important;
+                }
             `}</style>
         </div>
     );
