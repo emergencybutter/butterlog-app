@@ -606,7 +606,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Altitude Profile (ft)</h3>
                     <div style={{ width: '100%', height: 250, minWidth: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <AreaChart data={chartData}>
+                            <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorAlt" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
@@ -621,24 +621,16 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                     itemStyle={{ color: '#fff' }}
                                 />
                                 {takeoffPoint && (
-                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2}>
-                                        <Label value="LIFT OFF" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2} label={{ value: 'LIFT OFF', position: 'top', fill: '#f44336', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {landingPoint && (
-                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2}>
-                                        <Label value="TOUCHDOWN" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2} label={{ value: 'TOUCHDOWN', position: 'top', fill: '#f44336', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {tocPoint && (
-                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3">
-                                        <Label value="TOC" position="top" fill="#4caf50" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3" label={{ value: 'TOC', position: 'top', fill: '#4caf50', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {todPoint && (
-                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3">
-                                        <Label value="TOD" position="top" fill="#ff9800" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 <Area type="monotone" dataKey="altitude" stroke="#8884d8" fillOpacity={1} fill="url(#colorAlt)" />
                             </AreaChart>
@@ -651,7 +643,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Airspeed & Groundspeed (kt)</h3>
                     <div style={{ width: '100%', height: 250, minWidth: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <LineChart data={chartData}>
+                            <LineChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                 <XAxis dataKey="time" stroke="#666" fontSize={12} tick={{fill: '#666'}} />
                                 <YAxis stroke="#666" fontSize={12} tick={{fill: '#666'}} />
@@ -660,24 +652,16 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                 />
                                 <Legend />
                                 {takeoffPoint && (
-                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2}>
-                                        <Label value="LIFT OFF" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={2} label={{ value: 'LIFT OFF', position: 'top', fill: '#f44336', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {landingPoint && (
-                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2}>
-                                        <Label value="TOUCHDOWN" position="top" fill="#f44336" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={2} label={{ value: 'TOUCHDOWN', position: 'top', fill: '#f44336', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {tocPoint && (
-                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3">
-                                        <Label value="TOC" position="top" fill="#4caf50" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={tocPoint} stroke="#4caf50" strokeDasharray="3 3" label={{ value: 'TOC', position: 'top', fill: '#4caf50', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 {todPoint && (
-                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3">
-                                        <Label value="TOD" position="top" fill="#ff9800" fontSize={10} fontWeight="bold" />
-                                    </ReferenceLine>
+                                    <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
                                 <Line type="monotone" dataKey="ias" name="Indicated Airspeed" stroke="#4caf50" dot={false} strokeWidth={2} />
                                 <Line type="monotone" dataKey="gs" name="Groundspeed" stroke="#2196f3" dot={false} strokeWidth={2} />
@@ -691,7 +675,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Vertical Speed (fpm)</h3>
                     <div style={{ width: '100%', height: 200, minWidth: 0 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <LineChart data={chartData}>
+                            <LineChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                 <XAxis dataKey="time" stroke="#666" fontSize={12} tick={{fill: '#666'}} />
                                 <YAxis stroke="#666" fontSize={12} tick={{fill: '#666'}} />
@@ -712,7 +696,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Pitch Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
                             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                                <LineChart data={chartData}>
+                                <LineChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                     <XAxis dataKey="time" stroke="#666" fontSize={10} tick={{fill: '#666'}} />
                                     <YAxis stroke="#666" fontSize={10} tick={{fill: '#666'}} domain={['auto', 'auto']} />
@@ -728,7 +712,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Bank Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
                             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                                <LineChart data={chartData}>
+                                <LineChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                     <XAxis dataKey="time" stroke="#666" fontSize={10} tick={{fill: '#666'}} />
                                     <YAxis stroke="#666" fontSize={10} tick={{fill: '#666'}} domain={['auto', 'auto']} />
