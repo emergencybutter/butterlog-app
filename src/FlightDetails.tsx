@@ -193,7 +193,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                     display: none;
                 }
                 .event-label {
-                    background: rgba(244, 67, 54, 0.8);
+                    background: rgba(244, 67, 54, 0.6);
                     border: none;
                     color: white;
                     font-weight: bold;
@@ -202,7 +202,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                     border-radius: 4px;
                 }
                 .event-label::before {
-                    border-top-color: rgba(244, 67, 54, 0.8);
+                    border-top-color: rgba(244, 67, 54, 0.6);
                 }
                 .leaflet-container {
                     background: #111 !important;
@@ -286,6 +286,21 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
 
     const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
 
+    const filteredEvents = useMemo(() => {
+        const result: FlightEvent[] = [];
+        const types = ['takeoff', 'top_of_climb', 'top_of_descent'] as const;
+        
+        for (const type of types) {
+            const found = events.find(e => e.eventType === type);
+            if (found) result.push(found);
+        }
+
+        const landing = [...events].reverse().find(e => e.eventType === 'landing');
+        if (landing) result.push(landing);
+
+        return result;
+    }, [events]);
+
     return (
         <div style={{ background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333", marginBottom: "2rem" }}>
             <h3 style={{ marginTop: 0, marginBottom: "15px", color: "#888" }}>Full Flight Path</h3>
@@ -310,27 +325,56 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                         />
                     )}
 
-                    {events.map((e, i) => (
+                    {filteredEvents.map((e, i) => (
                         <Marker 
                             key={`event-full-${i}`} 
                             position={[e.latitude, e.longitude]}
                             icon={L.divIcon({
                                 className: 'custom-event-marker',
-                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : '#4caf50'}; width: 10px; height: 10px; border-radius: 50%; border: 2px solid white;"></div>`,
-                                iconSize: [10, 10],
-                                iconAnchor: [5, 5]
+                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : '#4caf50'}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                iconSize: [12, 12],
+                                iconAnchor: [6, 6]
                             })}
                         >
                             <Popup>
                                 <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
                                 {e.timestamp.split(' ')[1]}
                             </Popup>
+                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={e.eventType === 'takeoff' || e.eventType === 'landing' ? 'event-label-red' : 'event-label-green'}>
+                                {e.eventType === 'top_of_climb' ? 'TOC' : (e.eventType === 'top_of_descent' ? 'TOD' : e.eventType.toUpperCase())}
+                            </LeafletTooltip>
                         </Marker>
                     ))}
 
                     <MapAutoBounds bounds={bounds} />
                 </MapContainer>
             </div>
+            <style>{`
+                .event-label-red {
+                    background: rgba(244, 67, 54, 0.8);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-red::before {
+                    border-top-color: rgba(244, 67, 54, 0.8);
+                }
+                .event-label-green {
+                    background: rgba(76, 175, 80, 0.8);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-green::before {
+                    border-top-color: rgba(76, 175, 80, 0.8);
+                }
+            `}</style>
         </div>
     );
 }
