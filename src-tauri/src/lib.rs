@@ -331,7 +331,8 @@ pub fn run() {
             get_flight_data,
             export_flight_to_csv,
             import_flight_from_csv,
-            get_runways
+            get_runways,
+            flight_log_manager::get_aircraft_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

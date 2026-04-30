@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Settings } from "./Settings";
 import { FlightLogs } from "./FlightLogs";
 import { FlightDetails } from "./FlightDetails";
+import { AircraftStats } from "./AircraftStats";
 import "./App.css";
 
 interface FlightEvent {
@@ -194,6 +195,11 @@ const Icons = {
       <line x1="6" y1="20" x2="6" y2="14"></line>
     </svg>
   ),
+  Aircraft: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1.1.1-1.5.5l-.3.3c-.4.4-.5 1-.1 1.5l7.5 4.5-4.5 4.5-2.5-.5c-.5-.1-1.1.1-1.5.5l-.3.3c-.4.4-.5 1-.1 1.5l2 2 2 2c.5.4 1.1.3 1.5-.1l.3-.3c.4-.4.6-1 .5-1.5l-.5-2.5 4.5-4.5 4.5 7.5c.5.4 1.1.3 1.5-.1l.3-.3c.4-.4.6-1 .5-1.5z"></path>
+    </svg>
+  ),
   Settings: () => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3"></circle>
@@ -207,7 +213,7 @@ function App() {
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
   const [simConnected, setSimConnected] = useState(false);
   const [connectedSims, setConnectedSims] = useState<string[]>([]);
-  const [view, setView] = useState<"status" | "history" | "settings" | "details">("history");
+  const [view, setView] = useState<"status" | "history" | "settings" | "details" | "aircraft">("history");
   const [selectedFlight, setSelectedFlight] = useState<FlightSummary | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>("Parked");
   const [flightOngoing, setFlightOngoing] = useState(false);
@@ -265,6 +271,8 @@ function App() {
         ) : (
           <div>No flight selected</div>
         );
+      case "aircraft":
+        return <AircraftStats />;
       case "settings":
         return <Settings onBack={() => setView("status")} />;
       case "status":
@@ -334,6 +342,13 @@ function App() {
               title="Logs"
             >
               <span className="icon"><Icons.Logs /></span>
+            </div>
+            <div 
+              className={`sidebar-item ${view === 'aircraft' ? 'active' : ''}`} 
+              onClick={() => setView('aircraft')}
+              title="Aircraft Stats"
+            >
+              <span className="icon"><Icons.Aircraft /></span>
             </div>
             <div 
               className={`sidebar-item ${view === 'status' ? 'active' : ''}`} 

@@ -16,6 +16,8 @@ pub struct FlightAnalyzer {
     airborne_start: bool,
     pub last_on_ground: bool,
     last_autopilot_active: bool,
+    first_timestamp: Option<String>,
+    last_timestamp: Option<String>,
 }
 
 impl FlightAnalyzer {
@@ -34,6 +36,8 @@ impl FlightAnalyzer {
             airborne_start: false,
             last_on_ground: true,
             last_autopilot_active: false,
+            first_timestamp: None,
+            last_timestamp: None,
         }
     }
 
@@ -51,9 +55,34 @@ impl FlightAnalyzer {
         self.airborne_start = false;
         self.last_on_ground = true;
         self.last_autopilot_active = false;
+        self.first_timestamp = None;
+        self.last_timestamp = None;
+    }
+
+    pub fn get_duration_minutes(&self) -> i64 {
+        if let (Some(start), Some(end)) = (&self.first_timestamp, &self.last_timestamp) {
+            if let (Ok(start_dt), Ok(end_dt)) = (
+                chrono::NaiveDateTime::parse_from_str(
+                    start.split('.').next().unwrap_or(start),
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+                chrono::NaiveDateTime::parse_from_str(
+                    end.split('.').next().unwrap_or(end),
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+            ) {
+                return end_dt.signed_duration_since(start_dt).num_minutes();
+            }
+        }
+        0
     }
 
     pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
+        if self.first_timestamp.is_none() {
+            self.first_timestamp = Some(timestamp.to_string());
+        }
+        self.last_timestamp = Some(timestamp.to_string());
+
         let old_phase = self.current_phase;
 
         self.add_point(metrics.latitude, metrics.longitude);

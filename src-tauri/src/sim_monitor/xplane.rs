@@ -290,15 +290,16 @@ impl XPlaneMonitor {
                                                         .map(|a| a.name.clone())
                                                         .unwrap_or_else(|| "Unknown".to_string())
                                                 };
-
-                                                let summary_data = [
-                                                    ("departure_icao", start_icao),
-                                                    ("departure_name", start_name),
-                                                    ("aircraft_title", aircraft_info.title.clone()),
-                                                    ("max_altitude", analyzer.max_alt.to_string()),
-                                                    ("max_ground_speed", analyzer.max_gs.to_string()),
-                                                    ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
-                                                ];
+let summary_data = [
+    ("departure_icao", start_icao.clone()),
+    ("departure_name", start_name),
+    ("arrival_icao", end_icao.clone()),
+    ("arrival_name", end_name),
+    ("aircraft_title", aircraft_info.title.clone()),
+    ("max_altitude", analyzer.max_alt.to_string()),
+    ("max_ground_speed", analyzer.max_gs.to_string()),
+    ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
+];
 
                                                 for (k, v) in summary_data {
                                                     if let Err(e) = conn.execute(
@@ -315,6 +316,21 @@ impl XPlaneMonitor {
                                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]) {
                                                         crate::append_log(&app, format!("Failed to update flight events: {}", e));
                                                     }
+                                                }
+
+                                                let is_completed = start_icao != "Airborne" && end_icao != "Airborne";
+                                                let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                                let duration_mins = analyzer.get_duration_minutes();
+
+                                                if let Err(e) = crate::flight_log_manager::update_aircraft_stats(
+                                                    &app,
+                                                    &aircraft_info.title,
+                                                    duration_mins as f64,
+                                                    fuel_consumed,
+                                                    &end_icao,
+                                                    is_completed,
+                                                ) {
+                                                    crate::append_log(&app, format!("Failed to update aircraft stats: {}", e));
                                                 }
 
                                                 drop(db_conn.take());

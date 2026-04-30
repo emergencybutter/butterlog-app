@@ -9,6 +9,108 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AircraftStats {
+    pub aircraft_type: String,
+    pub total_hours_all: f64,
+    pub total_fuel_all: f64,
+    pub total_flights_all: i32,
+    pub total_hours_completed: f64,
+    pub total_fuel_completed: f64,
+    pub total_flights_completed: i32,
+    pub last_airport: String,
+}
+
+pub fn update_aircraft_stats(
+    app: &AppHandle,
+    aircraft_type: &str,
+    duration_mins: f64,
+    fuel_used: f64,
+    last_airport: &str,
+    is_completed: bool,
+) -> anyhow::Result<()> {
+    let app_data_dir = app.path().app_data_dir()?;
+    let db_path = app_data_dir.join("aircraft_stats.db");
+    let conn = Connection::open(db_path)?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS aircraft_stats (
+            aircraft_type TEXT PRIMARY KEY,
+            total_hours_all REAL DEFAULT 0,
+            total_fuel_all REAL DEFAULT 0,
+            total_flights_all INTEGER DEFAULT 0,
+            total_hours_completed REAL DEFAULT 0,
+            total_fuel_completed REAL DEFAULT 0,
+            total_flights_completed INTEGER DEFAULT 0,
+            last_airport TEXT
+        )",
+        [],
+    )?;
+
+    let hours = duration_mins / 60.0;
+
+    conn.execute(
+        "INSERT INTO aircraft_stats (aircraft_type, total_hours_all, total_fuel_all, total_flights_all, last_airport)
+         VALUES (?1, ?2, ?3, 1, ?4)
+         ON CONFLICT(aircraft_type) DO UPDATE SET
+            total_hours_all = total_hours_all + ?2,
+            total_fuel_all = total_fuel_all + ?3,
+            total_flights_all = total_flights_all + 1,
+            last_airport = ?4",
+        params![aircraft_type, hours, fuel_used, last_airport],
+    )?;
+
+    if is_completed {
+        conn.execute(
+            "UPDATE aircraft_stats SET
+                total_hours_completed = total_hours_completed + ?2,
+                total_fuel_completed = total_fuel_completed + ?3,
+                total_flights_completed = total_flights_completed + 1
+             WHERE aircraft_type = ?1",
+            params![aircraft_type, hours, fuel_used],
+        )?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_aircraft_stats(app: AppHandle) -> Result<Vec<AircraftStats>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("aircraft_stats.db");
+    
+    if !db_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT * FROM aircraft_stats ORDER BY total_hours_all DESC")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(AircraftStats {
+                aircraft_type: row.get(0)?,
+                total_hours_all: row.get(1)?,
+                total_fuel_all: row.get(2)?,
+                total_flights_all: row.get(3)?,
+                total_hours_completed: row.get(4)?,
+                total_fuel_completed: row.get(5)?,
+                total_flights_completed: row.get(6)?,
+                last_airport: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut stats = Vec::new();
+    for row in rows {
+        stats.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(stats)
+}
+
 pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS metrics (
@@ -740,6 +842,7 @@ fn save_imported_flight(
 
     // Populate summary
     let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+    let duration_mins = analyzer.get_duration_minutes();
     let import_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let summary_data = [
         ("departure_icao", start_icao.clone()),
@@ -763,6 +866,18 @@ fn save_imported_flight(
             "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
             params![k, v],
         )?;
+    }
+
+    let is_completed = start_icao != "Airborne" && end_icao != "Airborne";
+    if let Err(e) = update_aircraft_stats(
+        app,
+        aircraft_title,
+        duration_mins as f64,
+        fuel_consumed,
+        &end_icao,
+        is_completed,
+    ) {
+        crate::append_log(app, format!("Failed to update aircraft stats: {}", e));
     }
 
     drop(conn);
