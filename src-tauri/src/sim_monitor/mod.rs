@@ -10,6 +10,8 @@ pub trait SimMonitor: Send + Sync {
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()>;
     fn stop(&self);
     fn get_metrics(&self) -> FlightMetrics;
+    fn get_aircraft_info(&self) -> crate::models::AircraftInfo;
+    fn get_current_flight_id(&self) -> String;
     fn is_connected(&self) -> bool;
     fn is_monitoring(&self) -> bool;
 }

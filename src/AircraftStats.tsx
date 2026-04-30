@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 
 interface AircraftStats {
     aircraftType: string;
@@ -10,6 +10,50 @@ interface AircraftStats {
     totalFuelCompleted: number;
     totalFlightsCompleted: number;
     lastAirport: string;
+}
+
+interface Screenshot {
+    path: string;
+}
+
+function AircraftThumbnail({ title }: { title: string }) {
+    const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
+
+    useEffect(() => {
+        invoke<Screenshot | null>("get_random_screenshot_for_aircraft", { aircraftTitle: title })
+            .then(setScreenshot)
+            .catch(console.error);
+    }, [title]);
+
+    if (!screenshot) return (
+        <div style={{ 
+            width: "60px", 
+            height: "40px", 
+            background: "#2a2a2a", 
+            borderRadius: "4px", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center",
+            fontSize: "0.6rem",
+            color: "#555"
+        }}>
+            NO IMG
+        </div>
+    );
+
+    return (
+        <img 
+            src={convertFileSrc(screenshot.path)} 
+            alt={title} 
+            style={{ 
+                width: "60px", 
+                height: "40px", 
+                objectFit: "cover", 
+                borderRadius: "4px",
+                border: "1px solid #444"
+            }} 
+        />
+    );
 }
 
 export function AircraftStats() {
@@ -63,6 +107,7 @@ export function AircraftStats() {
                 <table style={{ width: "100%", borderCollapse: "collapse", background: "#1a1a1a", borderRadius: "8px", overflow: "hidden" }}>
                     <thead>
                         <tr style={{ background: "#2a2a2a", textAlign: "left" }}>
+                            <th style={{ padding: "12px", width: "80px" }}></th>
                             <th style={{ padding: "12px" }}>Aircraft Type</th>
                             <th style={{ padding: "12px" }}>Flights</th>
                             <th style={{ padding: "12px" }}>Total Hours</th>
@@ -73,6 +118,9 @@ export function AircraftStats() {
                     <tbody>
                         {stats.map((s, i) => (
                             <tr key={i} style={{ borderBottom: "1px solid #333" }}>
+                                <td style={{ padding: "12px" }}>
+                                    <AircraftThumbnail title={s.aircraftType} />
+                                </td>
                                 <td style={{ padding: "12px", fontWeight: "bold" }}>{s.aircraftType}</td>
                                 <td style={{ padding: "12px" }}>
                                     {viewMode === "all" ? s.totalFlightsAll : s.totalFlightsCompleted}

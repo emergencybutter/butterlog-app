@@ -4,6 +4,7 @@ mod flight_analyzer;
 mod flight_log_manager;
 mod models;
 mod runways;
+mod screenshot_manager;
 mod sim_monitor;
 
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use flight_log_manager::{
     export_flight_to_csv, get_flight_data, import_flight_from_csv, scan_logs, FlightSummary,
 };
 use models::FlightMetrics;
+use screenshot_manager::ScreenshotManager;
 use sim_monitor::msfs::SimConnectMonitor;
 use sim_monitor::xplane::XPlaneMonitor;
 use sim_monitor::SimMonitor;
@@ -191,6 +193,13 @@ pub fn run() {
             let config_manager = ConfigManager::new(app.handle());
             app.manage(config_manager);
 
+            // Initialize ScreenshotManager
+            let screenshot_manager = ScreenshotManager::new(app.handle());
+            app.manage(screenshot_manager);
+
+            // Start screenshot watcher
+            screenshot_manager::start_screenshot_watcher(app.handle().clone());
+
             let pkg_info = app.package_info();
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -332,7 +341,9 @@ pub fn run() {
             export_flight_to_csv,
             import_flight_from_csv,
             get_runways,
-            flight_log_manager::get_aircraft_stats
+            flight_log_manager::get_aircraft_stats,
+            screenshot_manager::get_screenshots_for_flight,
+            screenshot_manager::get_random_screenshot_for_aircraft
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

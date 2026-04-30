@@ -14,6 +14,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub struct SimConnectMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
+    aircraft_info: Arc<Mutex<AircraftInfo>>,
+    current_flight_id: Arc<Mutex<String>>,
     running: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
     monitoring: Arc<Mutex<bool>>,
@@ -23,6 +25,8 @@ impl SimConnectMonitor {
     pub fn new() -> Self {
         Self {
             metrics: Arc::new(Mutex::new(FlightMetrics::default())),
+            aircraft_info: Arc::new(Mutex::new(AircraftInfo::default())),
+            current_flight_id: Arc::new(Mutex::new(String::new())),
             running: Arc::new(Mutex::new(false)),
             connected: Arc::new(Mutex::new(false)),
             monitoring: Arc::new(Mutex::new(false)),
@@ -33,6 +37,8 @@ impl SimConnectMonitor {
         app: &AppHandle,
         sc: SimConnect,
         metrics: &Arc<Mutex<FlightMetrics>>,
+        aircraft_info_mutex: &Arc<Mutex<AircraftInfo>>,
+        current_flight_id_mutex: &Arc<Mutex<String>>,
         running: &Arc<Mutex<bool>>,
         monitoring: &Arc<Mutex<bool>>,
         _requested_log_path: Option<&PathBuf>,
@@ -216,8 +222,12 @@ impl SimConnectMonitor {
                         create_dir_all(&internal_log_dir)?;
                         let filename =
                             format!("butterlog_{}.db", Local::now().format("%Y%m%d_%H%M%S"));
-                        let path = internal_log_dir.join(filename);
+                        let path = internal_log_dir.join(&filename);
                         current_log_path = Some(path.clone());
+                        {
+                            let mut fid = current_flight_id_mutex.lock().unwrap();
+                            *fid = filename.replace(".db", "");
+                        }
 
                         match Connection::open(&path) {
                             Ok(conn) => {
@@ -334,7 +344,12 @@ impl SimConnectMonitor {
                 if msg.request_id() == Some(aircraft_request_id) {
                     if let Some(data) = msg.as_sim_object_data::<[u8; 256]>() {
                         let s = String::from_utf8_lossy(data);
-                        aircraft_info.title = s.split('\0').next().unwrap_or("").trim().to_string();
+                        let title = s.split('\0').next().unwrap_or("").trim().to_string();
+                        aircraft_info.title = title.clone();
+                        {
+                            let mut info = aircraft_info_mutex.lock().unwrap();
+                            info.title = title;
+                        }
                     }
                 }
 
@@ -541,6 +556,8 @@ impl SimMonitor for SimConnectMonitor {
         *running = true;
 
         let metrics = self.metrics.clone();
+        let aircraft_info = self.aircraft_info.clone();
+        let current_flight_id = self.current_flight_id.clone();
         let running_clone = self.running.clone();
         let connected_clone = self.connected.clone();
         let monitoring_clone = self.monitoring.clone();
@@ -568,6 +585,8 @@ impl SimMonitor for SimConnectMonitor {
                         &app,
                         sc,
                         &metrics,
+                        &aircraft_info,
+                        &current_flight_id,
                         &running_clone,
                         &monitoring_clone,
                         log_path.as_ref(),
@@ -607,6 +626,14 @@ impl SimMonitor for SimConnectMonitor {
 
     fn get_metrics(&self) -> FlightMetrics {
         *self.metrics.lock().unwrap()
+    }
+
+    fn get_aircraft_info(&self) -> crate::models::AircraftInfo {
+        self.aircraft_info.lock().unwrap().clone()
+    }
+
+    fn get_current_flight_id(&self) -> String {
+        self.current_flight_id.lock().unwrap().clone()
     }
 
     fn is_connected(&self) -> bool {

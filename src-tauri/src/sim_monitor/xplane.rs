@@ -16,6 +16,8 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 pub struct XPlaneMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
+    aircraft_info: Arc<Mutex<AircraftInfo>>,
+    current_flight_id: Arc<Mutex<String>>,
     running: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
     monitoring: Arc<Mutex<bool>>,
@@ -25,6 +27,8 @@ impl XPlaneMonitor {
     pub fn new() -> Self {
         Self {
             metrics: Arc::new(Mutex::new(FlightMetrics::default())),
+            aircraft_info: Arc::new(Mutex::new(AircraftInfo::default())),
+            current_flight_id: Arc::new(Mutex::new(String::new())),
             running: Arc::new(Mutex::new(false)),
             connected: Arc::new(Mutex::new(false)),
             monitoring: Arc::new(Mutex::new(false)),
@@ -34,6 +38,8 @@ impl XPlaneMonitor {
     async fn run_monitor_async(
         app: AppHandle,
         metrics: Arc<Mutex<FlightMetrics>>,
+        aircraft_info_mutex: Arc<Mutex<AircraftInfo>>,
+        current_flight_id_mutex: Arc<Mutex<String>>,
         running: Arc<Mutex<bool>>,
         connected: Arc<Mutex<bool>>,
         monitoring: Arc<Mutex<bool>>,
@@ -190,8 +196,12 @@ impl XPlaneMonitor {
                                         "butterlog_xp_{}.db",
                                         Local::now().format("%Y%m%d_%H%M%S")
                                     );
-                                    let path = internal_log_dir.join(filename);
+                                    let path = internal_log_dir.join(&filename);
                                     current_log_path = Some(path.clone());
+                                    {
+                                        let mut fid = current_flight_id_mutex.lock().unwrap();
+                                        *fid = filename.replace(".db", "");
+                                    }
 
                                     match Connection::open(&path) {
                                         Ok(conn) => {
@@ -220,7 +230,12 @@ impl XPlaneMonitor {
                                     if let Some(title) =
                                         data["sim/aircraft/view/acf_title"].as_str()
                                     {
-                                        aircraft_info.title = title.to_string();
+                                        let title_str = title.to_string();
+                                        aircraft_info.title = title_str.clone();
+                                        {
+                                            let mut info = aircraft_info_mutex.lock().unwrap();
+                                            info.title = title_str;
+                                        }
                                     }
                                 }
 
@@ -385,6 +400,8 @@ impl SimMonitor for XPlaneMonitor {
         *running = true;
 
         let metrics = self.metrics.clone();
+        let aircraft_info = self.aircraft_info.clone();
+        let current_flight_id = self.current_flight_id.clone();
         let running_clone = self.running.clone();
         let connected_clone = self.connected.clone();
         let monitoring_clone = self.monitoring.clone();
@@ -399,6 +416,8 @@ impl SimMonitor for XPlaneMonitor {
                 let _ = Self::run_monitor_async(
                     app,
                     metrics,
+                    aircraft_info,
+                    current_flight_id,
                     running_clone,
                     connected_clone,
                     monitoring_clone,
@@ -418,6 +437,14 @@ impl SimMonitor for XPlaneMonitor {
 
     fn get_metrics(&self) -> FlightMetrics {
         *self.metrics.lock().unwrap()
+    }
+
+    fn get_aircraft_info(&self) -> crate::models::AircraftInfo {
+        self.aircraft_info.lock().unwrap().clone()
+    }
+
+    fn get_current_flight_id(&self) -> String {
+        self.current_flight_id.lock().unwrap().clone()
     }
 
     fn is_connected(&self) -> bool {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { 
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine
 } from 'recharts';
@@ -41,6 +41,14 @@ interface FlightLogRow {
 interface FlightEvent {
     timestamp: string;
     eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off';
+    latitude: number;
+    longitude: number;
+}
+
+interface Screenshot {
+    id: number;
+    path: string;
+    timestamp: string;
     latitude: number;
     longitude: number;
 }
@@ -90,7 +98,7 @@ function MapAutoBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
     return null;
 }
 
-function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], fullTrajectory: {lat: number, lon: number}[], title: string }) {
+function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, screenshots }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], fullTrajectory: {lat: number, lon: number}[], title: string, screenshots?: Screenshot[] }) {
     const validRunways = useMemo(() => runways.filter(r => 
         r.le_latitude_deg !== null && r.le_longitude_deg !== null && 
         r.he_latitude_deg !== null && r.he_longitude_deg !== null
@@ -173,6 +181,29 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                             <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={p.isEvent === 'takeoff' || p.isEvent === 'landing' ? 'event-label' : (p.isEvent === 'autopilot_on' ? 'event-label-blue' : (p.isEvent === 'autopilot_off' ? 'event-label-orange' : 'event-label-green'))}>
                                 {p.isEvent === 'takeoff' ? "LIFT OFF" : (p.isEvent === 'landing' ? "TOUCHDOWN" : (p.isEvent === 'autopilot_on' ? "AP ON" : (p.isEvent === 'autopilot_off' ? "AP OFF" : p.isEvent?.toUpperCase())))}
                             </LeafletTooltip>
+                        </Marker>
+                    ))}
+
+                    {/* Screenshots */}
+                    {screenshots?.map((s, i) => (
+                        <Marker 
+                            key={`scr-${i}`} 
+                            position={[s.latitude, s.longitude]}
+                            icon={L.divIcon({
+                                className: 'custom-scr-marker',
+                                html: `<div style="background-color: #e91e63; width: 14px; height: 14px; border-radius: 2px; border: 2px solid white; transform: rotate(45deg);"></div>`,
+                                iconSize: [14, 14],
+                                iconAnchor: [7, 7]
+                            })}
+                        >
+                            <Popup>
+                                <div style={{ width: "150px" }}>
+                                    <img src={convertFileSrc(s.path)} alt="Screenshot" style={{ width: "100%", borderRadius: "2px" }} />
+                                    <div style={{ fontSize: "0.7rem", marginTop: "5px" }}>
+                                        {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
+                                    </div>
+                                </div>
+                            </Popup>
                         </Marker>
                     ))}
 
@@ -299,7 +330,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
     );
 }
 
-function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: number}[], events: FlightEvent[] }) {
+function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: number, lon: number}[], events: FlightEvent[], screenshots: Screenshot[] }) {
     const bounds = useMemo(() => {
         if (trajectory.length === 0) return null;
         const points: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
@@ -368,12 +399,36 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                             })}
                         >
                             <Popup>
-                                <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
-                                {e.timestamp.split(' ')[1]}
+                                <Popup>
+                                    <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
+                                    {e.timestamp.includes(' ') ? e.timestamp.split(' ')[1] : e.timestamp}
+                                </Popup>
                             </Popup>
                             <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={e.eventType === 'takeoff' || e.eventType === 'landing' ? 'event-label-red' : (e.eventType === 'autopilot_on' ? 'event-label-blue' : (e.eventType === 'autopilot_off' ? 'event-label-orange' : 'event-label-green'))}>
                                 {e.eventType === 'top_of_climb' ? 'TOC' : (e.eventType === 'top_of_descent' ? 'TOD' : (e.eventType === 'autopilot_on' ? 'AP ON' : (e.eventType === 'autopilot_off' ? 'AP OFF' : e.eventType.toUpperCase())))}
                             </LeafletTooltip>
+                        </Marker>
+                    ))}
+
+                    {screenshots.map((s, i) => (
+                        <Marker 
+                            key={`scr-full-${i}`} 
+                            position={[s.latitude, s.longitude]}
+                            icon={L.divIcon({
+                                className: 'custom-scr-marker',
+                                html: `<div style="background-color: #e91e63; width: 14px; height: 14px; border-radius: 2px; border: 2px solid white; transform: rotate(45deg);"></div>`,
+                                iconSize: [14, 14],
+                                iconAnchor: [7, 7]
+                            })}
+                        >
+                            <Popup>
+                                <div style={{ width: "150px" }}>
+                                    <img src={convertFileSrc(s.path)} alt="Screenshot" style={{ width: "100%", borderRadius: "2px" }} />
+                                    <div style={{ fontSize: "0.7rem", marginTop: "5px" }}>
+                                        {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
+                                    </div>
+                                </div>
+                            </Popup>
                         </Marker>
                     ))}
 
@@ -438,19 +493,23 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
     const [endRunways, setEndRunways] = useState<Runway[]>([]);
+    const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
 
     useEffect(() => {
         setLoading(true);
+        const flightId = flight.filename.replace(".db", "");
         Promise.all([
             invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
             invoke<Runway[]>("get_runways", { ident: flight.startIcao }),
-            invoke<Runway[]>("get_runways", { ident: flight.endIcao })
-        ]).then(([flightData, startRwys, endRwys]) => {
+            invoke<Runway[]>("get_runways", { ident: flight.endIcao }),
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
+        ]).then(([flightData, startRwys, endRwys, scrs]) => {
             setData(flightData);
             setStartRunways(startRwys);
             setEndRunways(endRwys);
+            setScreenshots(scrs);
         }).finally(() => setLoading(false));
     }, [flight.filename, flight.startIcao, flight.endIcao]);
 
@@ -644,7 +703,23 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
             </div>
 
-            <FullFlightMap trajectory={fullTrajectory} events={flight.events} />
+            <FullFlightMap trajectory={fullTrajectory} events={flight.events} screenshots={screenshots} />
+
+            {screenshots.length > 0 && (
+                <div style={{ marginBottom: "2rem" }}>
+                    <h3 style={{ color: "#888", marginBottom: "1rem" }}>Screenshots</h3>
+                    <div style={{ display: "flex", gap: "15px", overflowX: "auto", paddingBottom: "10px" }}>
+                        {screenshots.map((s, i) => (
+                            <div key={i} style={{ flex: "0 0 auto", width: "200px", background: "#1a1a1a", borderRadius: "4px", overflow: "hidden", border: "1px solid #333" }}>
+                                <img src={convertFileSrc(s.path)} alt="Flight Screenshot" style={{ width: "100%", height: "120px", objectFit: "cover" }} />
+                                <div style={{ padding: "5px", fontSize: "0.7rem", color: "#888", textAlign: "center" }}>
+                                    {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "2rem" }}>
                 <RunwayMap 
@@ -653,6 +728,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     trajectory={departureTrajectory} 
                     fullTrajectory={fullTrajectory}
                     title="Departure"
+                    screenshots={screenshots}
                 />
                 <RunwayMap 
                     runways={endRunways} 
@@ -660,6 +736,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     trajectory={arrivalTrajectory} 
                     fullTrajectory={fullTrajectory}
                     title="Arrival"
+                    screenshots={screenshots}
                 />
             </div>
 

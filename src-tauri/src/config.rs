@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     pub log_directory: Option<PathBuf>,
