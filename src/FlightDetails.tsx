@@ -90,7 +90,7 @@ function MapAutoBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
     return null;
 }
 
-function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], title: string }) {
+function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runways: Runway[], icao: string, trajectory: TrajectoryPoint[], fullTrajectory: {lat: number, lon: number}[], title: string }) {
     const validRunways = useMemo(() => runways.filter(r => 
         r.le_latitude_deg !== null && r.le_longitude_deg !== null && 
         r.he_latitude_deg !== null && r.he_longitude_deg !== null
@@ -113,7 +113,7 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
     }
 
     const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing');
-    const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
+    const fullTrajPath: L.LatLngExpression[] = fullTrajectory.map(p => [p.lat, p.lon]);
 
     return (
         <div style={{ textAlign: "center", background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
@@ -145,10 +145,10 @@ function RunwayMap({ runways, icao, trajectory, title }: { runways: Runway[], ic
                         </Polyline>
                     ))}
 
-                    {/* Flight Path */}
-                    {trajPath.length > 1 && (
+                    {/* Full Flight Path */}
+                    {fullTrajPath.length > 1 && (
                         <Polyline 
-                            positions={trajPath}
+                            positions={fullTrajPath}
                             color="#2196f3"
                             weight={3}
                             opacity={0.8}
@@ -544,12 +544,14 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     runways={startRunways} 
                     icao={flight.startIcao} 
                     trajectory={departureTrajectory} 
+                    fullTrajectory={fullTrajectory}
                     title="Departure"
                 />
                 <RunwayMap 
                     runways={endRunways} 
                     icao={flight.endIcao} 
                     trajectory={arrivalTrajectory} 
+                    fullTrajectory={fullTrajectory}
                     title="Arrival"
                 />
             </div>
