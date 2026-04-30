@@ -78,7 +78,8 @@ impl XPlaneMonitor {
                             "sim/flightmodel/engine/ENGN_RPM",
                             "sim/flightmodel/failures/onground_any",
                             "sim/aircraft/view/acf_title",
-                            "sim/aircraft/view/acf_ICAO"
+                            "sim/aircraft/view/acf_ICAO",
+                            "sim/cockpit2/autopilot/autopilot_on"
                         ]
                     });
 
@@ -151,6 +152,9 @@ impl XPlaneMonitor {
                                     data["sim/flightmodel/failures/onground_any"].as_i64()
                                 {
                                     m.is_on_ground = onground as f64;
+                                }
+                                if let Some(ap_on) = data["sim/cockpit2/autopilot/autopilot_on"].as_i64() {
+                                    m.autopilot_active = ap_on as f64;
                                 }
 
                                 // X-Plane specific

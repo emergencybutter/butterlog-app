@@ -15,6 +15,7 @@ pub struct FlightAnalyzer {
     landed: bool,
     airborne_start: bool,
     pub last_on_ground: bool,
+    last_autopilot_active: bool,
 }
 
 impl FlightAnalyzer {
@@ -32,6 +33,7 @@ impl FlightAnalyzer {
             landed: false,
             airborne_start: false,
             last_on_ground: true,
+            last_autopilot_active: false,
         }
     }
 
@@ -48,6 +50,7 @@ impl FlightAnalyzer {
         self.landed = false;
         self.airborne_start = false;
         self.last_on_ground = true;
+        self.last_autopilot_active = false;
     }
 
     pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
@@ -71,6 +74,18 @@ impl FlightAnalyzer {
 
         let on_ground = metrics.is_on_ground > 0.5;
         self.last_on_ground = on_ground;
+
+        // Track Autopilot
+        let ap_active = metrics.autopilot_active > 0.5;
+        if ap_active != self.last_autopilot_active {
+            if ap_active {
+                self.add_event("autopilot_on", metrics.latitude, metrics.longitude, timestamp);
+            } else {
+                self.add_event("autopilot_off", metrics.latitude, metrics.longitude, timestamp);
+            }
+            self.last_autopilot_active = ap_active;
+        }
+
         let ground_speed = metrics.ground_speed;
         let ias = metrics.indicated_airspeed;
         let v_spd = metrics.vertical_speed;

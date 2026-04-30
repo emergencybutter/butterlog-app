@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { 
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine, Label
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine
 } from 'recharts';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, Tooltip as LeafletTooltip } from 'react-leaflet';
 import L from 'leaflet';
@@ -40,7 +40,7 @@ interface FlightLogRow {
 
 interface FlightEvent {
     timestamp: string;
-    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
+    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off';
     latitude: number;
     longitude: number;
 }
@@ -77,7 +77,7 @@ interface TrajectoryPoint {
     lat: number;
     lon: number;
     onGround: boolean;
-    isEvent?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
+    isEvent?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off';
 }
 
 function MapAutoBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
@@ -112,7 +112,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
         return <div style={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px", background: "#1a1a1a" }}>No map data for {icao}</div>;
     }
 
-    const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing');
+    const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing' || p.isEvent === 'autopilot_on' || p.isEvent === 'autopilot_off');
     const fullTrajPath: L.LatLngExpression[] = fullTrajectory.map(p => [p.lat, p.lon]);
 
     return (
@@ -162,7 +162,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                             position={[p.lat, p.lon]}
                             icon={L.divIcon({
                                 className: 'custom-event-marker',
-                                html: `<div style="background-color: #f44336; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                html: `<div style="background-color: ${p.isEvent === 'takeoff' || p.isEvent === 'landing' ? '#f44336' : (p.isEvent === 'autopilot_on' ? '#2196f3' : (p.isEvent === 'autopilot_off' ? '#ff9800' : '#4caf50'))}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
                                 iconSize: [12, 12],
                                 iconAnchor: [6, 6]
                             })}
@@ -170,8 +170,8 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                             <Popup>
                                 <strong>{p.isEvent?.toUpperCase().replace('_', ' ')}</strong>
                             </Popup>
-                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className="event-label">
-                                {p.isEvent === 'takeoff' ? "LIFT OFF" : "TOUCHDOWN"}
+                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={p.isEvent === 'takeoff' || p.isEvent === 'landing' ? 'event-label' : (p.isEvent === 'autopilot_on' ? 'event-label-blue' : (p.isEvent === 'autopilot_off' ? 'event-label-orange' : 'event-label-green'))}>
+                                {p.isEvent === 'takeoff' ? "LIFT OFF" : (p.isEvent === 'landing' ? "TOUCHDOWN" : (p.isEvent === 'autopilot_on' ? "AP ON" : (p.isEvent === 'autopilot_off' ? "AP OFF" : p.isEvent?.toUpperCase())))}
                             </LeafletTooltip>
                         </Marker>
                     ))}
@@ -203,6 +203,30 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title }: { runwa
                 }
                 .event-label::before {
                     border-top-color: rgba(244, 67, 54, 0.6);
+                }
+                .event-label-blue {
+                    background: rgba(33, 150, 243, 0.6);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-blue::before {
+                    border-top-color: rgba(33, 150, 243, 0.6);
+                }
+                .event-label-orange {
+                    background: rgba(255, 152, 0, 0.6);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-orange::before {
+                    border-top-color: rgba(255, 152, 0, 0.6);
                 }
                 .leaflet-container {
                     background: #111 !important;
@@ -298,6 +322,13 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
         const landing = [...events].reverse().find(e => e.eventType === 'landing');
         if (landing) result.push(landing);
 
+        // Include all autopilot toggles
+        events.forEach(e => {
+            if (e.eventType === 'autopilot_on' || e.eventType === 'autopilot_off') {
+                result.push(e);
+            }
+        });
+
         return result;
     }, [events]);
 
@@ -331,7 +362,7 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                             position={[e.latitude, e.longitude]}
                             icon={L.divIcon({
                                 className: 'custom-event-marker',
-                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : '#4caf50'}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : (e.eventType.startsWith('autopilot') ? (e.eventType === 'autopilot_on' ? '#2196f3' : '#ff9800') : '#4caf50')}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
                                 iconSize: [12, 12],
                                 iconAnchor: [6, 6]
                             })}
@@ -340,8 +371,8 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                                 <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
                                 {e.timestamp.split(' ')[1]}
                             </Popup>
-                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={e.eventType === 'takeoff' || e.eventType === 'landing' ? 'event-label-red' : 'event-label-green'}>
-                                {e.eventType === 'top_of_climb' ? 'TOC' : (e.eventType === 'top_of_descent' ? 'TOD' : e.eventType.toUpperCase())}
+                            <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={e.eventType === 'takeoff' || e.eventType === 'landing' ? 'event-label-red' : (e.eventType === 'autopilot_on' ? 'event-label-blue' : (e.eventType === 'autopilot_off' ? 'event-label-orange' : 'event-label-green'))}>
+                                {e.eventType === 'top_of_climb' ? 'TOC' : (e.eventType === 'top_of_descent' ? 'TOD' : (e.eventType === 'autopilot_on' ? 'AP ON' : (e.eventType === 'autopilot_off' ? 'AP OFF' : e.eventType.toUpperCase())))}
                             </LeafletTooltip>
                         </Marker>
                     ))}
@@ -351,7 +382,7 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
             </div>
             <style>{`
                 .event-label-red {
-                    background: rgba(244, 67, 54, 0.8);
+                    background: rgba(244, 67, 54, 0.6);
                     border: none;
                     color: white;
                     font-weight: bold;
@@ -360,10 +391,10 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                     border-radius: 4px;
                 }
                 .event-label-red::before {
-                    border-top-color: rgba(244, 67, 54, 0.8);
+                    border-top-color: rgba(244, 67, 54, 0.6);
                 }
                 .event-label-green {
-                    background: rgba(76, 175, 80, 0.8);
+                    background: rgba(76, 175, 80, 0.6);
                     border: none;
                     color: white;
                     font-weight: bold;
@@ -372,7 +403,31 @@ function FullFlightMap({ trajectory, events }: { trajectory: {lat: number, lon: 
                     border-radius: 4px;
                 }
                 .event-label-green::before {
-                    border-top-color: rgba(76, 175, 80, 0.8);
+                    border-top-color: rgba(76, 175, 80, 0.6);
+                }
+                .event-label-blue {
+                    background: rgba(33, 150, 243, 0.6);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-blue::before {
+                    border-top-color: rgba(33, 150, 243, 0.6);
+                }
+                .event-label-orange {
+                    background: rgba(255, 152, 0, 0.6);
+                    border: none;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 10px;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                }
+                .event-label-orange::before {
+                    border-top-color: rgba(255, 152, 0, 0.6);
                 }
             `}</style>
         </div>
@@ -424,7 +479,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             return minDiff < 5000 ? bestIdx : -1;
         };
 
-        const mapToTraj = (row: FlightLogRow, eventType?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'): TrajectoryPoint => ({
+        const mapToTraj = (row: FlightLogRow, eventType?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'): TrajectoryPoint => ({
             lat: row.metrics.latitude,
             lon: row.metrics.longitude,
             onGround: row.metrics.sim_on_ground > 0.5,
@@ -439,7 +494,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         const landingIdx = lastLanding ? findClosestIndex(lastLanding.timestamp) : -1;
 
         // Map all events to their closest indices for the traj mapper
-        const eventIndexMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent'>();
+        const eventIndexMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'>();
         flight.events.forEach(e => {
             const idx = findClosestIndex(e.timestamp);
             if (idx > -1) eventIndexMap.set(idx, e.eventType);
@@ -517,6 +572,14 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
     const landingPoint = useMemo(() => {
         const landing = [...flight.events].reverse().find(e => e.eventType === 'landing');
         return landing ? findChartTime(landing.timestamp) : null;
+    }, [flight.events, chartData]);
+
+    const apOnPoints = useMemo(() => {
+        return flight.events.filter(e => e.eventType === 'autopilot_on').map(e => findChartTime(e.timestamp)).filter(t => t !== null) as string[];
+    }, [flight.events, chartData]);
+
+    const apOffPoints = useMemo(() => {
+        return flight.events.filter(e => e.eventType === 'autopilot_off').map(e => findChartTime(e.timestamp)).filter(t => t !== null) as string[];
     }, [flight.events, chartData]);
 
     const fullTrajectory = useMemo(() => {
@@ -632,6 +695,12 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                 {todPoint && (
                                     <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
+                                {apOnPoints.map((p, idx) => (
+                                    <ReferenceLine key={`ap-on-${idx}`} x={p} stroke="#2196f3" strokeDasharray="3 3" label={{ value: 'AP ON', position: 'top', fill: '#2196f3', fontSize: 10, fontWeight: 'bold' }} />
+                                ))}
+                                {apOffPoints.map((p, idx) => (
+                                    <ReferenceLine key={`ap-off-${idx}`} x={p} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'AP OFF', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
+                                ))}
                                 <Area type="monotone" dataKey="altitude" stroke="#8884d8" fillOpacity={1} fill="url(#colorAlt)" />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -663,6 +732,12 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                 {todPoint && (
                                     <ReferenceLine x={todPoint} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'TOD', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
                                 )}
+                                {apOnPoints.map((p, idx) => (
+                                    <ReferenceLine key={`ap-on-${idx}`} x={p} stroke="#2196f3" strokeDasharray="3 3" label={{ value: 'AP ON', position: 'top', fill: '#2196f3', fontSize: 10, fontWeight: 'bold' }} />
+                                ))}
+                                {apOffPoints.map((p, idx) => (
+                                    <ReferenceLine key={`ap-off-${idx}`} x={p} stroke="#ff9800" strokeDasharray="3 3" label={{ value: 'AP OFF', position: 'top', fill: '#ff9800', fontSize: 10, fontWeight: 'bold' }} />
+                                ))}
                                 <Line type="monotone" dataKey="ias" name="Indicated Airspeed" stroke="#4caf50" dot={false} strokeWidth={2} />
                                 <Line type="monotone" dataKey="gs" name="Groundspeed" stroke="#2196f3" dot={false} strokeWidth={2} />
                             </LineChart>
@@ -691,7 +766,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-                    {/* Pitch Chart */}
+                    {/* Pitch Angle Chart */}
                     <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Pitch Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
@@ -707,7 +782,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                         </div>
                     </div>
 
-                    {/* Bank Chart */}
+                    {/* Bank Angle Chart */}
                     <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Bank Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
