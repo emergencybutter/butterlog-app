@@ -915,17 +915,23 @@ fn save_imported_flight(
         crate::append_log(app, format!("Failed to update aircraft stats: {}", e));
     }
 
-    // Scan for screenshots
-    {
+    let (first_ts_val, last_ts_val): (String, String) = {
         let mut stmt = conn.prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")?;
-        let (first_ts_val, last_ts_val): (String, String) = stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-        
-        if let Err(e) = crate::screenshot_manager::scan_screenshots_for_flight(app, &temp_filename.replace(".db", ""), aircraft_title, &first_ts_val, &last_ts_val) {
-            crate::append_log(app, format!("Failed to scan screenshots: {}", e));
-        }
-    }
+        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?
+    };
 
     drop(conn);
+
+    // Scan for screenshots after DB is closed and flushed
+    if let Err(e) = crate::screenshot_manager::scan_screenshots_for_flight(
+        app,
+        &temp_filename.replace(".db", ""),
+        aircraft_title,
+        &first_ts_val,
+        &last_ts_val,
+    ) {
+        crate::append_log(app, format!("Failed to scan screenshots: {}", e));
+    }
 
     Ok(parse_db_file(&path).unwrap())
 }

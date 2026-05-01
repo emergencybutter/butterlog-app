@@ -191,9 +191,11 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, screensho
                             position={[s.latitude, s.longitude]}
                             icon={L.divIcon({
                                 className: 'custom-scr-marker',
-                                html: `<div style="background-color: #e91e63; width: 14px; height: 14px; border-radius: 2px; border: 2px solid white; transform: rotate(45deg);"></div>`,
-                                iconSize: [14, 14],
-                                iconAnchor: [7, 7]
+                                html: `<div style="background-color: #e91e63; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                </div>`,
+                                iconSize: [24, 24],
+                                iconAnchor: [12, 12]
                             })}
                         >
                             <Popup>
@@ -416,9 +418,11 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
                             position={[s.latitude, s.longitude]}
                             icon={L.divIcon({
                                 className: 'custom-scr-marker',
-                                html: `<div style="background-color: #e91e63; width: 14px; height: 14px; border-radius: 2px; border: 2px solid white; transform: rotate(45deg);"></div>`,
-                                iconSize: [14, 14],
-                                iconAnchor: [7, 7]
+                                html: `<div style="background-color: #e91e63; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                </div>`,
+                                iconSize: [24, 24],
+                                iconAnchor: [12, 12]
                             })}
                         >
                             <Popup>
@@ -506,6 +510,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             invoke<Runway[]>("get_runways", { ident: flight.endIcao }),
             invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
         ]).then(([flightData, startRwys, endRwys, scrs]) => {
+            console.log(`[Debug] Loaded ${scrs.length} screenshots for flight ${flightId}:`, scrs);
             setData(flightData);
             setStartRunways(startRwys);
             setEndRunways(endRwys);

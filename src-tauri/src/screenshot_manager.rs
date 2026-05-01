@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Emitter};
@@ -56,7 +56,7 @@ impl ScreenshotManager {
     pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64) -> Result<(), String> {
         let conn = self.get_connection()?;
         conn.execute(
-            "INSERT OR IGNORE INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
+            "INSERT OR REPLACE INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![flight_id, aircraft_title, path, timestamp, lat, lon],
         ).map_err(|e| e.to_string())?;
@@ -286,8 +286,6 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
                                 let created_res = metadata.created().or_else(|_| metadata.modified());
                                 if let Ok(created) = created_res {
                                     let created_ts = created.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-                                    // if (created_ts - start_time > 0){
-                                    // crate::append_log(app, format!("considering {} {} {}.", file_name, created_ts - start_time, end_time - created_ts));}
                                     if created_ts >= start_time && created_ts <= end_time {
                                         // Found a potential screenshot!
                                         let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
@@ -329,31 +327,93 @@ fn parse_ts(ts: &str) -> Result<i64, String> {
 }
 
 fn find_closest_metrics(app: &AppHandle, flight_id: &str, timestamp: i64) -> Result<(f64, f64), String> {
-    let log_dir = app.state::<crate::config::ConfigManager>().get_config().log_directory.ok_or("No log directory")?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join("flightlogs");
     let db_path = log_dir.join(format!("{}.db", flight_id));
+    
     if !db_path.exists() {
+        crate::append_log(app, format!("[Debug] Coordinate lookup failed: DB not found at {:?}", db_path));
         return Err("Flight DB not found".to_string());
     }
 
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT latitude, longitude FROM metrics ORDER BY ABS(strftime('%s', timestamp) - ?1) LIMIT 1")
-        .map_err(|e| e.to_string())?;
-    
-    let mut rows = stmt.query_map(params![timestamp], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    }).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
-    if let Some(row) = rows.next() {
-        Ok(row.map_err(|e| e.to_string())?)
-    } else {
-        Ok((0.0, 0.0))
+    // Convert target timestamp to string format used in DB
+    let target_ts_str = chrono::DateTime::from_timestamp(timestamp, 0)
+        .ok_or("Invalid timestamp")?
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    // Debug: Check range of DB
+    let range: rusqlite::Result<(String, String)> = conn.query_row(
+        "SELECT MIN(timestamp), MAX(timestamp) FROM metrics",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?))
+    );
+    
+    if let Ok((min, max)) = range {
+        crate::append_log(app, format!("[Debug] Linking screenshot at {}. DB Range: {} to {}", target_ts_str, min, max));
+    }
+
+    // Find the closest point by checking one before and one after
+    let mut stmt_before = conn.prepare("
+        SELECT latitude, longitude, timestamp FROM metrics 
+        WHERE timestamp <= ?1 
+        ORDER BY timestamp DESC LIMIT 1
+    ").map_err(|e| e.to_string())?;
+
+    let before = stmt_before.query_row(params![target_ts_str], |row| {
+        Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
+    }).optional().map_err(|e: rusqlite::Error| e.to_string())?;
+
+    let mut stmt_after = conn.prepare("
+        SELECT latitude, longitude, timestamp FROM metrics 
+        WHERE timestamp > ?1 
+        ORDER BY timestamp ASC LIMIT 1
+    ").map_err(|e| e.to_string())?;
+
+    let after = stmt_after.query_row(params![target_ts_str], |row| {
+        Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
+    }).optional().map_err(|e: rusqlite::Error| e.to_string())?;
+
+    match (before, after) {
+        (Some((lat1, lon1, ts1)), Some((lat2, lon2, ts2))) => {
+            let d1 = (parse_ts(&ts1).unwrap_or(0) - timestamp).abs();
+            let d2 = (parse_ts(&ts2).unwrap_or(0) - timestamp).abs();
+            if d1 < d2 {
+                Ok((lat1, lon1))
+            } else {
+                Ok((lat2, lon2))
+            }
+        },
+        (Some((lat, lon, _)), None) => Ok((lat, lon)),
+        (None, Some((lat, lon, _))) => Ok((lat, lon)),
+        (None, None) => {
+            crate::append_log(app, format!("[Debug] No metrics found in DB for timestamp {}", target_ts_str));
+            Ok((0.0, 0.0))
+        }
     }
 }
 
 #[tauri::command]
 pub async fn get_screenshots_for_flight(app: AppHandle, flight_id: String) -> Result<Vec<Screenshot>, String> {
     let manager = app.state::<ScreenshotManager>();
-    manager.get_screenshots_for_flight(&flight_id)
+    let res = manager.get_screenshots_for_flight(&flight_id);
+    
+    match &res {
+        Ok(scrs) => {
+            crate::append_log(&app, format!("[Debug] Retrieved {} screenshots for flight {}. Coordinates: {:?}", 
+                scrs.len(), 
+                flight_id,
+                scrs.iter().map(|s| (s.latitude, s.longitude)).collect::<Vec<_>>()
+            ));
+        }
+        Err(e) => {
+            crate::append_log(&app, format!("[Debug] Failed to retrieve screenshots for flight {}: {}", flight_id, e));
+        }
+    }
+    
+    res
 }
 
 #[tauri::command]
