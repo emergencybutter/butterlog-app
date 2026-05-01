@@ -6,6 +6,7 @@ mod models;
 mod runways;
 mod screenshot_manager;
 mod sim_monitor;
+mod webhook_manager;
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -197,6 +198,9 @@ pub fn run() {
             // Initialize ScreenshotManager
             let screenshot_manager = ScreenshotManager::new(app.handle());
             app.manage(screenshot_manager);
+
+            // Initialize WebhookManager
+            app.manage(webhook_manager::WebhookManager::new());
 
             // Start screenshot watcher
             screenshot_manager::start_screenshot_watcher(app.handle().clone());

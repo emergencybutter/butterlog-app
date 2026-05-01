@@ -163,6 +163,28 @@ pub enum FlightPhase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AirportInfo {
+    pub icao: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookFlightSummary {
+    pub log_path: String,
+    pub airframe_name: String,
+    pub departure: AirportInfo,
+    pub arrival: AirportInfo,
+    pub takeoff_time: Option<String>,
+    pub landing_time: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub takeoff_snapshot: Option<FlightMetrics>,
+    pub landing_snapshot: Option<FlightMetrics>,
+    pub current_snapshot: Option<FlightMetrics>,
+    pub max_entries: Option<FlightMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightEvent {
     pub timestamp: String,

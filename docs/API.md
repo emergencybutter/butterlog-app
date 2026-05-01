@@ -3,23 +3,21 @@
 This document describes the Web API for Butterlog, designed for consumption by both humans and agents.
 
 ## Base URL
-`https://butterlog.flyvoyager.net/` (or your local deployment URL)
+`https://butterlog.flyvoyager.net/api` (or your local deployment URL)
+
 
 ## Authentication
 
-The API supports two authentication methods:
+Each user is given a webhookToken. Each user uses this base url:
+`https://butterlog.flyvoyager.net/api/users/:webhookToken`
 
-1.  **Session-based (Passport Discord)**: Used by the web frontend. User is authenticated via Discord OAuth2.
-2.  **Webhook Token**: Used by automated clients (agents). The `:webhookToken` is part of the URL path. If a token is unknown, a new user account is automatically created for it.
-
----
 
 ## Endpoints
 
 ### Flight Management
 
 #### Create a Flight
-`POST /users/:webhookToken/flights`
+`POST /flights`
 
 Creates a new flight entry.
 
@@ -34,7 +32,7 @@ Creates a new flight entry.
     *   `401 Unauthorized`: Invalid or missing authentication.
 
 #### Update a Flight
-`PUT /users/:webhookToken/flights/:id`
+`PUT /flights/:id`
 
 Updates an existing flight (e.g., when it lands or progress is made).
 
@@ -49,7 +47,7 @@ Updates an existing flight (e.g., when it lands or progress is made).
     *   `404 Not Found`: Flight ID does not exist for this user.
 
 #### Get Flight Details
-`GET /users/:webhookToken/flights/:id`
+`GET /flights/:id`
 
 Retrieves a specific flight's data.
 
@@ -65,7 +63,7 @@ Retrieves a specific flight's data.
 ### Screenshot Management
 
 #### Upload a Screenshot
-`POST /users/:webhookToken/flights/:id/screenshots`
+`POST /flights/:id/screenshots`
 
 Uploads an image for a specific flight. Images are automatically resized to 1600px width and compressed as optimized JPEGs.
 
@@ -80,7 +78,7 @@ Uploads an image for a specific flight. Images are automatically resized to 1600
     *   `404 Not Found`: Flight not found.
 
 #### Delete a Screenshot
-`DELETE /users/:webhookToken/flights/:id/screenshots/:hash`
+`DELETE /flights/:id/screenshots/:hash`
 
 Removes a screenshot from a flight.
 
@@ -91,14 +89,6 @@ Removes a screenshot from a flight.
 *   **Response:**
     *   `204 No Content`: Successfully deleted.
     *   `404 Not Found`: Flight or screenshot not found.
-
----
-
-### Discord Configuration (Requires Session Auth)
-
-*   `GET /discord-notification-channels`: List configured Discord channel IDs.
-*   `POST /discord-notification-channels`: Add a new channel (`{ "channelId": "..." }`).
-*   `DELETE /discord-notification-channels/:channelId`: Remove a channel.
 
 ---
 

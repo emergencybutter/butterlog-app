@@ -10,7 +10,7 @@ interface Config {
     screenshotRegex: string;
     autoUploadScreenshots: boolean;
     enableWebhook: boolean;
-    webhookAddress: string;
+    webhookUrl: string;
     xplaneWebsocketUrl: string;
     openAtLogin: boolean;
     startMinimized: boolean;
@@ -195,19 +195,22 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                     checked={config.enableWebhook} 
                                     onChange={(e) => handleChange("enableWebhook", e.target.checked)}
                                 /> 
-                                <span>Enable Webhook</span>
+                                <span>Enable Webhook Service</span>
                             </label>
                         </div>
                         <div className="setting-input-group">
-                            <label>Webhook Address:</label>
+                            <label>Authenticated Webhook URL:</label>
                             <input 
                                 type="text" 
                                 className="setting-input"
-                                value={config.webhookAddress} 
-                                onChange={(e) => handleChange("webhookAddress", e.target.value)}
-                                placeholder="https://..."
+                                value={config.webhookUrl} 
+                                onChange={(e) => handleChange("webhookUrl", e.target.value)}
+                                placeholder="https://butterlog.flyvoyager.net/api/users/YOUR_TOKEN"
                                 disabled={!config.enableWebhook}
                             />
+                            <p style={{ fontSize: "0.75rem", color: "#888", marginTop: "4px" }}>
+                                Copy the full URL from your Butterlog dashboard. It should include your private token.
+                            </p>
                         </div>
                     </div>
                 </section>
