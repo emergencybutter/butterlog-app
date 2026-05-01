@@ -2,23 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-
-interface FlightSummary {
-    filename: string;
-    startIcao: string;
-    startAirportName: string;
-    endIcao: string;
-    endAirportName: string;
-    startTime: string;
-    endTime: string;
-    durationMinutes: number;
-    fileSizeBytes: number;
-    aircraftTitle: string;
-    maxAltitude: number;
-    maxGroundSpeed: number;
-    fuelConsumed: number;
-    events: any[];
-}
+import { FlightSummary } from "./models";
 
 interface ImportProgress {
     state: 'parsing' | 'saving' | 'finalizing';

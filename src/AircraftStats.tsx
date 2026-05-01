@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { FlightSummary, Screenshot } from "./models";
 
 interface AircraftStats {
     aircraftType: string;
@@ -10,33 +11,6 @@ interface AircraftStats {
     totalFuelCompleted: number;
     totalFlightsCompleted: number;
     lastAirport: string;
-}
-
-interface Screenshot {
-    path: string;
-}
-
-interface FlightEvent {
-    timestamp: string;
-    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent';
-    latitude: number;
-    longitude: number;
-}
-
-interface FlightSummary {
-    filename: string;
-    startIcao: string;
-    startAirportName: string;
-    endIcao: string;
-    endAirportName: string;
-    startTime: string;
-    endTime: string;
-    durationMinutes: number;
-    aircraftTitle: string;
-    maxAltitude: number;
-    maxGroundSpeed: number;
-    fuelConsumed: number;
-    events: FlightEvent[];
 }
 
 function AircraftThumbnail({ title }: { title: string }) {

@@ -6,6 +6,7 @@ import {
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, Tooltip as LeafletTooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { FlightEvent, FlightLogRow, FlightSummary, Runway, Screenshot } from "./models";
 
 // Fix for default marker icons in Leaflet
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -19,67 +20,6 @@ L.Icon.Default.mergeOptions({
     iconRetinaUrl: markerIcon2x,
     shadowUrl: markerShadow,
 });
-
-interface FlightMetrics {
-  latitude: number;
-  longitude: number;
-  alt_msl: number;
-  ias: number;
-  gnd_spd: number;
-  v_spd: number;
-  pitch: number;
-  roll: number;
-  hdg: number;
-  sim_on_ground: number;
-}
-
-interface FlightLogRow {
-  timestamp: string;
-  metrics: FlightMetrics;
-}
-
-interface FlightEvent {
-    timestamp: string;
-    eventType: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off';
-    latitude: number;
-    longitude: number;
-}
-
-interface Screenshot {
-    id: number;
-    path: string;
-    timestamp: string;
-    latitude: number;
-    longitude: number;
-}
-
-interface FlightSummary {
-    filename: string;
-    startIcao: string;
-    startAirportName: string;
-    endIcao: string;
-    endAirportName: string;
-    startTime: string;
-    endTime: string;
-    durationMinutes: number;
-    aircraftTitle: string;
-    maxAltitude: number;
-    maxGroundSpeed: number;
-    fuelConsumed: number;
-    events: FlightEvent[];
-}
-
-interface Runway {
-    airport_ident: string;
-    length_ft: number | null;
-    width_ft: number | null;
-    le_ident: string | null;
-    le_latitude_deg: number | null;
-    le_longitude_deg: number | null;
-    he_ident: string | null;
-    he_latitude_deg: number | null;
-    he_longitude_deg: number | null;
-}
 
 interface TrajectoryPoint {
     lat: number;
@@ -401,10 +341,8 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
                             })}
                         >
                             <Popup>
-                                <Popup>
-                                    <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
-                                    {e.timestamp.includes(' ') ? e.timestamp.split(' ')[1] : e.timestamp}
-                                </Popup>
+                                <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
+                                {e.timestamp.includes(' ') ? e.timestamp.split(' ')[1] : e.timestamp}
                             </Popup>
                             <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.9} className={e.eventType === 'takeoff' || e.eventType === 'landing' ? 'event-label-red' : (e.eventType === 'autopilot_on' ? 'event-label-blue' : (e.eventType === 'autopilot_off' ? 'event-label-orange' : 'event-label-green'))}>
                                 {e.eventType === 'top_of_climb' ? 'TOC' : (e.eventType === 'top_of_descent' ? 'TOD' : (e.eventType === 'autopilot_on' ? 'AP ON' : (e.eventType === 'autopilot_off' ? 'AP OFF' : e.eventType.toUpperCase())))}
@@ -521,12 +459,9 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
         if (data.length === 0) return { departureTrajectory: [], arrivalTrajectory: [] };
 
-        // Helper to find closest data index for a given timestamp
         const findClosestIndex = (timestamp: string) => {
-            // Binary search or simple find if data is sorted
             let bestIdx = -1;
             let minDiff = Infinity;
-            
             const targetTs = new Date(timestamp.replace(' ', 'T')).getTime();
             
             for (let i = 0; i < data.length; i++) {
@@ -536,42 +471,36 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     minDiff = diff;
                     bestIdx = i;
                 }
-                // Optimization: if diff starts increasing, we passed the target
                 if (diff > minDiff && i > 0) break; 
             }
-            // Only return if it's within a reasonable window (e.g. 5 seconds)
             return minDiff < 5000 ? bestIdx : -1;
         };
 
         const mapToTraj = (row: FlightLogRow, eventType?: 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'): TrajectoryPoint => ({
-            lat: row.metrics.latitude,
-            lon: row.metrics.longitude,
+            lat: row.metrics.Latitude,
+            lon: row.metrics.Longitude,
             onGround: row.metrics.sim_on_ground > 0.5,
             isEvent: eventType
         });
 
-        // Find key event indices using closest match
         const firstTakeoff = flight.events.find(e => e.eventType === 'takeoff');
         const takeoffIdx = firstTakeoff ? findClosestIndex(firstTakeoff.timestamp) : -1;
 
         const lastLanding = [...flight.events].reverse().find(e => e.eventType === 'landing');
         const landingIdx = lastLanding ? findClosestIndex(lastLanding.timestamp) : -1;
 
-        // Map all events to their closest indices for the traj mapper
         const eventIndexMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'>();
         flight.events.forEach(e => {
             const idx = findClosestIndex(e.timestamp);
-            if (idx > -1) eventIndexMap.set(idx, e.eventType);
+            if (idx > -1) eventIndexMap.set(idx, e.eventType as any);
         });
 
-        // Departure: Window around first takeoff
         const depStart = Math.max(0, (takeoffIdx > -1 ? takeoffIdx : 0) - 60);
         const depEnd = Math.min(data.length, (takeoffIdx > -1 ? takeoffIdx : 60) + 60);
         const departureTrajectory = data.slice(depStart, depEnd).map((row, i) => 
             mapToTraj(row, eventIndexMap.get(depStart + i))
         );
 
-        // Arrival: Window around last landing
         const arrStart = Math.max(0, (landingIdx > -1 ? landingIdx : data.length) - 120);
         const arrEnd = Math.min(data.length, (landingIdx > -1 ? landingIdx : data.length) + 30);
         const arrivalTrajectory = data.slice(arrStart, arrEnd).map((row, i) => 
@@ -586,23 +515,20 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         const sampleRate = Math.max(1, Math.floor(data.length / 300));
         return data.filter((_, i) => i % sampleRate === 0).map(row => ({
             time: row.timestamp.split(' ')[1],
-            altitude: Math.round(row.metrics.alt_msl),
-            ias: Math.round(row.metrics.ias),
-            gs: Math.round(row.metrics.gnd_spd),
-            vs: Math.round(row.metrics.v_spd),
-            pitch: parseFloat(row.metrics.pitch.toFixed(1)),
-            bank: parseFloat(row.metrics.roll.toFixed(1)),
+            altitude: Math.round(row.metrics.AltMSL),
+            ias: Math.round(row.metrics.IAS),
+            gs: Math.round(row.metrics.GndSpd),
+            vs: Math.round(row.metrics.VSpd),
+            pitch: parseFloat(row.metrics.Pitch.toFixed(1)),
+            bank: parseFloat(row.metrics.Roll.toFixed(1)),
         }));
     }, [data]);
 
-    // Find indices in chartData for event markers
     const findChartTime = (eventTime: string) => {
         if (!eventTime) return null;
         const timePart = eventTime.split(' ')[1];
-        // Try exact match first
         if (chartData.some(d => d.time === timePart)) return timePart;
         
-        // Find closest time in sampled chartData
         let best = null;
         let minDiff = Infinity;
         const target = new Date(`1970-01-01T${timePart}`).getTime();
@@ -615,7 +541,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 best = d.time;
             }
         }
-        return minDiff < 10000 ? best : null; // Within 10s
+        return minDiff < 10000 ? best : null;
     };
 
     const tocPoint = useMemo(() => {
@@ -650,8 +576,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         if (data.length === 0) return [];
         const sampleRate = Math.max(1, Math.floor(data.length / 500));
         return data.filter((_, i) => i % sampleRate === 0).map(row => ({
-            lat: row.metrics.latitude,
-            lon: row.metrics.longitude
+            lat: row.metrics.Latitude,
+            lon: row.metrics.Longitude
         }));
     }, [data]);
 
@@ -666,6 +592,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             setExporting(false);
         }
     };
+
+    const landingEvent = useMemo(() => [...flight.events].reverse().find(e => e.eventType === 'landing'), [flight.events]);
 
     if (loading) return <div>Loading flight data...</div>;
 
@@ -708,6 +636,29 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
             </div>
 
+            {landingEvent && (
+                <div style={{ marginBottom: "2rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
+                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
+                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>TOUCHDOWN VS</div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.touchdownFpm || 0)} fpm</div>
+                    </div>
+                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
+                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>LANDING G</div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{(landingEvent.landingG || 1.0).toFixed(2)} G</div>
+                    </div>
+                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
+                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>OFFSET</div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>
+                            {landingEvent.offsetPercent !== undefined ? `${Math.abs(landingEvent.offsetPercent).toFixed(1)}% ${landingEvent.offsetPercent < 0 ? 'L' : 'R'}` : "N/A"}
+                        </div>
+                    </div>
+                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
+                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>THR DISTANCE</div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.thresholdDistFt || 0)} ft</div>
+                    </div>
+                </div>
+            )}
+
             <FullFlightMap trajectory={fullTrajectory} events={flight.events} screenshots={screenshots} />
 
             {screenshots.length > 0 && (
@@ -746,7 +697,6 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
-                {/* Altitude Chart */}
                 <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Altitude Profile (ft)</h3>
                     <div style={{ width: '100%', height: 250, minWidth: 0 }}>
@@ -789,7 +739,6 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     </div>
                 </div>
 
-                {/* Speed Chart */}
                 <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Airspeed & Groundspeed (kt)</h3>
                     <div style={{ width: '100%', height: 250, minWidth: 0 }}>
@@ -827,7 +776,6 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     </div>
                 </div>
 
-                {/* Vertical Speed Chart */}
                 <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Vertical Speed (fpm)</h3>
                     <div style={{ width: '100%', height: 200, minWidth: 0 }}>
@@ -848,7 +796,6 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-                    {/* Pitch Angle Chart */}
                     <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Pitch Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
@@ -864,7 +811,6 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                         </div>
                     </div>
 
-                    {/* Bank Angle Chart */}
                     <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
                         <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Bank Angle (deg)</h3>
                         <div style={{ width: '100%', height: 200, minWidth: 0 }}>
