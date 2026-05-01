@@ -27,14 +27,14 @@ function AircraftThumbnail({ title }: { title: string }) {
 
     if (!screenshot) return (
         <div style={{ 
-            width: "90px", 
-            height: "60px", 
+            width: "150px", 
+            height: "100px", 
             background: "#2a2a2a", 
             borderRadius: "4px", 
             display: "flex", 
             alignItems: "center", 
             justifyContent: "center",
-            fontSize: "0.6rem",
+            fontSize: "0.8rem",
             color: "#555"
         }}>
             NO IMG
@@ -46,8 +46,8 @@ function AircraftThumbnail({ title }: { title: string }) {
             src={convertFileSrc(screenshot.path)} 
             alt={title} 
             style={{ 
-                width: "90px", 
-                height: "60px", 
+                width: "150px", 
+                height: "100px", 
                 objectFit: "cover", 
                 borderRadius: "4px",
                 border: "1px solid #444"
