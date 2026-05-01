@@ -31,144 +31,144 @@ interface FlightSummary {
 }
 
 interface FlightMetrics {
-  latitude: number;
-  longitude: number;
-  alt_b: number;
-  baro_a: number;
-  alt_msl: number;
-  oat: number;
-  ias: number;
-  gnd_spd: number;
-  v_spd: number;
-  pitch: number;
-  roll: number;
-  lat_ac: number;
-  norm_ac: number;
-  hdg: number;
-  trk: number;
+  Latitude: number;
+  Longitude: number;
+  AltB: number;
+  BaroA: number;
+  AltMSL: number;
+  OAT: number;
+  IAS: number;
+  GndSpd: number;
+  VSpd: number;
+  Pitch: number;
+  Roll: number;
+  LatAc: number;
+  NormAc: number;
+  HDG: number;
+  TRK: number;
   volt1: number;
   volt2: number;
   amp1: number;
-  f_qty_l: number;
-  f_qty_r: number;
-  e1_fflow: number;
-  e1_oil_t: number;
-  e1_oil_p: number;
-  e1_map: number;
-  e1_rpm: number;
-  e1_pwr: number;
-  e1_cht1: number;
-  e1_cht2: number;
-  e1_cht3: number;
-  e1_cht4: number;
-  e1_cht5: number;
-  e1_cht6: number;
-  e1_egt1: number;
-  e1_egt2: number;
-  e1_egt3: number;
-  e1_egt4: number;
-  e1_egt5: number;
-  e1_egt6: number;
-  e1_tit1: number;
-  e1_tit2: number;
-  alt_gps: number;
-  tas: number;
-  hsis: number;
-  crs: number;
-  nav1: number;
-  nav2: number;
-  com1: number;
-  com2: number;
-  hcdi: number;
-  vcdi: number;
-  wnd_spd: number;
-  wnd_dr: number;
-  wpt_dst: number;
-  wpt_brg: number;
-  mag_var: number;
-  afcs_on: number;
-  roll_m: number;
-  pitch_m: number;
-  roll_c: number;
-  pitch_c: number;
-  v_spd_g: number;
-  gps_fix: number;
-  hal: number;
-  val: number;
-  hpl_was: number;
-  hpl_fd: number;
-  vpl_was: number;
+  FQtyL: number;
+  FQtyR: number;
+  "E1 FFlow": number;
+  "E1 OilT": number;
+  "E1 OilP": number;
+  "E1 MAP": number;
+  "E1 RPM": number;
+  "E1 %Pwr": number;
+  "E1 CHT1": number;
+  "E1 CHT2": number;
+  "E1 CHT3": number;
+  "E1 CHT4": number;
+  "E1 CHT5": number;
+  "E1 CHT6": number;
+  "E1 EGT1": number;
+  "E1 EGT2": number;
+  "E1 EGT3": number;
+  "E1 EGT4": number;
+  "E1 EGT5": number;
+  "E1 EGT6": number;
+  "E1 TIT1": number;
+  "E1 TIT2": number;
+  AltGPS: number;
+  TAS: number;
+  HSIS: number;
+  CRS: number;
+  NAV1: number;
+  NAV2: number;
+  COM1: number;
+  COM2: number;
+  HCDI: number;
+  VCDI: number;
+  WndSpd: number;
+  WndDr: number;
+  WptDst: number;
+  WptBrg: number;
+  MagVar: number;
+  AfcsOn: number;
+  RollM: number;
+  PitchM: number;
+  RollC: number;
+  PichC: number;
+  VSpdG: number;
+  GPSfix: number;
+  HAL: number;
+  VAL: number;
+  HPLwas: number;
+  HPLfd: number;
+  VPLwas: number;
   sim_on_ground: number;
 }
 
 const METRIC_LABELS: Record<string, string> = {
-  latitude: "Latitude",
-  longitude: "Longitude",
-  alt_b: "Indicated Altitude (ft)",
-  baro_a: "Altimeter Setting (inHg)",
-  alt_msl: "Altitude MSL (ft)",
-  oat: "Outside Air Temp (°C)",
-  ias: "Indicated Airspeed (kt)",
-  gnd_spd: "Groundspeed (kt)",
-  v_spd: "Vertical Speed (fpm)",
-  pitch: "Pitch Angle (deg)",
-  roll: "Bank Angle (deg)",
-  lat_ac: "Lateral Acceleration (G)",
-  norm_ac: "Normal Acceleration (G)",
-  hdg: "Heading (deg)",
-  trk: "Track (deg)",
+  Latitude: "Latitude",
+  Longitude: "Longitude",
+  AltB: "Indicated Altitude (ft)",
+  BaroA: "Altimeter Setting (inHg)",
+  AltMSL: "Altitude MSL (ft)",
+  OAT: "Outside Air Temp (°C)",
+  IAS: "Indicated Airspeed (kt)",
+  GndSpd: "Groundspeed (kt)",
+  VSpd: "Vertical Speed (fpm)",
+  Pitch: "Pitch Angle (deg)",
+  Roll: "Bank Angle (deg)",
+  LatAc: "Lateral Acceleration (G)",
+  NormAc: "Normal Acceleration (G)",
+  HDG: "Heading (deg)",
+  TRK: "Track (deg)",
   volt1: "Bus Voltage 1",
   volt2: "Bus Voltage 2",
   amp1: "Bus Amperes 1",
-  f_qty_l: "Fuel Left (gal)",
-  f_qty_r: "Fuel Right (gal)",
-  e1_fflow: "E1 Fuel Flow (gph)",
-  e1_oil_t: "E1 Oil Temp (°F)",
-  e1_oil_p: "E1 Oil Pressure (psi)",
-  e1_map: "E1 Manifold Press (inHg)",
-  e1_rpm: "E1 RPM",
-  e1_pwr: "E1 Power (%)",
-  e1_cht1: "E1 CHT 1",
-  e1_cht2: "E1 CHT 2",
-  e1_cht3: "E1 CHT 3",
-  e1_cht4: "E1 CHT 4",
-  e1_cht5: "E1 CHT 5",
-  e1_cht6: "E1 CHT 6",
-  e1_egt1: "E1 EGT 1",
-  e1_egt2: "E1 EGT 2",
-  e1_egt3: "E1 EGT 3",
-  e1_egt4: "E1 EGT 4",
-  e1_egt5: "E1 EGT 5",
-  e1_egt6: "E1 EGT 6",
-  e1_tit1: "E1 TIT 1",
-  e1_tit2: "E1 TIT 2",
-  alt_gps: "GPS Altitude (ft)",
-  tas: "True Airspeed (kt)",
-  hsis: "HSI Source",
-  crs: "Selected Course (deg)",
-  nav1: "NAV 1 Freq (MHz)",
-  nav2: "NAV 2 Freq (MHz)",
-  com1: "COM 1 Freq (MHz)",
-  com2: "COM 2 Freq (MHz)",
-  hcdi: "Horizontal CDI (fsd)",
-  vcdi: "Vertical CDI (fsd)",
-  wnd_spd: "Wind Speed (kt)",
-  wnd_dr: "Wind Direction (deg)",
-  wpt_dst: "Waypoint Distance (nm)",
-  wpt_brg: "Waypoint Bearing (deg)",
-  mag_var: "Magnetic Variation (deg)",
-  afcs_on: "Autopilot Active",
-  roll_m: "AP Roll Mode",
-  pitch_m: "AP Pitch Mode",
-  roll_c: "Roll Command (deg)",
-  pitch_c: "Pitch Command (deg)",
-  v_spd_g: "VS Target (fpm)",
-  gps_fix: "GPS Fix Type",
-  hal: "H-Alarm Limit (m)",
-  val: "V-Alarm Limit (m)",
-  hpl_was: "HPL WAAS (m)",
-  hpl_fd: "HPL FD (m)",
-  vpl_was: "VPL WAAS (m)",
+  FQtyL: "Fuel Left (gal)",
+  FQtyR: "Fuel Right (gal)",
+  "E1 FFlow": "E1 Fuel Flow (gph)",
+  "E1 OilT": "E1 Oil Temp (°F)",
+  "E1 OilP": "E1 Oil Pressure (psi)",
+  "E1 MAP": "E1 Manifold Press (inHg)",
+  "E1 RPM": "E1 RPM",
+  "E1 %Pwr": "E1 Power (%)",
+  "E1 CHT1": "E1 CHT 1",
+  "E1 CHT2": "E1 CHT 2",
+  "E1 CHT3": "E1 CHT 3",
+  "E1 CHT4": "E1 CHT 4",
+  "E1 CHT5": "E1 CHT 5",
+  "E1 CHT6": "E1 CHT 6",
+  "E1 EGT1": "E1 EGT 1",
+  "E1 EGT2": "E1 EGT 2",
+  "E1 EGT3": "E1 EGT 3",
+  "E1 EGT4": "E1 EGT 4",
+  "E1 EGT5": "E1 EGT 5",
+  "E1 EGT6": "E1 EGT 6",
+  "E1 TIT1": "E1 TIT 1",
+  "E1 TIT2": "E1 TIT 2",
+  AltGPS: "GPS Altitude (ft)",
+  TAS: "True Airspeed (kt)",
+  HSIS: "HSI Source",
+  CRS: "Selected Course (deg)",
+  NAV1: "NAV 1 Freq (MHz)",
+  NAV2: "NAV 2 Freq (MHz)",
+  COM1: "COM 1 Freq (MHz)",
+  COM2: "COM 2 Freq (MHz)",
+  HCDI: "Horizontal CDI (fsd)",
+  VCDI: "Vertical CDI (fsd)",
+  WndSpd: "Wind Speed (kt)",
+  WndDr: "Wind Direction (deg)",
+  WptDst: "Waypoint Distance (nm)",
+  WptBrg: "Waypoint Bearing (deg)",
+  MagVar: "Magnetic Variation (deg)",
+  AfcsOn: "Autopilot Active",
+  RollM: "AP Roll Mode",
+  PitchM: "AP Pitch Mode",
+  RollC: "Roll Command (deg)",
+  PichC: "Pitch Command (deg)",
+  VSpdG: "VS Target (fpm)",
+  GPSfix: "GPS Fix Type",
+  HAL: "H-Alarm Limit (m)",
+  VAL: "V-Alarm Limit (m)",
+  HPLwas: "HPL WAAS (m)",
+  HPLfd: "HPL FD (m)",
+  VPLwas: "VPL WAAS (m)",
   sim_on_ground: "On Ground",
 };
 
@@ -395,7 +395,7 @@ function App() {
                 <span style={{ color: metrics.sim_on_ground > 0.5 ? "#4caf50" : "#ffeb3b", fontWeight: "bold", marginRight: "8px" }}>
                   {metrics.sim_on_ground > 0.5 ? "GND" : "AIR"}
                 </span>
-                | IAS {metrics.ias.toFixed(0)} kt | {getWindComponent(metrics.wnd_spd, metrics.wnd_dr, metrics.hdg)} | GS {metrics.gnd_spd.toFixed(0)} kt | ALT {metrics.alt_msl.toFixed(0)} ft | VS {metrics.v_spd.toFixed(0)} fpm | OAT {metrics.oat.toFixed(0)}°C
+                | IAS {metrics.IAS.toFixed(0)} kt | {getWindComponent(metrics.WndSpd, metrics.WndDr, metrics.HDG)} | GS {metrics.GndSpd.toFixed(0)} kt | ALT {metrics.AltMSL.toFixed(0)} ft | VS {metrics.VSpd.toFixed(0)} fpm | OAT {metrics.OAT.toFixed(0)}°C
               </span>
             </div>
           )}
