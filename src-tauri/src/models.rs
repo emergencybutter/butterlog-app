@@ -271,4 +271,9 @@ pub struct FlightEvent {
     pub event_type: String, // "takeoff", "landing", "top_of_climb", "top_of_descent"
     pub latitude: f64,
     pub longitude: f64,
+    // Landing performance metrics
+    pub touchdown_fpm: Option<f64>,
+    pub landing_g: Option<f64>,
+    pub offset_percent: Option<f64>,
+    pub threshold_dist_ft: Option<f64>,
 }

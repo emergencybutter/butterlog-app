@@ -1,5 +1,6 @@
 use crate::airports::AirportsDatabase;
 use crate::models::{FlightEvent, FlightMetrics, FlightPhase};
+use crate::runways::{Runway, RunwaysDatabase};
 use std::collections::{HashMap, VecDeque};
 
 pub struct FlightAnalyzer {
@@ -18,12 +19,16 @@ pub struct FlightAnalyzer {
     last_autopilot_active: bool,
     first_timestamp: Option<String>,
     last_timestamp: Option<String>,
+
+    // Landing performance tracking
+    pub max_landing_g: f64,
+    pub touchdown_fpm: f64,
 }
 
 impl FlightAnalyzer {
     pub fn new() -> Self {
         Self {
-            start_coords: Vec::with_capacity(300), // 5 minutes at 1Hz
+            start_coords: Vec::with_capacity(300), 
             end_coords: VecDeque::with_capacity(300),
             current_phase: FlightPhase::Parked,
             last_phase_change: std::time::Instant::now(),
@@ -38,6 +43,8 @@ impl FlightAnalyzer {
             last_autopilot_active: false,
             first_timestamp: None,
             last_timestamp: None,
+            max_landing_g: 0.0,
+            touchdown_fpm: 0.0,
         }
     }
 
@@ -57,6 +64,8 @@ impl FlightAnalyzer {
         self.last_autopilot_active = false;
         self.first_timestamp = None;
         self.last_timestamp = None;
+        self.max_landing_g = 0.0;
+        self.touchdown_fpm = 0.0;
     }
 
     pub fn get_duration_minutes(&self) -> i64 {
@@ -102,15 +111,19 @@ impl FlightAnalyzer {
         self.final_fuel = current_fuel;
 
         let on_ground = metrics.is_on_ground > 0.5;
-        self.last_on_ground = on_ground;
+
+        // Peak G tracking during landing phase
+        if self.current_phase == FlightPhase::Landing && on_ground {
+            self.max_landing_g = self.max_landing_g.max(metrics.normal_acceleration);
+        }
 
         // Track Autopilot
         let ap_active = metrics.autopilot_active > 0.5;
         if ap_active != self.last_autopilot_active {
             if ap_active {
-                self.add_event("autopilot_on", metrics.latitude, metrics.longitude, timestamp);
+                self.add_event("autopilot_on", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
             } else {
-                self.add_event("autopilot_off", metrics.latitude, metrics.longitude, timestamp);
+                self.add_event("autopilot_off", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
             }
             self.last_autopilot_active = ap_active;
         }
@@ -138,55 +151,39 @@ impl FlightAnalyzer {
             FlightPhase::Takeoff => {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                    self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp);
+                    self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                 }
             }
             FlightPhase::Climb => {
                 if !on_ground {
                     if v_spd.abs() < 200.0 && ias > 60.0 {
                         self.current_phase = FlightPhase::Cruise;
-                        self.add_event(
-                            "top_of_climb",
-                            metrics.latitude,
-                            metrics.longitude,
-                            timestamp,
-                        );
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                     } else if v_spd < -400.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event(
-                            "top_of_climb",
-                            metrics.latitude,
-                            metrics.longitude,
-                            timestamp,
-                        );
-                        self.add_event(
-                            "top_of_descent",
-                            metrics.latitude,
-                            metrics.longitude,
-                            timestamp,
-                        );
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
+                    self.touchdown_fpm = v_spd;
+                    self.max_landing_g = metrics.normal_acceleration;
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Cruise => {
                 if !on_ground {
                     if v_spd < -500.0 {
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event(
-                            "top_of_descent",
-                            metrics.latitude,
-                            metrics.longitude,
-                            timestamp,
-                        );
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                     } else if v_spd > 500.0 {
                         self.current_phase = FlightPhase::Climb;
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
+                    self.touchdown_fpm = v_spd;
+                    self.max_landing_g = metrics.normal_acceleration;
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Descent => {
@@ -200,13 +197,17 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
+                    self.touchdown_fpm = v_spd;
+                    self.max_landing_g = metrics.normal_acceleration;
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Approach => {
                 if on_ground {
                     self.current_phase = FlightPhase::Landing;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp);
+                    self.touchdown_fpm = v_spd;
+                    self.max_landing_g = metrics.normal_acceleration;
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                 }
@@ -228,6 +229,8 @@ impl FlightAnalyzer {
             }
         }
 
+        self.last_on_ground = on_ground;
+
         if self.current_phase != old_phase {
             self.last_phase_change = std::time::Instant::now();
             Some(self.current_phase)
@@ -236,12 +239,16 @@ impl FlightAnalyzer {
         }
     }
 
-    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64, timestamp: &str) {
+    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64, timestamp: &str, fpm: Option<f64>, g: Option<f64>, offset: Option<f64>, dist: Option<f64>) {
         self.events.push(FlightEvent {
             timestamp: timestamp.to_string(),
             event_type: event_type.to_string(),
             latitude: lat,
             longitude: lon,
+            touchdown_fpm: fpm,
+            landing_g: g,
+            offset_percent: offset,
+            threshold_dist_ft: dist,
         });
     }
 
@@ -290,6 +297,80 @@ impl FlightAnalyzer {
             .map(|(icao, _)| icao)
             .unwrap_or_else(|| "XXXX".to_string())
     }
+
+    // Refactored to be called by the monitor which has all DBs
+    pub fn finalize_landing_performance(&mut self, airports_db: &AirportsDatabase, runways_db: &RunwaysDatabase) {
+        let end_icao = self.find_end_icao(airports_db);
+        if end_icao == "XXXX" || end_icao == "Airborne" { return; }
+
+        if let Some(idx) = self.events.iter().position(|e| e.event_type == "landing") {
+            let lat = self.events[idx].latitude;
+            let lon = self.events[idx].longitude;
+            
+            let runways = runways_db.find_for_ident(&end_icao);
+            if let Some((runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, &runways) {
+                let landing = &mut self.events[idx];
+                landing.threshold_dist_ft = Some(dist_to_threshold);
+                landing.offset_percent = Some(offset_pct);
+            }
+        }
+    }
+}
+
+fn find_best_runway_match(lat: f64, lon: f64, runways: &[Runway]) -> Option<(Runway, f64, f64)> {
+    let mut best_match = None;
+    let mut min_dist = f64::MAX;
+
+    for rw in runways {
+        // Low end threshold
+        if let (Some(le_lat), Some(le_lon), Some(le_hdg)) = (rw.le_latitude_deg, rw.le_longitude_deg, rw.le_heading_degt) {
+            let (dist, offset, total_dist) = project_onto_runway(lat, lon, le_lat, le_lon, le_hdg, rw.le_displaced_threshold_ft.unwrap_or(0) as f64);
+            if dist.abs() < 200.0 && total_dist > -500.0 && total_dist < (rw.length_ft.unwrap_or(0) as f64 + 500.0) {
+                let width = rw.width_ft.unwrap_or(150) as f64;
+                let offset_pct = (offset / (width / 2.0)) * 100.0;
+                if dist.abs() < min_dist {
+                    min_dist = dist.abs();
+                    best_match = Some((rw.clone(), total_dist, offset_pct));
+                }
+            }
+        }
+        // High end threshold
+        if let (Some(he_lat), Some(he_lon), Some(he_hdg)) = (rw.he_latitude_deg, rw.he_longitude_deg, rw.he_heading_degt) {
+            let (dist, offset, total_dist) = project_onto_runway(lat, lon, he_lat, he_lon, he_hdg, rw.he_displaced_threshold_ft.unwrap_or(0) as f64);
+            if dist.abs() < 200.0 && total_dist > -500.0 && total_dist < (rw.length_ft.unwrap_or(0) as f64 + 500.0) {
+                let width = rw.width_ft.unwrap_or(150) as f64;
+                let offset_pct = (offset / (width / 2.0)) * 100.0;
+                if dist.abs() < min_dist {
+                    min_dist = dist.abs();
+                    best_match = Some((rw.clone(), total_dist, offset_pct));
+                }
+            }
+        }
+    }
+
+    best_match
+}
+
+fn project_onto_runway(lat: f64, lon: f64, thr_lat: f64, thr_lon: f64, hdg: f64, displaced: f64) -> (f64, f64, f64) {
+    let r = 20925646.3; // Earth radius in feet
+    
+    let d_lat = (lat - thr_lat).to_radians();
+    let d_lon = (lon - thr_lon).to_radians();
+    
+    // Approximate local flat projection for short distances (runway scale)
+    let y = d_lat * r;
+    let x = d_lon * r * thr_lat.to_radians().cos();
+    
+    let angle = (90.0 - hdg).to_radians();
+    
+    // Rotate coordinates to runway axis
+    let run_x = x * angle.cos() + y * angle.sin();
+    let run_y = -x * angle.sin() + y * angle.cos();
+    
+    // run_x is distance along runway axis
+    // run_y is lateral offset
+    
+    (run_y, run_y, run_x - displaced)
 }
 
 #[cfg(test)]

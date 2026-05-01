@@ -3,6 +3,7 @@ use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
 use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportInfo};
 use crate::sim_monitor::{calculate_distance, SimMonitor};
 use crate::webhook_manager::WebhookManager;
+use crate::runways::RunwaysDatabase;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use simplesimconnect::*;
@@ -206,6 +207,11 @@ impl SimConnectMonitor {
 
                         if let Some(ref conn) = db_conn {
                             if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                // Advanced Landing Analysis
+                                if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
+                                    analyzer.finalize_landing_performance(&db, &r_db);
+                                }
+
                                 let start_icao = analyzer.find_start_icao(&db);
                                 let end_icao = analyzer.find_end_icao(&db);
                                 
@@ -232,7 +238,7 @@ impl SimConnectMonitor {
                                 let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                                 let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
 
-                                let summary_data = [
+                                let mut summary_data = vec![
                                     ("departure_icao", start_icao.clone()),
                                     ("departure_name", start_name),
                                     ("arrival_icao", end_icao.clone()),
@@ -242,6 +248,13 @@ impl SimConnectMonitor {
                                     ("max_ground_speed", analyzer.max_gs.to_string()),
                                     ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
                                 ];
+
+                                if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+                                    if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+                                    if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+                                    if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+                                    if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+                                }
 
                                 for (k, v) in summary_data {
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);

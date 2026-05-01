@@ -3,6 +3,7 @@ use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
 use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportInfo};
 use crate::sim_monitor::SimMonitor;
 use crate::webhook_manager::WebhookManager;
+use crate::runways::RunwaysDatabase;
 use chrono::Utc;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -86,6 +87,7 @@ impl XPlaneMonitor {
                         m.heading = data["sim/flightmodel/position/mag_psi"].as_f64().unwrap_or(0.0);
                         m.fuel_quantity_left = data["sim/flightmodel/weight/m_fuel1"].as_f64().unwrap_or(0.0) * 0.1498; 
                         m.fuel_quantity_right = data["sim/flightmodel/weight/m_fuel2"].as_f64().unwrap_or(0.0) * 0.1498;
+                        m.normal_acceleration = data["sim/flightmodel/forces/g_nrm"].as_f64().unwrap_or(1.0);
 
                         { let mut metrics_lock = metrics.lock().unwrap(); *metrics_lock = m; }
 
@@ -175,6 +177,11 @@ impl XPlaneMonitor {
 
         if flight_ongoing {
             if let Some(db) = app.try_state::<AirportsDatabase>() {
+                // Advanced Landing Analysis
+                if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
+                    analyzer.finalize_landing_performance(&db, &r_db);
+                }
+
                 let now_str = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
                 let summary = WebhookFlightSummary {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
