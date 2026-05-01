@@ -272,7 +272,10 @@ function App() {
           <div>No flight selected</div>
         );
       case "aircraft":
-        return <AircraftStats />;
+        return <AircraftStats onViewDetails={(flight) => {
+            setSelectedFlight(flight);
+            setView("details");
+        }} />;
       case "settings":
         return <Settings onBack={() => setView("status")} />;
       case "status":
