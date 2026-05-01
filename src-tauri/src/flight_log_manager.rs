@@ -1,7 +1,7 @@
 use crate::airports::AirportsDatabase;
 use crate::config::ConfigManager;
 use crate::models::{FlightEvent, FlightMetrics};
-use chrono::NaiveDateTime;
+use chrono::{FixedOffset, NaiveDateTime, TimeZone, Utc};
 use directories::UserDirs;
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
@@ -382,6 +382,32 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     Ok(summaries)
 }
 
+fn parse_utc_offset(offset_str: &str) -> Option<FixedOffset> {
+    let offset_str = offset_str.trim();
+    if offset_str.is_empty() {
+        return Some(FixedOffset::east_opt(0)?);
+    }
+
+    let sign = if offset_str.starts_with('-') { -1 } else { 1 };
+    let parts: Vec<&str> = offset_str
+        .trim_start_matches(|c| c == '+' || c == '-')
+        .split(':')
+        .collect();
+
+    if parts.len() == 2 {
+        let hours: i32 = parts[0].parse().ok()?;
+        let minutes: i32 = parts[1].parse().ok()?;
+        let total_seconds = sign * (hours * 3600 + minutes * 60);
+        FixedOffset::east_opt(total_seconds)
+    } else if parts.len() == 1 {
+        let hours: i32 = parts[0].parse().ok()?;
+        let total_seconds = sign * hours * 3600;
+        FixedOffset::east_opt(total_seconds)
+    } else {
+        None
+    }
+}
+
 fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let filename = path.file_name()?.to_str()?.to_string();
     let metadata = fs::metadata(path).ok()?;
@@ -421,8 +447,8 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
     let (start_time, end_time) = match time_res {
         Ok((Some(s), Some(e))) => (s, e),
         _ => (
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         ),
     };
 
@@ -587,11 +613,7 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
         }
 
         if let Some(row) = parse_csv_line_to_row(line, airports_db.as_deref()) {
-            if let Some(new_phase) = analyzer.update(&row.metrics, &row.timestamp) {
-                crate::append_log(
-                    &app,
-                    format!("[Import] Detected flight phase: {:?}", new_phase),
-                );
+            if let Some(_new_phase) = analyzer.update(&row.metrics, &row.timestamp) {
             }
             rows.push(row);
 
@@ -654,7 +676,20 @@ fn parse_csv_line_to_row(
         return None;
     }
 
-    let timestamp = format!("{} {}", cols[0], cols[1]);
+    let date_str = cols[0];
+    let time_str = cols[1];
+    let offset_str = cols[2];
+
+    let mut timestamp = format!("{} {}", date_str, time_str);
+
+    if let Ok(naive) = NaiveDateTime::parse_from_str(&timestamp, "%Y-%m-%d %H:%M:%S") {
+        if let Some(offset) = parse_utc_offset(offset_str) {
+            if let Some(dt) = offset.from_local_datetime(&naive).single() {
+                timestamp = dt.with_timezone(&Utc).format("%Y-%m-%d %H:%M:%S").to_string();
+            }
+        }
+    }
+
     let lat: f64 = cols[4].parse().unwrap_or(0.0);
     let lon: f64 = cols[5].parse().unwrap_or(0.0);
     let alt_msl: f64 = cols[8].parse().unwrap_or(0.0);
@@ -843,7 +878,7 @@ fn save_imported_flight(
     // Populate summary
     let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
     let duration_mins = analyzer.get_duration_minutes();
-    let import_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let import_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let summary_data = [
         ("departure_icao", start_icao.clone()),
         ("departure_name", start_name.clone()),

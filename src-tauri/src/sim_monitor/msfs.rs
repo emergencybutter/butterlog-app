@@ -2,7 +2,7 @@ use crate::airports::AirportsDatabase;
 use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
 use crate::models::{AircraftInfo, FlightMetrics};
 use crate::sim_monitor::{calculate_distance, SimMonitor};
-use chrono::Local;
+use chrono::Utc;
 use rusqlite::{params, Connection};
 use simplesimconnect::*;
 use std::fs::create_dir_all;
@@ -169,7 +169,7 @@ impl SimConnectMonitor {
         let mut aircraft_info = AircraftInfo::default();
 
         let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
-        let mut last_log_time = Local::now();
+        let mut last_log_time = Utc::now();
         let mut flight_ongoing = false;
         {
             let mut m = monitoring.lock().unwrap();
@@ -192,7 +192,7 @@ impl SimConnectMonitor {
                             app,
                             format!(
                                 "[{}] Received SimStart event. Starting new flight log (SQLite).",
-                                Local::now().format("%H:%M:%S")
+                                Utc::now().format("%H:%M:%S")
                             ),
                         );
                         flight_ongoing = true;
@@ -221,7 +221,7 @@ impl SimConnectMonitor {
                         let internal_log_dir = app_data_dir.join("flightlogs");
                         create_dir_all(&internal_log_dir)?;
                         let filename =
-                            format!("butterlog_{}.db", Local::now().format("%Y%m%d_%H%M%S"));
+                            format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
                         let path = internal_log_dir.join(&filename);
                         current_log_path = Some(path.clone());
                         {
@@ -257,7 +257,7 @@ impl SimConnectMonitor {
                             app,
                             format!(
                                 "[{}] Received SimStop event. Closing and analyzing flight log.",
-                                Local::now().format("%H:%M:%S")
+                                Utc::now().format("%H:%M:%S")
                             ),
                         );
                         flight_ongoing = false;
@@ -365,7 +365,7 @@ impl SimConnectMonitor {
                                 app,
                                 format!(
                                     "[{}] Detected ongoing flight on startup. Starting log.",
-                                    Local::now().format("%H:%M:%S")
+                                    Utc::now().format("%H:%M:%S")
                                 ),
                             );
                             flight_ongoing = true;
@@ -388,7 +388,7 @@ impl SimConnectMonitor {
                             let internal_log_dir = app_data_dir.join("flightlogs");
                             let _ = create_dir_all(&internal_log_dir);
                             let filename =
-                                format!("butterlog_{}.db", Local::now().format("%Y%m%d_%H%M%S"));
+                                format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
                             let path = internal_log_dir.join(filename);
                             current_log_path = Some(path.clone());
 
@@ -400,7 +400,7 @@ impl SimConnectMonitor {
                         }
 
                         if flight_ongoing {
-                            let now = Local::now();
+                            let now = Utc::now();
 
                             // Determine sample rate based on proximity and altitude
                             let mut sample_rate_ms = 1000;
@@ -573,7 +573,7 @@ impl SimMonitor for SimConnectMonitor {
                         &app,
                         format!(
                             "[{}] Successfully connected to MSFS (SimConnect).",
-                            Local::now().format("%Y-%m-%d %H:%M:%S")
+                            Utc::now().format("%Y-%m-%d %H:%M:%S")
                         ),
                     );
                     {
@@ -595,7 +595,7 @@ impl SimMonitor for SimConnectMonitor {
                             &app,
                             format!(
                                 "[{}] SimConnect monitor error: {}",
-                                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                                Utc::now().format("%Y-%m-%d %H:%M:%S"),
                                 e
                             ),
                         );

@@ -2,7 +2,7 @@ use crate::airports::AirportsDatabase;
 use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
 use crate::models::{AircraftInfo, FlightMetrics};
 use crate::sim_monitor::{calculate_distance, SimMonitor};
-use chrono::Local;
+use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use rusqlite::{params, Connection};
 use serde_json::json;
@@ -58,7 +58,7 @@ impl XPlaneMonitor {
                         &app,
                         format!(
                             "[{}] Successfully connected to X-Plane 12 WebSocket.",
-                            Local::now().format("%Y-%m-%d %H:%M:%S")
+                            Utc::now().format("%Y-%m-%d %H:%M:%S")
                         ),
                     );
                     {
@@ -93,7 +93,7 @@ impl XPlaneMonitor {
                         .send(Message::Text(sub_msg.to_string().into()))
                         .await;
 
-                    let mut last_log_time = Local::now();
+                    let mut last_log_time = Utc::now();
                     let mut flight_ongoing = false;
                     {
                         let mut m = monitoring.lock().unwrap();
@@ -184,7 +184,7 @@ impl XPlaneMonitor {
                                         &app,
                                         format!(
                                             "[{}] [X-Plane] Detected ongoing flight. Starting log.",
-                                            Local::now().format("%H:%M:%S")
+                                            Utc::now().format("%H:%M:%S")
                                         ),
                                     );
 
@@ -194,7 +194,7 @@ impl XPlaneMonitor {
                                     let _ = create_dir_all(&internal_log_dir);
                                     let filename = format!(
                                         "butterlog_xp_{}.db",
-                                        Local::now().format("%Y%m%d_%H%M%S")
+                                        Utc::now().format("%Y%m%d_%H%M%S")
                                     );
                                     let path = internal_log_dir.join(&filename);
                                     current_log_path = Some(path.clone());
@@ -240,7 +240,7 @@ impl XPlaneMonitor {
                                 }
 
                                 if flight_ongoing {
-                                    let now = Local::now();
+                                    let now = Utc::now();
                                     let mut sample_rate_ms = 1000;
                                     if m.is_on_ground < 0.5 {
                                         if let Some(db) = app.try_state::<AirportsDatabase>() {
