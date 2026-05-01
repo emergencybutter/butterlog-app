@@ -54,7 +54,7 @@ impl SimConnectMonitor {
         sc.subscribe_to_system_event(event_sim_start, "SimStart")?;
         sc.subscribe_to_system_event(event_sim_stop, "SimStop")?;
 
-        // Register all fields in the exact order they appear in FlightMetrics struct
+        // Register all fields
         sc.add_to_data_definition::<f64>(define_id, "PLANE LATITUDE", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "PLANE LONGITUDE", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "INDICATED ALTITUDE", "feet")?;
@@ -119,9 +119,9 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "GPS FIX TYPE", "enum")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS HORIZONTAL ERROR", "meters")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS VERTICAL ERROR", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for HPLwas
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for HPLfd
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; // Placeholder for VPLwas
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
         sc.add_to_data_definition::<f64>(define_id, "SIM ON GROUND", "bool")?;
 
         sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "string256")?;
@@ -136,6 +136,7 @@ impl SimConnectMonitor {
 
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
+        let mut max_metrics: Option<FlightMetrics> = None;
         let mut takeoff_time: Option<String> = None;
         let mut landing_time: Option<String> = None;
         let mut start_time: Option<String> = None;
@@ -172,6 +173,7 @@ impl SimConnectMonitor {
                         webhook_manager.reset();
                         takeoff_snapshot = None;
                         landing_snapshot = None;
+                        max_metrics = None;
                         takeoff_time = None;
                         landing_time = None;
                         start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
@@ -220,7 +222,7 @@ impl SimConnectMonitor {
                                     takeoff_snapshot,
                                     landing_snapshot,
                                     current_snapshot: metrics.lock().map(|m| *m).ok(),
-                                    max_entries: None,
+                                    max_entries: max_metrics,
                                 };
                                 webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
                                 webhook_manager.reset();
@@ -283,6 +285,7 @@ impl SimConnectMonitor {
                             analyzer.reset();
                             aircraft_info = AircraftInfo::default();
                             webhook_manager.reset();
+                            max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
 
                             let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
@@ -300,6 +303,12 @@ impl SimConnectMonitor {
                         }
 
                         if flight_ongoing {
+                            // Update max metrics
+                            match max_metrics {
+                                Some(ref mut m) => m.update_max(data),
+                                None => max_metrics = Some(*data),
+                            }
+
                             let now = Utc::now();
                             let mut sample_rate_ms = 1000;
                             if data.is_on_ground < 0.5 {
@@ -348,7 +357,7 @@ impl SimConnectMonitor {
                                         takeoff_snapshot,
                                         landing_snapshot,
                                         current_snapshot: Some(*data),
-                                        max_entries: None,
+                                        max_entries: max_metrics,
                                     };
                                     webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), false);
                                 }

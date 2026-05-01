@@ -4,7 +4,7 @@ use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportIn
 use crate::sim_monitor::SimMonitor;
 use crate::webhook_manager::WebhookManager;
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use serde_json::Value;
 use std::fs::create_dir_all;
 use std::net::UdpSocket;
@@ -55,6 +55,7 @@ impl XPlaneMonitor {
 
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
+        let mut max_metrics: Option<FlightMetrics> = None;
         let mut takeoff_time: Option<String> = None;
         let mut landing_time: Option<String> = None;
         let mut start_time: Option<String> = None;
@@ -94,6 +95,7 @@ impl XPlaneMonitor {
                             db_conn = None;
                             analyzer.reset();
                             webhook_manager.reset();
+                            max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
 
                             let app_data_dir = app.path().app_data_dir().unwrap();
@@ -119,6 +121,12 @@ impl XPlaneMonitor {
                         }
 
                         if flight_ongoing {
+                            // Update max metrics
+                            match max_metrics {
+                                Some(ref mut max_m) => max_m.update_max(&m),
+                                None => max_metrics = Some(m),
+                            }
+
                             let now = Utc::now();
                             if now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
                                 last_log_time = now;
@@ -151,7 +159,7 @@ impl XPlaneMonitor {
                                         takeoff_snapshot,
                                         landing_snapshot,
                                         current_snapshot: Some(m),
-                                        max_entries: None,
+                                        max_entries: max_metrics,
                                     };
                                     webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), false);
                                 }
@@ -178,7 +186,7 @@ impl XPlaneMonitor {
                     takeoff_snapshot,
                     landing_snapshot,
                     current_snapshot: metrics.lock().map(|m| *m).ok(),
-                    max_entries: None,
+                    max_entries: max_metrics,
                 };
                 webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
             }
