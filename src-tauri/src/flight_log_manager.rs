@@ -631,7 +631,7 @@ pub async fn import_flight_from_csv(app: AppHandle, path: String) -> Result<Flig
         }
     }
 
-    let summary = save_imported_flight(&app, &airframe_name, rows, &analyzer, &path)
+    let summary = save_imported_flight(&app, &airframe_name, rows, &mut analyzer, &path)
         .map_err(|e| {
             let err = e.to_string();
             crate::append_log(
@@ -796,7 +796,7 @@ fn save_imported_flight(
     app: &AppHandle,
     aircraft_title: &str,
     rows: Vec<FlightLogRow>,
-    analyzer: &crate::flight_analyzer::FlightAnalyzer,
+    analyzer: &mut crate::flight_analyzer::FlightAnalyzer,
     source_path: &str,
 ) -> anyhow::Result<FlightSummary> {
     let app_data_dir = app.path().app_data_dir()?;
@@ -849,6 +849,11 @@ fn save_imported_flight(
     // Determine ICAOs and Names
     let (start_icao, start_name, end_icao, end_name) =
         if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
+            // Advanced Landing Analysis for Imports
+            if let Some(r_db) = app.try_state::<crate::runways::RunwaysDatabase>() {
+                analyzer.finalize_landing_performance(&db, &r_db);
+            }
+
             let s_icao = analyzer.find_start_icao(&db);
             let e_icao = analyzer.find_end_icao(&db);
             let s_name = if s_icao == "Airborne" {
@@ -879,7 +884,7 @@ fn save_imported_flight(
     let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
     let duration_mins = analyzer.get_duration_minutes();
     let import_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let summary_data = [
+    let mut summary_data = vec![
         ("departure_icao", start_icao.clone()),
         ("departure_name", start_name.clone()),
         ("arrival_icao", end_icao.clone()),
@@ -895,6 +900,14 @@ fn save_imported_flight(
             serde_json::to_string(&analyzer.events).unwrap_or_default(),
         ),
     ];
+
+    // Conditionally add landing metrics if found
+    if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+        if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+        if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+        if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+        if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+    }
 
     for (k, v) in summary_data {
         conn.execute(
