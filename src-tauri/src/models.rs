@@ -250,6 +250,8 @@ pub struct AirportInfo {
 pub struct WebhookFlightSummary {
     pub log_path: String,
     pub airframe_name: String,
+    pub simulator: String,
+    pub simulator_version: String,
     pub departure: AirportInfo,
     pub arrival: AirportInfo,
     pub takeoff_time: Option<String>,

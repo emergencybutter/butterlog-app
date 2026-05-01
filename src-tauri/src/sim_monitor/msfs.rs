@@ -213,6 +213,8 @@ impl SimConnectMonitor {
                                 let summary = WebhookFlightSummary {
                                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                     airframe_name: aircraft_info.title.clone(),
+                                    simulator: "MSFS".to_string(),
+                                    simulator_version: "SimConnect".to_string(),
                                     departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
                                     arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
                                     takeoff_time: takeoff_time.clone(),
@@ -348,6 +350,8 @@ impl SimConnectMonitor {
                                     let summary = WebhookFlightSummary {
                                         log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                         airframe_name: aircraft_info.title.clone(),
+                                        simulator: "MSFS".to_string(),
+                                        simulator_version: "SimConnect".to_string(),
                                         departure: AirportInfo { icao: analyzer.find_start_icao(&db), name: "".to_string() },
                                         arrival: AirportInfo { icao: analyzer.find_end_icao(&db), name: "".to_string() },
                                         takeoff_time: takeoff_time.clone(),
