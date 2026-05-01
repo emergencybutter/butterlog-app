@@ -27,8 +27,8 @@ function AircraftThumbnail({ title }: { title: string }) {
 
     if (!screenshot) return (
         <div style={{ 
-            width: "60px", 
-            height: "40px", 
+            width: "90px", 
+            height: "60px", 
             background: "#2a2a2a", 
             borderRadius: "4px", 
             display: "flex", 
@@ -46,8 +46,8 @@ function AircraftThumbnail({ title }: { title: string }) {
             src={convertFileSrc(screenshot.path)} 
             alt={title} 
             style={{ 
-                width: "60px", 
-                height: "40px", 
+                width: "90px", 
+                height: "60px", 
                 objectFit: "cover", 
                 borderRadius: "4px",
                 border: "1px solid #444"

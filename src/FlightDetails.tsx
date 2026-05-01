@@ -197,7 +197,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, screensho
                             })}
                         >
                             <Popup>
-                                <div style={{ width: "150px" }}>
+                                <div style={{ width: "220px" }}>
                                     <img src={convertFileSrc(s.path)} alt="Screenshot" style={{ width: "100%", borderRadius: "2px" }} />
                                     <div style={{ fontSize: "0.7rem", marginTop: "5px" }}>
                                         {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
@@ -422,7 +422,7 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
                             })}
                         >
                             <Popup>
-                                <div style={{ width: "150px" }}>
+                                <div style={{ width: "220px" }}>
                                     <img src={convertFileSrc(s.path)} alt="Screenshot" style={{ width: "100%", borderRadius: "2px" }} />
                                     <div style={{ fontSize: "0.7rem", marginTop: "5px" }}>
                                         {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
@@ -710,8 +710,8 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                     <h3 style={{ color: "#888", marginBottom: "1rem" }}>Screenshots</h3>
                     <div style={{ display: "flex", gap: "15px", overflowX: "auto", paddingBottom: "10px" }}>
                         {screenshots.map((s, i) => (
-                            <div key={i} style={{ flex: "0 0 auto", width: "200px", background: "#1a1a1a", borderRadius: "4px", overflow: "hidden", border: "1px solid #333" }}>
-                                <img src={convertFileSrc(s.path)} alt="Flight Screenshot" style={{ width: "100%", height: "120px", objectFit: "cover" }} />
+                            <div key={i} style={{ flex: "0 0 auto", width: "280px", background: "#1a1a1a", borderRadius: "4px", overflow: "hidden", border: "1px solid #333" }}>
+                                <img src={convertFileSrc(s.path)} alt="Flight Screenshot" style={{ width: "100%", height: "170px", objectFit: "cover" }} />
                                 <div style={{ padding: "5px", fontSize: "0.7rem", color: "#888", textAlign: "center" }}>
                                     {s.timestamp.includes(' ') ? s.timestamp.split(' ')[1] : s.timestamp}
                                 </div>
