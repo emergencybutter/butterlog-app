@@ -25,6 +25,13 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://butterlog.flyvoyager.net/downloads/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

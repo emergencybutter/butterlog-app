@@ -31,6 +31,8 @@ directories = "6.0.0"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
