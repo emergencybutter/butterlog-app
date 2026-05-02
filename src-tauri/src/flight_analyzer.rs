@@ -17,6 +17,7 @@ pub struct FlightAnalyzer {
     airborne_start: bool,
     pub last_on_ground: bool,
     last_autopilot_active: bool,
+    last_v_spd: f64,
     first_timestamp: Option<String>,
     last_timestamp: Option<String>,
 
@@ -41,6 +42,7 @@ impl FlightAnalyzer {
             airborne_start: false,
             last_on_ground: true,
             last_autopilot_active: false,
+            last_v_spd: 0.0,
             first_timestamp: None,
             last_timestamp: None,
             max_landing_g: 0.0,
@@ -62,6 +64,7 @@ impl FlightAnalyzer {
         self.airborne_start = false;
         self.last_on_ground = true;
         self.last_autopilot_active = false;
+        self.last_v_spd = 0.0;
         self.first_timestamp = None;
         self.last_timestamp = None;
         self.max_landing_g = 0.0;
@@ -166,9 +169,9 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.touchdown_fpm = v_spd;
+                    self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Cruise => {
@@ -181,9 +184,9 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.touchdown_fpm = v_spd;
+                    self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Descent => {
@@ -197,17 +200,17 @@ impl FlightAnalyzer {
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
-                    self.touchdown_fpm = v_spd;
+                    self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Approach => {
                 if on_ground {
                     self.current_phase = FlightPhase::Landing;
-                    self.touchdown_fpm = v_spd;
+                    self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                 }
@@ -230,6 +233,7 @@ impl FlightAnalyzer {
         }
 
         self.last_on_ground = on_ground;
+        self.last_v_spd = v_spd;
 
         if self.current_phase != old_phase {
             self.last_phase_change = std::time::Instant::now();
@@ -308,7 +312,7 @@ impl FlightAnalyzer {
             let lon = self.events[idx].longitude;
             
             let runways = runways_db.find_for_ident(&end_icao);
-            if let Some((runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, &runways) {
+            if let Some((_runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, &runways) {
                 let landing = &mut self.events[idx];
                 landing.threshold_dist_ft = Some(dist_to_threshold);
                 landing.offset_percent = Some(offset_pct);

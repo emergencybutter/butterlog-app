@@ -694,19 +694,20 @@ fn parse_csv_line_to_row(
     let lon: f64 = cols[5].parse().unwrap_or(0.0);
     let alt_msl: f64 = cols[8].parse().unwrap_or(0.0);
 
-    // Better sim_on_ground heuristic based on airport elevation
+    // Better sim_on_ground heuristic based on airport elevation and stability
     let mut sim_on_ground = 0.0;
+    let v_spd: f64 = cols[12].parse().unwrap_or(0.0);
+    
     if let Some(db) = airports_db {
         if let Some(nearest) = db.find_nearest(lat, lon, 1).first() {
             let elevation = nearest.elevation_ft.unwrap_or(0) as f64;
-            // If we are within 15ft of the nearest airport elevation AND speed is reasonable for ground
-            if (alt_msl - elevation).abs() < 15.0 {
+            // If we are within 50ft of the nearest airport elevation AND vertical speed is low
+            if (alt_msl - elevation).abs() < 50.0 && v_spd.abs() < 50.0 {
                 sim_on_ground = 1.0;
             }
         }
     } else {
         // Fallback to legacy heuristic: low altitude and low vertical speed
-        let v_spd: f64 = cols[12].parse().unwrap_or(0.0);
         if alt_msl < 500.0 && v_spd.abs() < 50.0 {
             sim_on_ground = 1.0;
         }
