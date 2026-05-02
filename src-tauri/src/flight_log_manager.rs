@@ -705,8 +705,9 @@ fn parse_csv_line_to_row(
             }
         }
     } else {
-        // Fallback to legacy heuristic
-        if alt_msl < 500.0 {
+        // Fallback to legacy heuristic: low altitude and low vertical speed
+        let v_spd: f64 = cols[12].parse().unwrap_or(0.0);
+        if alt_msl < 500.0 && v_spd.abs() < 50.0 {
             sim_on_ground = 1.0;
         }
     }
