@@ -1,0 +1,11 @@
+{
+  "version": "0.3.0",
+  "notes": "Butterlog v0.3.0 Release\n\nRewrite in tauri.",
+  "pub_date": "2026-05-01T17:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "REPLACE_WITH_MSI_SIGNATURE",
+      "url": "https://github.com/arnaudcornet/butterlog-app/releases/download/v0.3.0/butterlog_0.3.0_x64_en-US.msi"
+    }
+  }
+}

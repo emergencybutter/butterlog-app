@@ -27,9 +27,11 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": [
-        "https://butterlog.flyvoyager.net/downloads/latest.json"
-      ]
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFQjcxQkE5MjY5QjI5MkIKUldRcktac21xUnUzUGtpYUZRUFpnSTVHOGEyVGxsbHFzaVhMMStOSXp6cDlCMlp3c2hDWXU3VjQK",
+      "endpoints": ["https://butterlog.flyvoyager.net/downloads/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
@@ -41,6 +43,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
   }
 }
