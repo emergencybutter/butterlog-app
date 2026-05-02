@@ -5,7 +5,7 @@ use crate::sim_monitor::SimMonitor;
 use crate::webhook_manager::WebhookManager;
 use crate::runways::RunwaysDatabase;
 use chrono::Utc;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::fs::create_dir_all;
 use std::net::UdpSocket;
@@ -110,6 +110,17 @@ impl XPlaneMonitor {
 
                             if let Ok(conn) = Connection::open(&path) {
                                 let _ = init_sqlite_db(&conn);
+
+                                // Set initial departure if on ground
+                                if m.is_on_ground > 0.5 {
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                        }
+                                    }
+                                }
+
                                 db_conn = Some(conn);
                                 let _ = app.emit("flight-logs-updated", ());
                             }
@@ -117,9 +128,17 @@ impl XPlaneMonitor {
                             if let Some(title) = data["sim/aircraft/view/acf_title"].as_str() {
                                 let title_str = title.to_string();
                                 aircraft_info.title = title_str.clone();
+                                
+                                if let Some(ref conn) = db_conn {
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                }
+
                                 let mut info = aircraft_info_mutex.lock().unwrap();
                                 info.title = title_str;
                             }
+                            
+                            // Process first point immediately
+                            let _ = analyzer.update(&m, start_time.as_ref().unwrap());
                         }
 
                         if flight_ongoing {
@@ -154,8 +173,14 @@ impl XPlaneMonitor {
                                         airframe_name: aircraft_info.title.clone(),
                                         simulator: "X-Plane".to_string(),
                                         simulator_version: "12".to_string(),
-                                        departure: AirportInfo { icao: analyzer.find_start_icao(&db), name: "".to_string() },
-                                        arrival: AirportInfo { icao: analyzer.find_end_icao(&db), name: "".to_string() },
+                                        departure: AirportInfo { 
+                                            icao: analyzer.find_start_icao(&db), 
+                                            name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                        },
+                                        arrival: AirportInfo { 
+                                            icao: analyzer.find_end_icao(&db), 
+                                            name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                        },
                                         takeoff_time: takeoff_time.clone(),
                                         landing_time: landing_time.clone(),
                                         start_time: start_time.clone(),
@@ -188,8 +213,14 @@ impl XPlaneMonitor {
                     airframe_name: aircraft_info.title.clone(),
                     simulator: "X-Plane".to_string(),
                     simulator_version: "12".to_string(),
-                    departure: AirportInfo { icao: analyzer.find_start_icao(&db), name: "".to_string() },
-                    arrival: AirportInfo { icao: analyzer.find_end_icao(&db), name: "".to_string() },
+                    departure: AirportInfo { 
+                        icao: analyzer.find_start_icao(&db), 
+                        name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                    },
+                    arrival: AirportInfo { 
+                        icao: analyzer.find_end_icao(&db), 
+                        name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                    },
                     takeoff_time: takeoff_time.clone(),
                     landing_time: landing_time.clone(),
                     start_time: start_time.clone(),

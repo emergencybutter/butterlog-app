@@ -194,6 +194,23 @@ impl SimConnectMonitor {
 
                         if let Ok(conn) = Connection::open(&path) {
                             let _ = init_sqlite_db(&conn);
+
+                            // Set initial departure if on ground
+                            if metrics.lock().unwrap().is_on_ground > 0.5 {
+                                if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                    let m = metrics.lock().unwrap();
+                                    if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                    }
+                                }
+                            }
+
+                            // Set aircraft title if already known
+                            if !aircraft_info.title.is_empty() {
+                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
+                            }
+
                             db_conn = Some(conn);
                             let _ = app.emit("flight-logs-updated", ());
                         }
@@ -281,6 +298,11 @@ impl SimConnectMonitor {
                         let s = String::from_utf8_lossy(data);
                         let title = s.split('\0').next().unwrap_or("").trim().to_string();
                         aircraft_info.title = title.clone();
+                        
+                        if let Some(ref conn) = db_conn {
+                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]);
+                        }
+
                         let mut info = aircraft_info_mutex.lock().unwrap();
                         info.title = title;
                     }
@@ -312,9 +334,28 @@ impl SimConnectMonitor {
                             current_log_path = Some(path.clone());
                             if let Ok(conn) = Connection::open(&path) {
                                 let _ = init_sqlite_db(&conn);
+
+                                // Set initial departure if on ground
+                                if data.is_on_ground > 0.5 {
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                        }
+                                    }
+                                }
+
+                                // Set aircraft title if already known
+                                if !aircraft_info.title.is_empty() {
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
+                                }
+
                                 db_conn = Some(conn);
                                 let _ = app.emit("flight-logs-updated", ());
                             }
+                            
+                            // Process first point immediately
+                            let _ = analyzer.update(data, start_time.as_ref().unwrap());
                         }
 
                         if flight_ongoing {
@@ -350,6 +391,22 @@ impl SimConnectMonitor {
                                         } else if new_phase == crate::models::FlightPhase::Landing {
                                             landing_snapshot = Some(*data);
                                             landing_time = Some(now_str.clone());
+
+                                            // Immediate Arrival detection
+                                            if let Some(ref takeoff_ts) = analyzer.takeoff_timestamp {
+                                                if let (Some(t_start), Some(t_end)) = (analyzer.parse_timestamp(takeoff_ts), analyzer.parse_timestamp(&now_str)) {
+                                                    if t_end - t_start > 60 {
+                                                        if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                                            if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
+                                                                if let Some(ref conn) = db_conn {
+                                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![nearest.ident]);
+                                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![nearest.name]);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -365,8 +422,14 @@ impl SimConnectMonitor {
                                         airframe_name: aircraft_info.title.clone(),
                                         simulator: "MSFS".to_string(),
                                         simulator_version: "SimConnect".to_string(),
-                                        departure: AirportInfo { icao: analyzer.find_start_icao(&db), name: "".to_string() },
-                                        arrival: AirportInfo { icao: analyzer.find_end_icao(&db), name: "".to_string() },
+                                        departure: AirportInfo { 
+                                            icao: analyzer.find_start_icao(&db), 
+                                            name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                        },
+                                        arrival: AirportInfo { 
+                                            icao: analyzer.find_end_icao(&db), 
+                                            name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                        },
                                         takeoff_time: takeoff_time.clone(),
                                         landing_time: landing_time.clone(),
                                         start_time: start_time.clone(),

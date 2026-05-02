@@ -18,8 +18,15 @@ pub struct FlightAnalyzer {
     pub last_on_ground: bool,
     last_autopilot_active: bool,
     last_v_spd: f64,
+    pub takeoff_timestamp: Option<String>,
     first_timestamp: Option<String>,
     last_timestamp: Option<String>,
+
+    // Stability check state
+    pending_toc_ts: Option<String>,
+    pending_toc_coords: (f64, f64),
+    pending_tod_ts: Option<String>,
+    pending_tod_coords: (f64, f64),
 
     // Landing performance tracking
     pub max_landing_g: f64,
@@ -43,8 +50,13 @@ impl FlightAnalyzer {
             last_on_ground: true,
             last_autopilot_active: false,
             last_v_spd: 0.0,
+            takeoff_timestamp: None,
             first_timestamp: None,
             last_timestamp: None,
+            pending_toc_ts: None,
+            pending_toc_coords: (0.0, 0.0),
+            pending_tod_ts: None,
+            pending_tod_coords: (0.0, 0.0),
             max_landing_g: 0.0,
             touchdown_fpm: 0.0,
         }
@@ -65,10 +77,22 @@ impl FlightAnalyzer {
         self.last_on_ground = true;
         self.last_autopilot_active = false;
         self.last_v_spd = 0.0;
+        self.takeoff_timestamp = None;
         self.first_timestamp = None;
         self.last_timestamp = None;
         self.max_landing_g = 0.0;
         self.touchdown_fpm = 0.0;
+        self.pending_toc_ts = None;
+        self.pending_toc_coords = (0.0, 0.0);
+        self.pending_tod_ts = None;
+        self.pending_tod_coords = (0.0, 0.0);
+    }
+
+    pub fn parse_timestamp(&self, ts: &str) -> Option<i64> {
+        chrono::NaiveDateTime::parse_from_str(
+            ts.split('.').next().unwrap_or(ts),
+            "%Y-%m-%d %H:%M:%S",
+        ).ok().map(|dt| dt.and_utc().timestamp())
     }
 
     pub fn get_duration_minutes(&self) -> i64 {
@@ -141,6 +165,7 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::TaxiOut;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
+                    self.takeoff_timestamp = Some(timestamp.to_string());
                     self.airborne_start = true;
                 }
             }
@@ -149,43 +174,88 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::Takeoff;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
+                    self.takeoff_timestamp = Some(timestamp.to_string());
                 }
             }
             FlightPhase::Takeoff => {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
+                    self.takeoff_timestamp = Some(timestamp.to_string());
                     self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                 }
             }
             FlightPhase::Climb => {
                 if !on_ground {
                     if v_spd.abs() < 200.0 && ias > 60.0 {
-                        self.current_phase = FlightPhase::Cruise;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                        // Potential TOC
+                        let mut trigger_toc = None;
+                        if let Some(start_ts) = &self.pending_toc_ts {
+                            if let (Some(s), Some(e)) = (self.parse_timestamp(start_ts), self.parse_timestamp(timestamp)) {
+                                if e - s >= 10 {
+                                    trigger_toc = Some(start_ts.clone());
+                                }
+                            }
+                        } else {
+                            self.pending_toc_ts = Some(timestamp.to_string());
+                            self.pending_toc_coords = (metrics.latitude, metrics.longitude);
+                        }
+
+                        if let Some(start_ts) = trigger_toc {
+                            self.current_phase = FlightPhase::Cruise;
+                            self.add_event("top_of_climb", self.pending_toc_coords.0, self.pending_toc_coords.1, &start_ts, None, None, None, None);
+                            self.pending_toc_ts = None;
+                        }
                     } else if v_spd < -400.0 {
+                        // Direct Climb -> Descent (skip Cruise)
                         self.current_phase = FlightPhase::Descent;
                         self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
                         self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                        self.pending_toc_ts = None;
+                    } else {
+                        self.pending_toc_ts = None;
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                     self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
             FlightPhase::Cruise => {
                 if !on_ground {
                     if v_spd < -500.0 {
-                        self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                        // Potential TOD
+                        let mut trigger_tod = None;
+                        if let Some(start_ts) = &self.pending_tod_ts {
+                            if let (Some(s), Some(e)) = (self.parse_timestamp(start_ts), self.parse_timestamp(timestamp)) {
+                                if e - s >= 10 {
+                                    trigger_tod = Some(start_ts.clone());
+                                }
+                            }
+                        } else {
+                            self.pending_tod_ts = Some(timestamp.to_string());
+                            self.pending_tod_coords = (metrics.latitude, metrics.longitude);
+                        }
+
+                        if let Some(start_ts) = trigger_tod {
+                            self.current_phase = FlightPhase::Descent;
+                            self.add_event("top_of_descent", self.pending_tod_coords.0, self.pending_tod_coords.1, &start_ts, None, None, None, None);
+                            self.pending_tod_ts = None;
+                        }
                     } else if v_spd > 500.0 {
                         self.current_phase = FlightPhase::Climb;
+                        self.pending_tod_ts = None;
+                    } else {
+                        self.pending_tod_ts = None;
                     }
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                     self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
@@ -198,10 +268,14 @@ impl FlightAnalyzer {
                     } else if v_spd.abs() < 200.0 {
                         self.current_phase = FlightPhase::Cruise;
                     }
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                     self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 }
             }
@@ -210,9 +284,13 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
                     self.max_landing_g = metrics.normal_acceleration;
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                     self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
+                    self.pending_toc_ts = None;
+                    self.pending_tod_ts = None;
                 }
             }
             FlightPhase::Landing => {
@@ -492,17 +570,21 @@ mod tests {
         assert_eq!(analyzer.events.len(), 1);
         assert_eq!(analyzer.events[0].event_type, "takeoff");
 
-        // Cruise
+        // Cruise (requires 10s stability)
         metrics.vertical_speed = 50.0;
         metrics.indicated_airspeed = 100.0;
         analyzer.update(&metrics, "2026-04-30 12:00:04");
+        assert_eq!(analyzer.current_phase, FlightPhase::Climb); // Still pending
+        analyzer.update(&metrics, "2026-04-30 12:00:14");
         assert_eq!(analyzer.current_phase, FlightPhase::Cruise);
         assert_eq!(analyzer.events.len(), 2);
         assert_eq!(analyzer.events[1].event_type, "top_of_climb");
 
-        // Descent
+        // Descent (requires 10s stability)
         metrics.vertical_speed = -600.0;
-        analyzer.update(&metrics, "2026-04-30 12:00:05");
+        analyzer.update(&metrics, "2026-04-30 12:00:15");
+        assert_eq!(analyzer.current_phase, FlightPhase::Cruise); // Still pending
+        analyzer.update(&metrics, "2026-04-30 12:00:25");
         assert_eq!(analyzer.current_phase, FlightPhase::Descent);
         assert_eq!(analyzer.events.len(), 3);
         assert_eq!(analyzer.events[2].event_type, "top_of_descent");
@@ -510,19 +592,19 @@ mod tests {
         // Approach
         metrics.gps_altitude_msl = 2500.0;
         metrics.vertical_speed = -300.0;
-        analyzer.update(&metrics, "2026-04-30 12:00:06");
+        analyzer.update(&metrics, "2026-04-30 12:00:26");
         assert_eq!(analyzer.current_phase, FlightPhase::Approach);
 
         // Landing
         metrics.is_on_ground = 1.0;
-        analyzer.update(&metrics, "2026-04-30 12:00:07");
+        analyzer.update(&metrics, "2026-04-30 12:00:27");
         assert_eq!(analyzer.current_phase, FlightPhase::Landing);
         assert_eq!(analyzer.events.len(), 4);
         assert_eq!(analyzer.events[3].event_type, "landing");
 
         // Taxi In
         metrics.ground_speed = 10.0;
-        analyzer.update(&metrics, "2026-04-30 12:00:08");
+        analyzer.update(&metrics, "2026-04-30 12:00:28");
         assert_eq!(analyzer.current_phase, FlightPhase::TaxiIn);
     }
 
