@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { 
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine
 } from 'recharts';
@@ -585,7 +586,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
         setExporting(true);
         try {
             const path = await invoke<string>("export_flight_to_csv", { filename: flight.filename });
-            alert(`Flight exported to: ${path}`);
+            await revealItemInDir(path);
         } catch (e) {
             alert(`Export failed: ${e}`);
         } finally {
@@ -637,24 +638,27 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             </div>
 
             {landingEvent && (
-                <div style={{ marginBottom: "2rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
-                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
-                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>TOUCHDOWN VS</div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.touchdownFpm || 0)} fpm</div>
-                    </div>
-                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
-                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>LANDING G</div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{(landingEvent.landingG || 1.0).toFixed(2)} G</div>
-                    </div>
-                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
-                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>OFFSET</div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>
-                            {landingEvent.offsetPercent !== undefined ? `${Math.abs(landingEvent.offsetPercent).toFixed(1)}% ${landingEvent.offsetPercent < 0 ? 'L' : 'R'}` : "N/A"}
+                <div style={{ marginBottom: "2rem", background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                    <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888", fontSize: "1.1rem" }}>Landing Performance</h3>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>TOUCHDOWN VS</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.touchdownFpm || 0)} fpm</div>
                         </div>
-                    </div>
-                    <div style={{ background: "#1a1a1a", border: "1px solid #f44336", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
-                        <div style={{ color: "#f44336", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>THR DISTANCE</div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.thresholdDistFt || 0)} ft</div>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>LANDING G</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{(landingEvent.landingG || 1.0).toFixed(2)} G</div>
+                        </div>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>OFFSET</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>
+                                {landingEvent.offsetPercent !== undefined ? `${Math.abs(landingEvent.offsetPercent).toFixed(1)}% ${landingEvent.offsetPercent < 0 ? 'L' : 'R'}` : "N/A"}
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>THR DISTANCE</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.thresholdDistFt || 0)} ft</div>
+                        </div>
                     </div>
                 </div>
             )}
