@@ -115,6 +115,7 @@ impl XPlaneMonitor {
                                 if m.is_on_ground > 0.5 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                            crate::append_log(app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
                                         }
@@ -130,6 +131,7 @@ impl XPlaneMonitor {
                                 aircraft_info.title = title_str.clone();
                                 
                                 if let Some(ref conn) = db_conn {
+                                    crate::append_log(app, format!("[X-Plane] Set aircraft title: {}", title_str));
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
                                 }
 
@@ -231,6 +233,7 @@ impl XPlaneMonitor {
                     max_entries: max_metrics,
                 };
                 webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                crate::append_log(app, "[X-Plane] Finalized flight sync.".to_string());
             }
         }
         webhook_manager.reset();

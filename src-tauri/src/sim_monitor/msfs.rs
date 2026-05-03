@@ -200,6 +200,7 @@ impl SimConnectMonitor {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     let m = metrics.lock().unwrap();
                                     if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
                                     }
@@ -208,6 +209,7 @@ impl SimConnectMonitor {
 
                             // Set aircraft title if already known
                             if !aircraft_info.title.is_empty() {
+                                crate::append_log(app, format!("[MSFS] Set aircraft title: {}", aircraft_info.title));
                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
                             }
 
@@ -276,6 +278,7 @@ impl SimConnectMonitor {
                                 for (k, v) in summary_data {
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
                                 }
+                                crate::append_log(app, "[MSFS] Saved final flight summary to database.".to_string());
 
                                 if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
@@ -300,6 +303,7 @@ impl SimConnectMonitor {
                         aircraft_info.title = title.clone();
                         
                         if let Some(ref conn) = db_conn {
+                            crate::append_log(app, format!("[MSFS] Set aircraft title: {}", title));
                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]);
                         }
 
@@ -399,6 +403,7 @@ impl SimConnectMonitor {
                                                         if let Some(db) = app.try_state::<AirportsDatabase>() {
                                                             if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
                                                                 if let Some(ref conn) = db_conn {
+                                                                    crate::append_log(app, format!("[MSFS] Identified arrival: {} ({})", nearest.ident, nearest.name));
                                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![nearest.ident]);
                                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![nearest.name]);
                                                                 }

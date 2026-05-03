@@ -72,6 +72,8 @@ pub fn update_aircraft_stats(
         )?;
     }
 
+    crate::append_log(app, format!("[Stats] Updated stats for {}: +{:.2}h, +{:.1} fuel, last airport: {}", aircraft_type, hours, fuel_used, last_airport));
+
     Ok(())
 }
 
