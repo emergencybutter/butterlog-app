@@ -84,6 +84,13 @@ impl XPlaneMonitor {
                         m.ground_speed = data["sim/flightmodel/position/groundspeed"].as_f64().unwrap_or(0.0) * 1.94384;
                         m.vertical_speed = data["sim/flightmodel/position/vh_ind"].as_f64().unwrap_or(0.0) * 196.85;
                         m.is_on_ground = if data["sim/flightmodel/failures/onground_any"].as_i64().unwrap_or(0) > 0 { 1.0 } else { 0.0 };
+                        m.altitude_agl = data["sim/flightmodel/position/y_agl"].as_f64().unwrap_or(0.0) * 3.28084;
+                        
+                        // Fallback for is_on_ground
+                        if m.is_on_ground < 0.5 && m.altitude_agl < 5.0 {
+                            m.is_on_ground = 1.0;
+                        }
+
                         m.heading = data["sim/flightmodel/position/mag_psi"].as_f64().unwrap_or(0.0);
                         m.fuel_quantity_left = data["sim/flightmodel/weight/m_fuel1"].as_f64().unwrap_or(0.0) * 0.1498; 
                         m.fuel_quantity_right = data["sim/flightmodel/weight/m_fuel2"].as_f64().unwrap_or(0.0) * 0.1498;

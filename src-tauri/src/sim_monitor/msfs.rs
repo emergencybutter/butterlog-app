@@ -120,10 +120,13 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "GPS FIX TYPE", "enum")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS HORIZONTAL ERROR", "meters")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS VERTICAL ERROR", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?; 
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
+        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
         sc.add_to_data_definition::<f64>(define_id, "SIM ON GROUND", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "PLANE ALT ABOVE GROUND", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "GENERAL ENG RPM:1", "rpm")?; // dummy for prop rpm
+        sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent")?; // dummy for gear ratio
 
         sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "string256")?;
         sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME)?;
@@ -196,10 +199,10 @@ impl SimConnectMonitor {
                             let _ = init_sqlite_db(&conn);
 
                             // Set initial departure if on ground
-                            if metrics.lock().unwrap().is_on_ground > 0.5 {
+                            let m_lock = metrics.lock().unwrap();
+                            if m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0 {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                    let m = metrics.lock().unwrap();
-                                    if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                    if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
                                         crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
@@ -312,7 +315,14 @@ impl SimConnectMonitor {
                     }
                 }
 
-                if let Some(data) = msg.as_sim_object_data::<FlightMetrics>() {
+                if let Some(data_ref) = msg.as_sim_object_data::<FlightMetrics>() {
+                    let mut data_val = *data_ref;
+                    // Fallback for is_on_ground using AGL altitude
+                    if data_val.is_on_ground < 0.5 && data_val.altitude_agl < 5.0 {
+                        data_val.is_on_ground = 1.0;
+                    }
+                    let data = &data_val;
+
                     if msg.request_id() == Some(request_id) {
                         {
                             let mut m = metrics.lock().unwrap();
@@ -340,7 +350,7 @@ impl SimConnectMonitor {
                                 let _ = init_sqlite_db(&conn);
 
                                 // Set initial departure if on ground
-                                if data.is_on_ground > 0.5 {
+                                if data.is_on_ground > 0.5 || data.altitude_agl < 10.0 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);

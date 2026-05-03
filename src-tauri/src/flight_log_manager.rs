@@ -137,7 +137,7 @@ pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
             gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
             horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
             is_on_ground REAL,
-            xp_agl REAL DEFAULT 0.0, xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
+            altitude_agl REAL DEFAULT 0.0, xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
         )",
         [],
     )?;
@@ -178,8 +178,8 @@ pub fn insert_sqlite_row(
             gps_fix_type, horizontal_alarm_limit, vertical_alarm_limit,
             horizontal_protection_level_waas, horizontal_protection_level_fd, vertical_protection_level_waas, 
             is_on_ground,
-            xp_agl, xp_prop_rpm, xp_gear_ratio
-        ) VALUES (
+            altitude_agl, xp_prop_rpm, xp_gear_ratio
+            ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
             ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
             ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61,
@@ -197,7 +197,7 @@ pub fn insert_sqlite_row(
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
             m.roll_command, m.pitch_command, m.vertical_speed_target, m.gps_fix_type, m.horizontal_alarm_limit, m.vertical_alarm_limit,
             m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas, m.is_on_ground,
-            m.xp_agl, m.xp_prop_rpm, m.xp_gear_ratio
+            m.altitude_agl, m.xp_prop_rpm, m.xp_gear_ratio
         ],
     )?;
     Ok(())
@@ -350,7 +350,7 @@ fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
         horizontal_protection_level_fd: row.get(66)?,
         vertical_protection_level_waas: row.get(67)?,
         is_on_ground: row.get(68)?,
-        xp_agl: row.get(69).unwrap_or(0.0),
+        altitude_agl: row.get(69).unwrap_or(0.0),
         xp_prop_rpm: row.get(70).unwrap_or(0.0),
         xp_gear_ratio: row.get(71).unwrap_or(0.0),
     })
@@ -788,7 +788,7 @@ fn parse_csv_line_to_row(
         horizontal_protection_level_fd: cols[69].parse().unwrap_or(0.0),
         vertical_protection_level_waas: cols[70].parse().unwrap_or(0.0),
         is_on_ground: sim_on_ground,
-        xp_agl: 0.0,
+        altitude_agl: 0.0,
         xp_prop_rpm: 0.0,
         xp_gear_ratio: 0.0,
     };

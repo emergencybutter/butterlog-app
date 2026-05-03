@@ -140,8 +140,7 @@ pub struct FlightMetrics {
     #[serde(rename = "sim_on_ground")]
     pub is_on_ground: f64,
 
-    // X-Plane 12 specific fields (Flat Columns)
-    pub xp_agl: f64,
+    pub altitude_agl: f64,
     pub xp_prop_rpm: f64,
     pub xp_gear_ratio: f64,
 }
@@ -216,7 +215,7 @@ impl FlightMetrics {
         self.horizontal_protection_level_fd = self.horizontal_protection_level_fd.max(other.horizontal_protection_level_fd);
         self.vertical_protection_level_waas = self.vertical_protection_level_waas.max(other.vertical_protection_level_waas);
         self.is_on_ground = self.is_on_ground.max(other.is_on_ground);
-        self.xp_agl = self.xp_agl.max(other.xp_agl);
+        self.altitude_agl = self.altitude_agl.max(other.altitude_agl);
         self.xp_prop_rpm = self.xp_prop_rpm.max(other.xp_prop_rpm);
         self.xp_gear_ratio = self.xp_gear_ratio.max(other.xp_gear_ratio);
     }
