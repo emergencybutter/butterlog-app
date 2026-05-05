@@ -136,8 +136,12 @@ pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
             roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
             gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
             horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
-            is_on_ground REAL,
-            altitude_agl REAL DEFAULT 0.0, xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
+            is_on_ground REAL, altitude_agl REAL DEFAULT 0.0
+            gforce REAL,
+            pressure_altitude REAL,
+            density_altitude REAL,
+            pressurization_cabin_altitude REAL,
+            xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
         )",
         [],
     )?;
@@ -175,15 +179,13 @@ pub fn insert_sqlite_row(
             waypoint_distance, waypoint_bearing, magnetic_variation, 
             autopilot_active, roll_mode, pitch_mode,
             roll_command, pitch_command, vertical_speed_target, 
-            gps_fix_type, horizontal_alarm_limit, vertical_alarm_limit,
-            horizontal_protection_level_waas, horizontal_protection_level_fd, vertical_protection_level_waas, 
             is_on_ground,
             altitude_agl, xp_prop_rpm, xp_gear_ratio
             ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
             ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
             ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61,
-            ?62, ?63, ?64, ?65, ?66, ?67, ?68, ?69, ?70, ?71, ?72
+            ?62, ?63, ?64, ?65, ?66
         )",
         params![
             now_str, m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
@@ -195,9 +197,10 @@ pub fn insert_sqlite_row(
             m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, m.hsi_source, m.selected_course, m.nav_1_frequency,
             m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
-            m.roll_command, m.pitch_command, m.vertical_speed_target, m.gps_fix_type, m.horizontal_alarm_limit, m.vertical_alarm_limit,
-            m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas, m.is_on_ground,
-            m.altitude_agl, m.xp_prop_rpm, m.xp_gear_ratio
+            m.roll_command, m.pitch_command, m.vertical_speed_target, 
+            m.is_on_ground,
+            m.altitude_agl, m.gforce,m.pressure_altitude,m.density_altitude,m.pressurization_cabin_altitude,
+            m.xp_prop_rpm, m.xp_gear_ratio
         ],
     )?;
     Ok(())
@@ -343,16 +346,14 @@ fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
         roll_command: row.get(59)?,
         pitch_command: row.get(60)?,
         vertical_speed_target: row.get(61)?,
-        gps_fix_type: row.get(62)?,
-        horizontal_alarm_limit: row.get(63)?,
-        vertical_alarm_limit: row.get(64)?,
-        horizontal_protection_level_waas: row.get(65)?,
-        horizontal_protection_level_fd: row.get(66)?,
-        vertical_protection_level_waas: row.get(67)?,
         is_on_ground: row.get(68)?,
-        altitude_agl: row.get(69).unwrap_or(0.0),
-        xp_prop_rpm: row.get(70).unwrap_or(0.0),
-        xp_gear_ratio: row.get(71).unwrap_or(0.0),
+        altitude_agl: row.get(69)?,
+        gforce: row.get(70)?,
+        pressure_altitude: row.get(72)?,
+        density_altitude: row.get(73)?,
+        pressurization_cabin_altitude: row.get(74)?,
+        xp_prop_rpm: row.get(75)?,
+        xp_gear_ratio: row.get(76)?,
     })
 }
 
@@ -560,7 +561,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
             m.nav_1_frequency, m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, if m.autopilot_active > 0.5 { "1" } else { "0" },
             "NONE", "NONE", m.roll_command, m.pitch_command, m.vertical_speed_target, "3DDiff",
-            m.horizontal_alarm_limit, m.vertical_alarm_limit, m.horizontal_protection_level_waas, m.horizontal_protection_level_fd, m.vertical_protection_level_waas
+            "", "", "", "", ""
         ).map_err(|e| e.to_string())?;
     }
 
@@ -781,14 +782,12 @@ fn parse_csv_line_to_row(
         roll_command: cols[62].parse().unwrap_or(0.0),
         pitch_command: cols[63].parse().unwrap_or(0.0),
         vertical_speed_target: cols[64].parse().unwrap_or(0.0),
-        gps_fix_type: 0.0,
-        horizontal_alarm_limit: cols[66].parse().unwrap_or(0.0),
-        vertical_alarm_limit: cols[67].parse().unwrap_or(0.0),
-        horizontal_protection_level_waas: cols[68].parse().unwrap_or(0.0),
-        horizontal_protection_level_fd: cols[69].parse().unwrap_or(0.0),
-        vertical_protection_level_waas: cols[70].parse().unwrap_or(0.0),
         is_on_ground: sim_on_ground,
         altitude_agl: 0.0,
+        gforce: 1.0,
+        pressure_altitude: 0.0,
+        density_altitude: 0.0,
+        pressurization_cabin_altitude: alt_msl,
         xp_prop_rpm: 0.0,
         xp_gear_ratio: 0.0,
     };

@@ -125,22 +125,14 @@ pub struct FlightMetrics {
     pub pitch_command: f64,
     #[serde(rename = "VSpdG")]
     pub vertical_speed_target: f64,
-    #[serde(rename = "GPSfix")]
-    pub gps_fix_type: f64,
-    #[serde(rename = "HAL")]
-    pub horizontal_alarm_limit: f64,
-    #[serde(rename = "VAL")]
-    pub vertical_alarm_limit: f64,
-    #[serde(rename = "HPLwas")]
-    pub horizontal_protection_level_waas: f64,
-    #[serde(rename = "HPLfd")]
-    pub horizontal_protection_level_fd: f64,
-    #[serde(rename = "VPLwas")]
-    pub vertical_protection_level_waas: f64,
     #[serde(rename = "sim_on_ground")]
     pub is_on_ground: f64,
-
     pub altitude_agl: f64,
+    pub gforce: f64,
+    pub pressure_altitude: f64,
+    pub density_altitude: f64,
+    pub pressurization_cabin_altitude: f64,
+
     pub xp_prop_rpm: f64,
     pub xp_gear_ratio: f64,
 }
@@ -208,14 +200,13 @@ impl FlightMetrics {
         self.roll_command = self.roll_command.max(other.roll_command);
         self.pitch_command = self.pitch_command.max(other.pitch_command);
         self.vertical_speed_target = self.vertical_speed_target.max(other.vertical_speed_target);
-        self.gps_fix_type = self.gps_fix_type.max(other.gps_fix_type);
-        self.horizontal_alarm_limit = self.horizontal_alarm_limit.max(other.horizontal_alarm_limit);
-        self.vertical_alarm_limit = self.vertical_alarm_limit.max(other.vertical_alarm_limit);
-        self.horizontal_protection_level_waas = self.horizontal_protection_level_waas.max(other.horizontal_protection_level_waas);
-        self.horizontal_protection_level_fd = self.horizontal_protection_level_fd.max(other.horizontal_protection_level_fd);
-        self.vertical_protection_level_waas = self.vertical_protection_level_waas.max(other.vertical_protection_level_waas);
         self.is_on_ground = self.is_on_ground.max(other.is_on_ground);
         self.altitude_agl = self.altitude_agl.max(other.altitude_agl);
+        self.gforce = self.gforce.max(other.gforce);
+        self.pressure_altitude = self.pressure_altitude.max(other.pressure_altitude);
+        self.density_altitude = self.density_altitude.max(other.density_altitude);
+        self.pressurization_cabin_altitude = self.pressurization_cabin_altitude.max(other.pressurization_cabin_altitude);
+        
         self.xp_prop_rpm = self.xp_prop_rpm.max(other.xp_prop_rpm);
         self.xp_gear_ratio = self.xp_gear_ratio.max(other.xp_gear_ratio);
     }

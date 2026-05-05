@@ -94,8 +94,8 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:4", "farenheit")?;
         sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:5", "farenheit")?;
         sc.add_to_data_definition::<f64>(define_id, "ENG EXHAUST GAS TEMPERATURE:6", "farenheit")?;
-        sc.add_to_data_definition::<f64>(define_id, "ENG TURBINE INLET TEMPERATURE:1", "farenheit")?;
-        sc.add_to_data_definition::<f64>(define_id, "ENG TURBINE INLET TEMPERATURE:2", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "RECIP ENG TURBINE INLET TEMPERATURE:1", "farenheit")?;
+        sc.add_to_data_definition::<f64>(define_id, "RECIP ENG TURBINE INLET TEMPERATURE:2", "farenheit")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS POSITION ALT", "feet")?;
         sc.add_to_data_definition::<f64>(define_id, "AIRSPEED TRUE", "knots")?;
         sc.add_to_data_definition::<f64>(define_id, "GPS DRIVES NAV1", "bool")?;
@@ -112,21 +112,20 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "GPS WP BEARING", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "MAGVAR", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT MASTER", "bool")?;
-        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT ROLL HOLD", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT BANK HOLD", "bool")?;
         sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT PITCH HOLD", "bool")?;
-        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT BANK HOLD ANGLE", "degrees")?;
-        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT PITCH HOLD ANGLE", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT BANK HOLD REF", "degrees")?;
+        sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT PITCH HOLD REF", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "AUTOPILOT VERTICAL HOLD VAR", "feet per minute")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS FIX TYPE", "enum")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS HORIZONTAL ERROR", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS VERTICAL ERROR", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
-        sc.add_to_data_definition::<f64>(define_id, "GPS WP DISTANCE", "meters")?;
         sc.add_to_data_definition::<f64>(define_id, "SIM ON GROUND", "bool")?;
         sc.add_to_data_definition::<f64>(define_id, "PLANE ALT ABOVE GROUND", "feet")?;
-        sc.add_to_data_definition::<f64>(define_id, "GENERAL ENG RPM:1", "rpm")?; // dummy for prop rpm
-        sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent")?; // dummy for gear ratio
+        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?;
+        sc.add_to_data_definition::<f64>(define_id, "PRESSURE ALTITUDE", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "DENSITY ALTITUDE", "feet")?;
+        sc.add_to_data_definition::<f64>(define_id, "PRESSURIZATION CABIN ALTITUDE", "feet")?;
+
+        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for prop rpm
+        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for gear ratio
 
         sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "string256")?;
         sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME)?;
@@ -317,6 +316,7 @@ impl SimConnectMonitor {
 
                 if let Some(data_ref) = msg.as_sim_object_data::<FlightMetrics>() {
                     let mut data_val = *data_ref;
+                    //println!("Received data: {:?}", serde_json::to_string(&data_val).unwrap_or_else(|_| "Failed to serialize".into()) );
                     // Fallback for is_on_ground using AGL altitude
                     if data_val.is_on_ground < 0.5 && data_val.altitude_agl < 5.0 {
                         data_val.is_on_ground = 1.0;
