@@ -126,10 +126,12 @@ impl WebhookManager {
                                 
                                 // 2. Persist new ID to DB
                                 if let Some(conn) = db_conn {
-                                    let _ = conn.execute(
+                                    if let Err(e) = conn.execute(
                                         "INSERT OR REPLACE INTO summary (key, value) VALUES ('remote_id', ?1)",
                                         params![data.id.to_string()],
-                                    );
+                                    ) {
+                                        crate::append_log(app, format!("[Webhook] Error writing to DB: {}", e));
+                                    }
                                 }
                                 
                                 crate::append_log(app, format!("[Webhook] Created remote flight ID: {}", data.id));

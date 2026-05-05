@@ -195,7 +195,9 @@ impl SimConnectMonitor {
                         }
 
                         if let Ok(conn) = Connection::open(&path) {
-                            let _ = init_sqlite_db(&conn);
+                            if let Err(e) = init_sqlite_db(&conn) {
+                                crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
+                            }
 
                             // Set initial departure if on ground
                             let m_lock = metrics.lock().unwrap();
@@ -203,8 +205,12 @@ impl SimConnectMonitor {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
                                         crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                        if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
+                                            crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                        }
+                                        if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
+                                            crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                        }
                                     }
                                 }
                             }
@@ -212,7 +218,9 @@ impl SimConnectMonitor {
                             // Set aircraft title if already known
                             if !aircraft_info.title.is_empty() {
                                 crate::append_log(app, format!("[MSFS] Set aircraft title: {}", aircraft_info.title));
-                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                             }
 
                             db_conn = Some(conn);
@@ -278,17 +286,23 @@ impl SimConnectMonitor {
                                 }
 
                                 for (k, v) in summary_data {
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
                                 }
                                 crate::append_log(app, "[MSFS] Saved final flight summary to database.".to_string());
 
                                 if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
                                 }
 
                                 let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
                                 let duration_mins = analyzer.get_duration_minutes();
-                                let _ = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
+                                if let Err(e) = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true) {
+                                    crate::append_log(app, format!("[MSFS] Error updating aircraft stats: {}", e));
+                                }
 
                                 drop(db_conn.take());
                                 let _ = app.emit("flight-logs-updated", ());
@@ -306,7 +320,9 @@ impl SimConnectMonitor {
                         
                         if let Some(ref conn) = db_conn {
                             crate::append_log(app, format!("[MSFS] Set aircraft title: {}", title));
-                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]);
+                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
+                                crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                            }
                         }
 
                         let mut info = aircraft_info_mutex.lock().unwrap();
@@ -347,21 +363,29 @@ impl SimConnectMonitor {
                             let path = internal_log_dir.join(&filename);
                             current_log_path = Some(path.clone());
                             if let Ok(conn) = Connection::open(&path) {
-                                let _ = init_sqlite_db(&conn);
+                                if let Err(e) = init_sqlite_db(&conn) {
+                                    crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
+                                }
 
                                 // Set initial departure if on ground
                                 if data.is_on_ground > 0.5 || data.altitude_agl < 10.0 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
+                                                crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                            }
+                                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
+                                                crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                            }
                                         }
                                     }
                                 }
 
                                 // Set aircraft title if already known
                                 if !aircraft_info.title.is_empty() {
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
                                 }
 
                                 db_conn = Some(conn);
@@ -414,8 +438,12 @@ impl SimConnectMonitor {
                                                             if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
                                                                 if let Some(ref conn) = db_conn {
                                                                     crate::append_log(app, format!("[MSFS] Identified arrival: {} ({})", nearest.ident, nearest.name));
-                                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![nearest.ident]);
-                                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![nearest.name]);
+                                                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![nearest.ident]) {
+                                                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                                                    }
+                                                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![nearest.name]) {
+                                                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -426,7 +454,9 @@ impl SimConnectMonitor {
                                     }
 
                                     if let Some(ref conn) = db_conn {
-                                        let _ = insert_sqlite_row(conn, &now_str, data);
+                                        if let Err(e) = insert_sqlite_row(conn, &now_str, data) {
+                                            crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                        }
                                     }
                                 }
 

@@ -291,7 +291,7 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
                                         let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
                                         let timestamp = chrono::DateTime::<chrono::Utc>::from(created).format("%Y-%m-%d %H:%M:%S").to_string();
                                         
-                                        if let Ok(_) = manager.record_screenshot(
+                                        match manager.record_screenshot(
                                             flight_id,
                                             aircraft_title,
                                             path.to_str().unwrap_or(""),
@@ -299,7 +299,8 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
                                             lat,
                                             lon
                                         ) {
-                                            count += 1;
+                                            Ok(_) => count += 1,
+                                            Err(e) => crate::append_log(app, format!("Failed to record scanned screenshot: {}", e)),
                                         }
                                     }
                                 }

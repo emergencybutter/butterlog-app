@@ -136,7 +136,7 @@ pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
             roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
             gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
             horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
-            is_on_ground REAL, altitude_agl REAL DEFAULT 0.0
+            is_on_ground REAL, altitude_agl REAL DEFAULT 0.0,
             gforce REAL,
             pressure_altitude REAL,
             density_altitude REAL,
@@ -180,12 +180,22 @@ pub fn insert_sqlite_row(
             autopilot_active, roll_mode, pitch_mode,
             roll_command, pitch_command, vertical_speed_target, 
             is_on_ground,
-            altitude_agl, xp_prop_rpm, xp_gear_ratio
+            altitude_agl,
+            gforce, pressure_altitude, density_altitude, pressurization_cabin_altitude,
+            xp_prop_rpm, xp_gear_ratio
             ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
             ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
             ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55, ?56, ?57, ?58, ?59, ?60, ?61,
-            ?62, ?63, ?64, ?65, ?66
+            ?62,
+            ?63, 
+            ?64, 
+            ?65, 
+            ?66, 
+            ?67, 
+            ?68, 
+            ?69, 
+            ?70
         )",
         params![
             now_str, m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
@@ -199,8 +209,13 @@ pub fn insert_sqlite_row(
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, m.autopilot_active, m.roll_mode, m.pitch_mode,
             m.roll_command, m.pitch_command, m.vertical_speed_target, 
             m.is_on_ground,
-            m.altitude_agl, m.gforce,m.pressure_altitude,m.density_altitude,m.pressurization_cabin_altitude,
-            m.xp_prop_rpm, m.xp_gear_ratio
+            m.altitude_agl,
+            m.gforce, 
+            m.pressure_altitude, 
+            m.density_altitude, 
+            m.pressurization_cabin_altitude,
+            m.xp_prop_rpm, 
+            m.xp_gear_ratio
         ],
     )?;
     Ok(())
@@ -346,14 +361,14 @@ fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
         roll_command: row.get(59)?,
         pitch_command: row.get(60)?,
         vertical_speed_target: row.get(61)?,
-        is_on_ground: row.get(68)?,
-        altitude_agl: row.get(69)?,
-        gforce: row.get(70)?,
-        pressure_altitude: row.get(72)?,
-        density_altitude: row.get(73)?,
-        pressurization_cabin_altitude: row.get(74)?,
-        xp_prop_rpm: row.get(75)?,
-        xp_gear_ratio: row.get(76)?,
+        is_on_ground: row.get(62)?,
+        altitude_agl: row.get(63)?,
+        gforce: row.get(64)?,
+        pressure_altitude: row.get(65)?,
+        density_altitude: row.get(66)?,
+        pressurization_cabin_altitude: row.get(67)?,
+        xp_prop_rpm: row.get(68)?,
+        xp_gear_ratio: row.get(69)?,
     })
 }
 

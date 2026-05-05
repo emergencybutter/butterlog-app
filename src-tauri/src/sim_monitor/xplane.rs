@@ -116,15 +116,21 @@ impl XPlaneMonitor {
                             { let mut fid = current_flight_id_mutex.lock().unwrap(); *fid = filename.replace(".db", ""); }
 
                             if let Ok(conn) = Connection::open(&path) {
-                                let _ = init_sqlite_db(&conn);
+                                if let Err(e) = init_sqlite_db(&conn) {
+                                    crate::append_log(app, format!("[X-Plane] Error initializing DB: {}", e));
+                                }
 
                                 // Set initial departure if on ground
                                 if m.is_on_ground > 0.5 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
                                             crate::append_log(app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
+                                                crate::append_log(app, format!("[X-Plane] Error writing to DB: {}", e));
+                                            }
+                                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
+                                                crate::append_log(app, format!("[X-Plane] Error writing to DB: {}", e));
+                                            }
                                         }
                                     }
                                 }
@@ -139,7 +145,9 @@ impl XPlaneMonitor {
                                 
                                 if let Some(ref conn) = db_conn {
                                     crate::append_log(app, format!("[X-Plane] Set aircraft title: {}", title_str));
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]) {
+                                        crate::append_log(app, format!("[X-Plane] Error writing to DB: {}", e));
+                                    }
                                 }
 
                                 let mut info = aircraft_info_mutex.lock().unwrap();
@@ -173,7 +181,11 @@ impl XPlaneMonitor {
                                             landing_time = Some(now_str.clone());
                                         }
                                     }
-                                    if let Some(ref conn) = db_conn { let _ = insert_sqlite_row(conn, &now_str, &m); }
+                                    if let Some(ref conn) = db_conn { 
+                                        if let Err(e) = insert_sqlite_row(conn, &now_str, &m) {
+                                            crate::append_log(app, format!("[X-Plane] Error writing to DB: {}", e));
+                                        }
+                                    }
                                 }
 
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
