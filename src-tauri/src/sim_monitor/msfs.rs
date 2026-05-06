@@ -425,6 +425,11 @@ impl SimConnectMonitor {
                                 }
                             }
 
+                            // Periodically request aircraft title if still empty
+                            if aircraft_info.title.is_empty() && now.timestamp() % 5 == 0 {
+                                let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_ONCE);
+                            }
+
                             if now.signed_duration_since(last_log_time) >= chrono::Duration::milliseconds(sample_rate_ms) {
                                 last_log_time = now;
                                 let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();

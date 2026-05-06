@@ -137,6 +137,13 @@ impl XPlaneMonitor {
 
                                 db_conn = Some(conn);
                                 let _ = app.emit("flight-logs-updated", ());
+
+                                // Set aircraft title if already known
+                                if !aircraft_info.title.is_empty() {
+                                    if let Some(ref conn) = db_conn {
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]);
+                                    }
+                                }
                             }
 
                             if let Some(title) = data["sim/aircraft/view/acf_title"].as_str() {
