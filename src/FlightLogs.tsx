@@ -249,7 +249,14 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                             <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "right" }}>
                                                 <div style={{ color: "#aaa", fontSize: "0.9rem" }}>{s.startTime.split(' ')[0]} {s.startTime.split(' ')[1].substring(0, 5)}</div>
-                                                <div style={{ fontWeight: "bold", color: "#888", fontSize: "0.8rem" }}>{Math.floor(s.durationMinutes / 60)}h {s.durationMinutes % 60}m</div>
+                                                <div style={{ fontWeight: "bold", color: "#888", fontSize: "0.8rem", display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center" }}>
+                                                    {s.screenshotCount > 0 && (
+                                                        <span title={`${s.screenshotCount} screenshots`} style={{ opacity: 0.8 }}>
+                                                            📷 {s.screenshotCount}
+                                                        </span>
+                                                    )}
+                                                    <span>{Math.floor(s.durationMinutes / 60)}h {s.durationMinutes % 60}m</span>
+                                                </div>
                                             </div>
                                             <span>{expandedIndex === i ? "▲" : "▼"}</span>
                                         </div>

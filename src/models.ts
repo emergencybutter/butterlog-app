@@ -86,22 +86,22 @@ export interface FlightLogRow {
 }
 
 export interface FlightSummary {
-  filename: string;
-  startIcao: string;
-  startAirportName: string;
-  endIcao: string;
-  endAirportName: string;
-  startTime: string;
-  endTime: string;
-  durationMinutes: number;
-  fileSizeBytes: number;
-  aircraftTitle: string;
-  maxAltitude: number;
-  maxGroundSpeed: number;
-  fuelConsumed: number;
-  events: FlightEvent[];
+    filename: string;
+    startIcao: string;
+    startAirportName: string;
+    endIcao: string;
+    endAirportName: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    fileSizeBytes: number;
+    aircraftTitle: string;
+    maxAltitude: number;
+    maxGroundSpeed: number;
+    fuelConsumed: number;
+    events: FlightEvent[];
+    screenshotCount: number;
 }
-
 export interface Screenshot {
   id: number;
   path: string;

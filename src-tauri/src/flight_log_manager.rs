@@ -244,6 +244,7 @@ pub struct FlightSummary {
     pub max_ground_speed: f64,
     pub fuel_consumed: f64,
     pub events: Vec<FlightEvent>,
+    pub screenshot_count: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -516,6 +517,14 @@ fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         0
     };
 
+    let screenshot_count = if let Some(mgr) = app.try_state::<crate::screenshot_manager::ScreenshotManager>() {
+        mgr.get_screenshots_for_flight(&filename.replace(".db", ""))
+            .map(|scrs| scrs.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
     Some(FlightSummary {
         filename,
         start_icao,
@@ -531,6 +540,7 @@ fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         max_ground_speed,
         fuel_consumed,
         events,
+        screenshot_count,
     })
 }
 

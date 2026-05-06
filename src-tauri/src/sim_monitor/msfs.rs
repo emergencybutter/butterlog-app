@@ -305,6 +305,19 @@ impl SimConnectMonitor {
                                 }
 
                                 drop(db_conn.take());
+
+                                // Cleanup short or empty flights
+                                let duration_mins = analyzer.get_duration_minutes();
+                                let has_movement = analyzer.max_gs > 5.0 || analyzer.max_alt > 50.0;
+                                let is_very_short = duration_mins < 2;
+                                
+                                if is_very_short || !has_movement {
+                                    if let Some(path) = current_log_path.take() {
+                                        let _ = std::fs::remove_file(&path);
+                                        crate::append_log(app, format!("[MSFS] Deleted short/empty flight log: {}", path.display()));
+                                    }
+                                }
+
                                 let _ = app.emit("flight-logs-updated", ());
                             }
                         }
