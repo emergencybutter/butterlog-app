@@ -388,15 +388,23 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
 
     let mut summaries = Vec::new();
     let entries = fs::read_dir(log_dir).map_err(|e| e.to_string())?;
+    let entries_vec: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    let total = entries_vec.len();
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("db") {
-                if let Some(summary) = parse_db_file(&app, &path) {
-                    summaries.push(summary);
-                }
+    for (i, entry) in entries_vec.into_iter().enumerate() {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("db") {
+            if let Some(summary) = parse_db_file(&app, &path) {
+                summaries.push(summary);
             }
+        }
+        
+        // Emit progress every 5 files or at the end
+        if (i + 1) % 5 == 0 || (i + 1) == total {
+            let _ = app.emit("scan-progress", serde_json::json!({
+                "current": i + 1,
+                "total": total
+            }));
         }
     }
 
