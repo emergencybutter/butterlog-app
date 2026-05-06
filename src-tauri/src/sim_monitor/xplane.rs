@@ -61,6 +61,9 @@ impl XPlaneMonitor {
         let mut landing_time: Option<String> = None;
         let mut start_time: Option<String> = None;
 
+        let mut on_ground_since: Option<std::time::Instant> = None;
+        let mut stationary_since: Option<std::time::Instant> = None;
+
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
 
@@ -240,6 +243,32 @@ impl XPlaneMonitor {
                                     };
                                     webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
                                 }
+
+                                // Auto-close logic: on ground > 30s or stationary > 10s
+                                let now_instant = std::time::Instant::now();
+                                if m.is_on_ground > 0.5 {
+                                    if on_ground_since.is_none() { on_ground_since = Some(now_instant); }
+                                } else {
+                                    on_ground_since = None;
+                                }
+
+                                if m.ground_speed.abs() < 10.0 {
+                                    if stationary_since.is_none() { stationary_since = Some(now_instant); }
+                                } else {
+                                    stationary_since = None;
+                                }
+
+                                let should_close = if let Some(t) = on_ground_since {
+                                    t.elapsed().as_secs() > 30
+                                } else { false } || if let Some(t) = stationary_since {
+                                    t.elapsed().as_secs() > 10
+                                } else { false };
+
+                                if should_close {
+                                    crate::append_log(app, "[X-Plane] Auto-closing flight due to inactivity or ground status.".to_string());
+                                    flight_ongoing = false; // This will trigger the finalization logic after the loop
+                                    break;
+                                }
                             }
                         }
                     }
@@ -248,7 +277,7 @@ impl XPlaneMonitor {
             }
         }
 
-        if flight_ongoing {
+        if !flight_ongoing { // Finalization logic triggered by auto-close or SimStop equivalent
             if let Some(db) = app.try_state::<AirportsDatabase>() {
                 // Advanced Landing Analysis
                 if let Some(r_db) = app.try_state::<RunwaysDatabase>() {

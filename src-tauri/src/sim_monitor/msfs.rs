@@ -144,6 +144,9 @@ impl SimConnectMonitor {
         let mut landing_time: Option<String> = None;
         let mut start_time: Option<String> = None;
 
+        let mut on_ground_since: Option<std::time::Instant> = None;
+        let mut stationary_since: Option<std::time::Instant> = None;
+
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
 
@@ -180,6 +183,9 @@ impl SimConnectMonitor {
                         takeoff_time = None;
                         landing_time = None;
                         start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+                        
+                        on_ground_since = None;
+                        stationary_since = None;
 
                         let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
 
@@ -519,6 +525,35 @@ impl SimConnectMonitor {
                                         max_entries: max_metrics,
                                     };
                                     webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
+                                }
+
+                                // Auto-close logic: on ground > 30s or stationary > 10s
+                                let now_instant = std::time::Instant::now();
+                                if data.is_on_ground > 0.5 {
+                                    if on_ground_since.is_none() { on_ground_since = Some(now_instant); }
+                                } else {
+                                    on_ground_since = None;
+                                }
+
+                                if data.ground_speed.abs() < 10.0 {
+                                    if stationary_since.is_none() { stationary_since = Some(now_instant); }
+                                } else {
+                                    stationary_since = None;
+                                }
+
+                                let should_close = if let Some(t) = on_ground_since {
+                                    t.elapsed().as_secs() > 30
+                                } else { false } || if let Some(t) = stationary_since {
+                                    t.elapsed().as_secs() > 10
+                                } else { false };
+
+                                if should_close {
+                                    crate::append_log(app, "[MSFS] Auto-closing flight due to inactivity or ground status.".to_string());
+                                    // Trigger the same finalization as SimStop
+                                    let _ = sc.transmit_client_event(OBJECT_ID_USER, event_sim_stop, 0, simplesimconnect::GROUP_ID_PRIORITY_STANDARD, simplesimconnect::EVENT_FLAG_GROUPID_IS_PRIORITY);
+                                    // Reset timers to prevent immediate re-trigger if flight restarts
+                                    on_ground_since = None;
+                                    stationary_since = None;
                                 }
                             }
                         }
