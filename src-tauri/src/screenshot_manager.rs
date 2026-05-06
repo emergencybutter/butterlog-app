@@ -346,11 +346,14 @@ fn find_closest_metrics(app: &AppHandle, flight_id: &str, timestamp: i64) -> Res
         .to_string();
 
     // Debug: Check range of DB
-    let range: rusqlite::Result<(String, String)> = conn.query_row(
+    let range = conn.query_row(
         "SELECT MIN(timestamp), MAX(timestamp) FROM metrics",
         [],
-        |r| Ok((r.get(0)?, r.get(1)?))
-    );
+        |r| Ok((r.get::<usize, String>(0)?, r.get::<usize, String>(1)?))
+    ).map_err(|e| {
+        crate::append_log(app, format!("[Screenshots] Database error (range check): {}", e));
+        e.to_string()
+    });
     
     if let Ok((min, max)) = range {
         crate::append_log(app, format!("[Debug] Linking screenshot at {}. DB Range: {} to {}", target_ts_str, min, max));
@@ -361,21 +364,33 @@ fn find_closest_metrics(app: &AppHandle, flight_id: &str, timestamp: i64) -> Res
         SELECT latitude, longitude, timestamp FROM metrics 
         WHERE timestamp <= ?1 
         ORDER BY timestamp DESC LIMIT 1
-    ").map_err(|e| e.to_string())?;
+    ").map_err(|e| {
+        crate::append_log(app, format!("[Screenshots] Database error (prepare before): {}", e));
+        e.to_string()
+    })?;
 
     let before = stmt_before.query_row(params![target_ts_str], |row| {
         Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
-    }).optional().map_err(|e: rusqlite::Error| e.to_string())?;
+    }).optional().map_err(|e: rusqlite::Error| {
+        crate::append_log(app, format!("[Screenshots] Database error (query before): {}", e));
+        e.to_string()
+    })?;
 
     let mut stmt_after = conn.prepare("
         SELECT latitude, longitude, timestamp FROM metrics 
         WHERE timestamp > ?1 
         ORDER BY timestamp ASC LIMIT 1
-    ").map_err(|e| e.to_string())?;
+    ").map_err(|e| {
+        crate::append_log(app, format!("[Screenshots] Database error (prepare after): {}", e));
+        e.to_string()
+    })?;
 
     let after = stmt_after.query_row(params![target_ts_str], |row| {
         Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
-    }).optional().map_err(|e: rusqlite::Error| e.to_string())?;
+    }).optional().map_err(|e: rusqlite::Error| {
+        crate::append_log(app, format!("[Screenshots] Database error (query after): {}", e));
+        e.to_string()
+    })?;
 
     match (before, after) {
         (Some((lat1, lon1, ts1)), Some((lat2, lon2, ts2))) => {

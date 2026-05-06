@@ -89,7 +89,11 @@ pub async fn get_aircraft_stats(app: AppHandle) -> Result<Vec<AircraftStats>, St
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare("SELECT * FROM aircraft_stats ORDER BY total_hours_all DESC")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err = e.to_string();
+            crate::append_log(&app, format!("[Stats] Database error (prepare): {}", err));
+            err
+        })?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -104,7 +108,11 @@ pub async fn get_aircraft_stats(app: AppHandle) -> Result<Vec<AircraftStats>, St
                 last_airport: row.get(7)?,
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let err = e.to_string();
+            crate::append_log(&app, format!("[Stats] Database error (query_map): {}", err));
+            err
+        })?;
 
     let mut stats = Vec::new();
     for row in rows {
@@ -134,15 +142,13 @@ pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
             waypoint_distance REAL, waypoint_bearing REAL, magnetic_variation REAL, 
             autopilot_active REAL, roll_mode REAL, pitch_mode REAL,
             roll_command REAL, pitch_command REAL, vertical_speed_target REAL, 
-            gps_fix_type REAL, horizontal_alarm_limit REAL, vertical_alarm_limit REAL,
-            horizontal_protection_level_waas REAL, horizontal_protection_level_fd REAL, vertical_protection_level_waas REAL, 
             is_on_ground REAL, altitude_agl REAL DEFAULT 0.0,
             gforce REAL,
             pressure_altitude REAL,
             density_altitude REAL,
             pressurization_cabin_altitude REAL,
             xp_prop_rpm REAL DEFAULT 0.0, xp_gear_ratio REAL DEFAULT 0.0
-        )",
+            )",
         [],
     )?;
     conn.execute(
@@ -387,7 +393,7 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
         if let Ok(entry) = entry {
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("db") {
-                if let Some(summary) = parse_db_file(&path) {
+                if let Some(summary) = parse_db_file(&app, &path) {
                     summaries.push(summary);
                 }
             }
@@ -426,11 +432,14 @@ fn parse_utc_offset(offset_str: &str) -> Option<FixedOffset> {
     }
 }
 
-fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
+fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
     let filename = path.file_name()?.to_str()?.to_string();
     let metadata = fs::metadata(path).ok()?;
 
-    let conn = Connection::open(path).ok()?;
+    let conn = Connection::open(path).map_err(|e| {
+        crate::append_log(app, format!("[Logs] Failed to open DB {}: {}", filename, e));
+        e
+    }).ok()?;
 
     let get_summary = |key: &str| -> String {
         conn.query_row(
@@ -438,6 +447,12 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
             params![key],
             |r| r.get::<_, String>(0),
         )
+        .map_err(|e| {
+            if !matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                crate::append_log(app, format!("[Logs] Database error (query_row {}): {}", key, e));
+            }
+            e
+        })
         .unwrap_or_else(|_| "Unknown".to_string())
     };
 
@@ -458,9 +473,17 @@ fn parse_db_file(path: &PathBuf) -> Option<FlightSummary> {
 
     let mut stmt = conn
         .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
+        .map_err(|e| {
+            crate::append_log(app, format!("[Logs] Database error (prepare timestamps): {}", e));
+            e
+        })
         .ok()?;
     let time_res: rusqlite::Result<(Option<String>, Option<String>)> =
-        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)));
+        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| {
+            crate::append_log(app, format!("[Logs] Database error (query_row timestamps): {}", e));
+            e
+        });
 
     let (start_time, end_time) = match time_res {
         Ok((Some(s), Some(e))) => (s, e),
@@ -541,6 +564,12 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
             [],
             |r| r.get::<_, String>(0),
         )
+        .map_err(|e| {
+            if !matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                crate::append_log(&app, format!("[Logs] Database error (export aircraft_title): {}", e));
+            }
+            e
+        })
         .unwrap_or_else(|_| "Simulated Aircraft".to_string());
 
     let data = get_flight_data(app.clone(), filename).await?;
@@ -947,8 +976,17 @@ fn save_imported_flight(
     }
 
     let (first_ts_val, last_ts_val): (String, String) = {
-        let mut stmt = conn.prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")?;
-        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        let mut stmt = conn
+            .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
+            .map_err(|e| {
+                crate::append_log(app, format!("[Logs] Database error (prepare timestamps): {}", e));
+                e
+            })?;
+        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| {
+                crate::append_log(app, format!("[Logs] Database error (query_row timestamps): {}", e));
+                e
+            })?
     };
 
     drop(conn);
@@ -964,5 +1002,5 @@ fn save_imported_flight(
         crate::append_log(app, format!("Failed to scan screenshots: {}", e));
     }
 
-    Ok(parse_db_file(&path).unwrap())
+    Ok(parse_db_file(app, &path).unwrap())
 }

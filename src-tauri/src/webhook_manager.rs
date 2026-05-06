@@ -68,7 +68,12 @@ impl WebhookManager {
                     "SELECT value FROM summary WHERE key = 'remote_id'",
                     [],
                     |r| r.get(0)
-                ).optional().unwrap_or(None);
+                ).map_err(|e| {
+                    if !matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                        crate::append_log(app, format!("[Webhook] Database error (read remote_id): {}", e));
+                    }
+                    e
+                }).optional().unwrap_or(None);
 
                 if let Some(id_str) = existing {
                     if let Ok(id) = id_str.parse::<i64>() {
