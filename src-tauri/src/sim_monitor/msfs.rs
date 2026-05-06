@@ -333,10 +333,6 @@ impl SimConnectMonitor {
                 if let Some(data_ref) = msg.as_sim_object_data::<FlightMetrics>() {
                     let mut data_val = *data_ref;
                     //println!("Received data: {:?}", serde_json::to_string(&data_val).unwrap_or_else(|_| "Failed to serialize".into()) );
-                    // Fallback for is_on_ground using AGL altitude
-                    if data_val.is_on_ground < 0.5 && data_val.altitude_agl < 5.0 {
-                        data_val.is_on_ground = 1.0;
-                    }
                     let data = &data_val;
 
                     if msg.request_id() == Some(request_id) {
@@ -345,7 +341,7 @@ impl SimConnectMonitor {
                             *m = *data;
                         }
 
-                        if !flight_ongoing && (data.is_on_ground < 0.5 || data.ground_speed > 10.0) {
+                        if !flight_ongoing && (data.is_on_ground < 0.5) {
                             flight_ongoing = true;
                             { let mut m = monitoring.lock().unwrap(); *m = true; }
                             db_conn = None;
