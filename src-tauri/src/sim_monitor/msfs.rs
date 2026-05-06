@@ -437,6 +437,23 @@ impl SimConnectMonitor {
                                             takeoff_snapshot = Some(*data);
                                             takeoff_time = Some(now_str.clone());
                                             force_sync = true;
+
+                                            // Immediate takeoff event in summary
+                                            if let Some(ref conn) = db_conn {
+                                                let takeoff_event = crate::models::FlightEvent {
+                                                    timestamp: now_str.clone(),
+                                                    event_type: "takeoff".to_string(),
+                                                    latitude: data.latitude,
+                                                    longitude: data.longitude,
+                                                    touchdown_fpm: None,
+                                                    landing_g: None,
+                                                    offset_percent: None,
+                                                    threshold_dist_ft: None,
+                                                };
+                                                if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
+                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
+                                                }
+                                            }
                                         } else if new_phase == crate::models::FlightPhase::Landing {
                                             landing_snapshot = Some(*data);
                                             landing_time = Some(now_str.clone());
