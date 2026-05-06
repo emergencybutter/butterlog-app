@@ -86,7 +86,7 @@ impl WebhookManager {
         let now = std::time::Instant::now();
         if !force_update {
             if let Some(last) = *last_time {
-                if now.duration_since(last).as_secs() < 60 {
+                if now.duration_since(last).as_secs() < 300 {
                     return;
                 }
             }

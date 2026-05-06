@@ -416,15 +416,18 @@ impl SimConnectMonitor {
                                 last_log_time = now;
                                 let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
                                 
+                                let mut force_sync = false;
                                 if data.ground_speed.abs() > 0.1 || data.vertical_speed.abs() > 10.0 {
                                     if let Some(new_phase) = analyzer.update(data, &now_str) {
                                         let _ = app.emit("flight-phase-change", new_phase);
                                         if new_phase == crate::models::FlightPhase::Takeoff {
                                             takeoff_snapshot = Some(*data);
                                             takeoff_time = Some(now_str.clone());
+                                            force_sync = true;
                                         } else if new_phase == crate::models::FlightPhase::Landing {
                                             landing_snapshot = Some(*data);
                                             landing_time = Some(now_str.clone());
+                                            force_sync = true;
 
                                             // Immediate Arrival detection
                                             if let Some(ref takeoff_ts) = analyzer.takeoff_timestamp {
@@ -480,7 +483,7 @@ impl SimConnectMonitor {
                                         current_snapshot: Some(*data),
                                         max_entries: max_metrics,
                                     };
-                                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), false);
+                                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
                                 }
                             }
                         }
