@@ -258,6 +258,7 @@ pub struct FlightLogRow {
 pub async fn get_flight_data(
     app: AppHandle,
     filename: String,
+    regen_flag: tauri::State<'_, crate::RegenerateSummaryFlag>,
 ) -> Result<Vec<FlightLogRow>, String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
     let log_dir = app_data_dir.join("flightlogs");
@@ -265,6 +266,13 @@ pub async fn get_flight_data(
     let path = log_dir.join(&filename);
     if !path.exists() {
         return Err("File not found".to_string());
+    }
+
+    if regen_flag.0 {
+        crate::append_log(&app, format!("Regenerating summary for flight: {}", filename));
+        if let Err(e) = regenerate_flight_summary(&app, &path) {
+            crate::append_log(&app, format!("Failed to regenerate summary: {}", e));
+        }
     }
 
     crate::append_log(
@@ -304,6 +312,72 @@ pub async fn get_flight_data(
 
     Ok(result)
 }
+
+fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<()> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(FlightLogRow {
+            timestamp: row.get(0)?,
+            metrics: map_row_to_metrics(row)?,
+        })
+    })?;
+
+    let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
+    
+    for row in rows {
+        let row = row?;
+        analyzer.update(&row.metrics, &row.timestamp);
+    }
+
+    // Determine ICAOs and Names
+    let (start_icao, start_name, end_icao, end_name) =
+        if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
+            if let Some(r_db) = app.try_state::<crate::runways::RunwaysDatabase>() {
+                analyzer.finalize_landing_performance(&db, &r_db);
+            }
+
+            let s_icao = analyzer.find_start_icao(&db);
+            let e_icao = analyzer.find_end_icao(&db);
+            let s_name = if s_icao == "Airborne" { "Airborne".to_string() } else {
+                db.get_by_ident(&s_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string())
+            };
+            let e_name = if e_icao == "Airborne" { "Airborne".to_string() } else {
+                db.get_by_ident(&e_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string())
+            };
+            (s_icao, s_name, e_icao, e_name)
+        } else {
+            ("XXXX".to_string(), "Unknown".to_string(), "XXXX".to_string(), "Unknown".to_string())
+        };
+
+    let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+    let mut summary_data = vec![
+        ("departure_icao", start_icao),
+        ("departure_name", start_name),
+        ("arrival_icao", end_icao),
+        ("arrival_name", end_name),
+        ("max_altitude", analyzer.max_alt.to_string()),
+        ("max_ground_speed", analyzer.max_gs.to_string()),
+        ("fuel_consumed", fuel_consumed.to_string()),
+        ("flight_events", serde_json::to_string(&analyzer.events).unwrap_or_default()),
+    ];
+
+    if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+        if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+        if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+        if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+        if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+    }
+
+    for (k, v) in summary_data {
+        conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v])?;
+    }
+
+    crate::append_log(app, format!("[Regen] Re-calculated summary for {}", path.display()));
+    let _ = app.emit("flight-logs-updated", ());
+    Ok(())
+}
+
 
 fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
     Ok(FlightMetrics {
@@ -590,7 +664,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
         })
         .unwrap_or_else(|_| "Simulated Aircraft".to_string());
 
-    let data = get_flight_data(app.clone(), filename).await?;
+    let data = get_flight_data(app.clone(), filename, app.state::<crate::RegenerateSummaryFlag>()).await?;
 
     use std::io::Write;
     let mut file = fs::File::create(&csv_path).map_err(|e| {

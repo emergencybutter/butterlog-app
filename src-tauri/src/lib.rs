@@ -28,6 +28,8 @@ use std::path::PathBuf;
 
 struct LogState(Mutex<Vec<String>>);
 
+pub struct RegenerateSummaryFlag(pub bool);
+
 pub struct UnifiedMonitor {
     monitors: Mutex<Vec<Arc<dyn SimMonitor>>>,
 }
@@ -183,6 +185,9 @@ fn get_runways(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    let regenerate_summary = args.contains(&"--regenerate_summary".to_string());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -190,6 +195,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(LogState(Mutex::new(Vec::new())))
         .manage(UnifiedMonitor::new())
+        .manage(RegenerateSummaryFlag(regenerate_summary))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
