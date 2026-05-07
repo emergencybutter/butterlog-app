@@ -215,6 +215,12 @@ impl XPlaneMonitor {
                                         if let Err(e) = insert_sqlite_row(conn, &now_str, &m) {
                                             crate::append_log(app, format!("[X-Plane] Error writing to DB: {}", e));
                                         }
+
+                                        // Update summary with live metrics
+                                        let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_altitude', ?1)", params![analyzer.max_alt.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_ground_speed', ?1)", params![analyzer.max_gs.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('fuel_consumed', ?1)", params![fuel_consumed.to_string()]);
                                     }
                                 }
 

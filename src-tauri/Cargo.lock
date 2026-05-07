@@ -380,6 +380,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simplesimconnect",
+ "simplesimconnect-sys",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

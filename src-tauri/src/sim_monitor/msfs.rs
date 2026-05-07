@@ -7,6 +7,7 @@ use crate::runways::RunwaysDatabase;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use simplesimconnect::*;
+use simplesimconnect_sys::*;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -350,7 +351,7 @@ impl SimConnectMonitor {
                 }
 
                 if let Some(data_ref) = msg.as_sim_object_data::<FlightMetrics>() {
-                    let mut data_val = *data_ref;
+                    let data_val = *data_ref;
                     //println!("Received data: {:?}", serde_json::to_string(&data_val).unwrap_or_else(|_| "Failed to serialize".into()) );
                     let data = &data_val;
 
@@ -433,7 +434,7 @@ impl SimConnectMonitor {
 
                             // Periodically request aircraft title if still empty
                             if aircraft_info.title.is_empty() && now.timestamp() % 5 == 0 {
-                                let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_ONCE);
+                                let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE);
                             }
 
                             if now.signed_duration_since(last_log_time) >= chrono::Duration::milliseconds(sample_rate_ms) {
@@ -497,6 +498,12 @@ impl SimConnectMonitor {
                                         if let Err(e) = insert_sqlite_row(conn, &now_str, data) {
                                             crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                         }
+
+                                        // Update summary with live metrics
+                                        let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_altitude', ?1)", params![analyzer.max_alt.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_ground_speed', ?1)", params![analyzer.max_gs.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('fuel_consumed', ?1)", params![fuel_consumed.to_string()]);
                                     }
                                 }
 
@@ -549,9 +556,88 @@ impl SimConnectMonitor {
 
                                 if should_close {
                                     crate::append_log(app, "[MSFS] Auto-closing flight due to inactivity or ground status.".to_string());
-                                    // Trigger the same finalization as SimStop
-                                    let _ = sc.transmit_client_event(OBJECT_ID_USER, event_sim_stop, 0, simplesimconnect::GROUP_ID_PRIORITY_STANDARD, simplesimconnect::EVENT_FLAG_GROUPID_IS_PRIORITY);
-                                    // Reset timers to prevent immediate re-trigger if flight restarts
+                                    
+                                    // Finalize logic manually
+                                    if let Some(ref conn) = db_conn {
+                                        if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                            if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
+                                                analyzer.finalize_landing_performance(&db, &r_db);
+                                            }
+
+                                            let start_icao = analyzer.find_start_icao(&db);
+                                            let end_icao = analyzer.find_end_icao(&db);
+                                            
+                                            let summary = WebhookFlightSummary {
+                                                log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                                airframe_name: aircraft_info.title.clone(),
+                                                simulator: "MSFS".to_string(),
+                                                simulator_version: "SimConnect".to_string(),
+                                                departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
+                                                arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                                takeoff_time: takeoff_time.clone(),
+                                                landing_time: landing_time.clone(),
+                                                start_time: start_time.clone(),
+                                                end_time: Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
+                                                takeoff_snapshot: takeoff_snapshot.clone(),
+                                                landing_snapshot: landing_snapshot.clone(),
+                                                current_snapshot: Some(*data),
+                                                max_entries: max_metrics.clone(),
+                                            };
+                                            webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                                            webhook_manager.reset();
+
+                                            let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+                                            let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+
+                                            let mut summary_data = vec![
+                                                ("departure_icao", start_icao.clone()),
+                                                ("departure_name", start_name),
+                                                ("arrival_icao", end_icao.clone()),
+                                                ("arrival_name", end_name),
+                                                ("aircraft_title", aircraft_info.title.clone()),
+                                                ("max_altitude", analyzer.max_alt.to_string()),
+                                                ("max_ground_speed", analyzer.max_gs.to_string()),
+                                                ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
+                                            ];
+
+                                            if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+                                                if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+                                                if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+                                                if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+                                                if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+                                            }
+
+                                            for (k, v) in summary_data {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
+                                            }
+
+                                            if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                            }
+
+                                            let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                            let duration_mins = analyzer.get_duration_minutes();
+                                            let _ = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
+
+                                            drop(db_conn.take());
+
+                                            let has_movement = analyzer.max_gs > 5.0 || analyzer.max_alt > 50.0;
+                                            let is_very_short = duration_mins < 1;
+                                            
+                                            if is_very_short || !has_movement {
+                                                if let Some(path) = current_log_path.take() {
+                                                    let _ = std::fs::remove_file(&path);
+                                                    crate::append_log(app, format!("[MSFS] Deleted short/empty flight log: {}", path.display()));
+                                                }
+                                            }
+
+                                            let _ = app.emit("flight-logs-updated", ());
+                                        }
+                                    }
+
+                                    flight_ongoing = false;
+                                    { let mut m = monitoring.lock().unwrap(); *m = false; }
+                                    db_conn = None;
                                     on_ground_since = None;
                                     stationary_since = None;
                                 }
