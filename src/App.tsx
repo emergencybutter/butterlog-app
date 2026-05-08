@@ -127,6 +127,7 @@ function App() {
   const [selectedFlight, setSelectedFlight] = useState<FlightSummary | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>("Parked");
   const [flightOngoing, setFlightOngoing] = useState(false);
+  const [currentFlightId, setCurrentFlightId] = useState<string>("");
 
   useEffect(() => {
     // Check for updates on startup
@@ -163,16 +164,18 @@ function App() {
 
     const interval = window.setInterval(async () => {
       try {
-        const [m, connected, ongoing, sims] = await Promise.all([
+        const [m, connected, ongoing, sims, fid] = await Promise.all([
           invoke<FlightMetrics>("get_metrics"),
           invoke<boolean>("is_sim_connected"),
           invoke<boolean>("is_flight_ongoing"),
-          invoke<string[]>("get_connected_sims")
+          invoke<string[]>("get_connected_sims"),
+          invoke<string>("get_current_flight_id")
         ]);
         setMetrics(m);
         setSimConnected(connected);
         setFlightOngoing(ongoing);
         setConnectedSims(sims);
+        setCurrentFlightId(fid);
       } catch (e) { }
     }, 200);
 
@@ -192,6 +195,7 @@ function App() {
     switch (view) {
       case "history":
         return <FlightLogs 
+          currentFlightId={currentFlightId}
           onViewDetails={(flight) => {
             setSelectedFlight(flight);
             setView("details");

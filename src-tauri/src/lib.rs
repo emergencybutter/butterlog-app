@@ -152,6 +152,15 @@ fn is_flight_ongoing(state: State<'_, UnifiedMonitor>) -> bool {
     state.get_all_monitors().iter().any(|m| m.is_monitoring())
 }
 
+#[tauri::command]
+fn get_current_flight_id(state: State<'_, UnifiedMonitor>) -> String {
+    if let Some(m) = state.get_connected_monitor() {
+        m.get_current_flight_id()
+    } else {
+        "".to_string()
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(app: AppHandle, name: &str) -> String {
@@ -345,6 +354,7 @@ pub fn run() {
             is_sim_connected,
             get_connected_sims,
             is_flight_ongoing,
+            get_current_flight_id,
             get_config,
             set_config,
             get_config_async,

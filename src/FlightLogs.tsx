@@ -16,7 +16,7 @@ interface BatchImportStatus {
     currentFileName: string;
 }
 
-export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSummary) => void }) {
+export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: (flight: FlightSummary) => void, currentFlightId?: string }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [scanProgress, setScanProgress] = useState<{ current: number, total: number } | null>(null);
@@ -222,8 +222,16 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                         <p style={{ textAlign: "center", color: "#888" }}>No flight logs found.</p>
                     ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                            {filteredSummaries.map((s, i) => (
-                                <div key={s.filename} style={{ background: "#2a2a2a", borderRadius: "8px", overflow: "hidden", border: "1px solid #444" }}>
+                            {filteredSummaries.map((s, i) => {
+                                const isCurrent = currentFlightId && s.filename.replace(".db", "") === currentFlightId;
+                                return (
+                                <div key={s.filename} style={{ 
+                                    background: isCurrent ? "#1b3a24" : "#2a2a2a", 
+                                    borderRadius: "8px", 
+                                    overflow: "hidden", 
+                                    border: isCurrent ? "1px solid #4caf50" : "1px solid #444",
+                                    boxShadow: isCurrent ? "0 0 10px rgba(76, 175, 80, 0.2)" : "none"
+                                }}>
                                     <div 
                                         onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
                                         style={{ 
@@ -232,24 +240,31 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                             display: "flex", 
                                             justifyContent: "space-between",
                                             alignItems: "center",
-                                            background: expandedIndex === i ? "#333" : "transparent"
+                                            background: expandedIndex === i ? (isCurrent ? "#244d31" : "#333") : "transparent"
                                         }}
                                     >
                                         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                             <div>
-                                                <div style={{ fontSize: "0.7rem", color: "#888", marginBottom: "2px" }}>{s.aircraftTitle}</div>
-                                                <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: "#eee" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
+                                                    <div style={{ fontSize: "0.7rem", color: isCurrent ? "#81c784" : "#888" }}>{s.aircraftTitle}</div>
+                                                    {isCurrent && (
+                                                        <div style={{ background: "#4caf50", color: "white", fontSize: "0.6rem", fontWeight: "bold", padding: "1px 6px", borderRadius: "10px", letterSpacing: "0.5px" }}>
+                                                            LOGGING NOW
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontWeight: "bold", fontSize: "1.1rem", color: isCurrent ? "#fff" : "#eee" }}>
                                                     {s.startIcao} → {s.endIcao}
                                                 </div>
-                                                <div style={{ fontSize: "0.7rem", color: "#aaa" }}>
+                                                <div style={{ fontSize: "0.7rem", color: isCurrent ? "#a5d6a7" : "#aaa" }}>
                                                     {s.startAirportName} to {s.endAirportName}
                                                 </div>
                                             </div>
                                         </div>
                                         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                             <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "right" }}>
-                                                <div style={{ color: "#aaa", fontSize: "0.9rem" }}>{s.startTime.split(' ')[0]} {s.startTime.split(' ')[1].substring(0, 5)}</div>
-                                                <div style={{ fontWeight: "bold", color: "#888", fontSize: "0.8rem", display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center" }}>
+                                                <div style={{ color: isCurrent ? "#a5d6a7" : "#aaa", fontSize: "0.9rem" }}>{s.startTime.split(' ')[0]} {s.startTime.split(' ')[1].substring(0, 5)}</div>
+                                                <div style={{ fontWeight: "bold", color: isCurrent ? "#81c784" : "#888", fontSize: "0.8rem", display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center" }}>
                                                     {s.screenshotCount > 0 && (
                                                         <span title={`${s.screenshotCount} screenshots`} style={{ opacity: 0.8 }}>
                                                             📷 {s.screenshotCount}
@@ -258,39 +273,40 @@ export function FlightLogs({ onViewDetails }: { onViewDetails: (flight: FlightSu
                                                     <span>{Math.floor(s.durationMinutes / 60)}h {s.durationMinutes % 60}m</span>
                                                 </div>
                                             </div>
-                                            <span>{expandedIndex === i ? "▲" : "▼"}</span>
+                                            <span style={{ color: isCurrent ? "#4caf50" : "inherit" }}>{expandedIndex === i ? "▲" : "▼"}</span>
                                         </div>
                                     </div>
                                     
                                     {expandedIndex === i && (
-                                        <div style={{ padding: "1rem", borderTop: "1px solid #444", background: "#1a1a1a", fontSize: "0.9rem" }}>
+                                        <div style={{ padding: "1rem", borderTop: isCurrent ? "1px solid #2e5c3e" : "1px solid #444", background: isCurrent ? "#122618" : "#1a1a1a", fontSize: "0.9rem" }}>
                                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
                                                 <div>
-                                                    <p><span style={{ color: "#888" }}>Departure:</span> {s.startTime}</p>
-                                                    <p><span style={{ color: "#888" }}>Arrival:</span> {s.endTime}</p>
-                                                    <p><span style={{ color: "#888" }}>Aircraft:</span> {s.aircraftTitle}</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Departure:</span> {s.startTime}</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Arrival:</span> {isCurrent ? "Ongoing..." : s.endTime}</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Aircraft:</span> {s.aircraftTitle}</p>
                                                 </div>
                                                 <div>
-                                                    <p><span style={{ color: "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>
-                                                    <p><span style={{ color: "#888" }}>Max Speed:</span> {s.maxGroundSpeed.toFixed(0)} kt (GS)</p>
-                                                    <p><span style={{ color: "#888" }}>Fuel Consumed:</span> {s.fuelConsumed.toFixed(1)} gal</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Max Speed:</span> {s.maxGroundSpeed.toFixed(0)} kt (GS)</p>
+                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Fuel Consumed:</span> {s.fuelConsumed.toFixed(1)} gal</p>
                                                 </div>
                                             </div>
                                             <div style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                                <span style={{ color: "#555", fontSize: "0.7rem" }}>
+                                                <span style={{ color: isCurrent ? "#4caf50" : "#555", fontSize: "0.7rem", opacity: isCurrent ? 0.8 : 1 }}>
                                                     {s.filename} ({(s.fileSizeBytes / 1024).toFixed(1)} KB)
                                                 </span>
                                                 <button 
                                                     onClick={() => onViewDetails(s)}
-                                                    style={{ fontSize: "0.8rem" }}
+                                                    style={{ fontSize: "0.8rem", backgroundColor: isCurrent ? "#4caf50" : "" }}
                                                 >
-                                                    View Detailed Log
+                                                    {isCurrent ? "View Live Data" : "View Detailed Log"}
                                                 </button>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                            );
+                            })}
                         </div>
                     )}
                 </>
