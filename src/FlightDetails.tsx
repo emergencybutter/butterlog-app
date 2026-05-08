@@ -280,10 +280,6 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
         return L.latLngBounds(points);
     }, [trajectory]);
 
-    if (!bounds) return null;
-
-    const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
-
     const filteredEvents = useMemo(() => {
         const result: FlightEvent[] = [];
         const types = ['takeoff', 'top_of_climb', 'top_of_descent'] as const;
@@ -305,6 +301,10 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
 
         return result;
     }, [events]);
+
+    if (!bounds) return null;
+
+    const trajPath: L.LatLngExpression[] = trajectory.map(p => [p.lat, p.lon]);
 
     return (
         <div style={{ background: "#1a1a1a", padding: "15px", borderRadius: "8px", border: "1px solid #333", marginBottom: "2rem" }}>
