@@ -88,11 +88,6 @@ impl XPlaneMonitor {
                         m.vertical_speed = data["sim/flightmodel/position/vh_ind"].as_f64().unwrap_or(0.0) * 196.85;
                         m.is_on_ground = if data["sim/flightmodel/failures/onground_any"].as_i64().unwrap_or(0) > 0 { 1.0 } else { 0.0 };
                         m.altitude_agl = data["sim/flightmodel/position/y_agl"].as_f64().unwrap_or(0.0) * 3.28084;
-                        
-                        // Fallback for is_on_ground
-                        if m.is_on_ground < 0.5 && m.altitude_agl < 5.0 {
-                            m.is_on_ground = 1.0;
-                        }
 
                         m.heading = data["sim/flightmodel/position/mag_psi"].as_f64().unwrap_or(0.0);
                         m.fuel_quantity_left = data["sim/flightmodel/weight/m_fuel1"].as_f64().unwrap_or(0.0) * 0.1498; 
@@ -101,7 +96,7 @@ impl XPlaneMonitor {
 
                         { let mut metrics_lock = metrics.lock().unwrap(); *metrics_lock = m; }
 
-                        if !flight_ongoing && (m.is_on_ground < 0.5 || m.ground_speed > 10.0) {
+                        if !flight_ongoing && (m.is_on_ground < 0.5) {
                             flight_ongoing = true;
                             { let mut mon = monitoring.lock().unwrap(); *mon = true; }
                             db_conn = None;

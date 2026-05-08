@@ -361,7 +361,7 @@ impl SimConnectMonitor {
                             *m = *data;
                         }
 
-                        if !flight_ongoing && (data.is_on_ground < 0.5) {
+                        if !flight_ongoing {
                             flight_ongoing = true;
                             { let mut m = monitoring.lock().unwrap(); *m = true; }
                             db_conn = None;
@@ -384,7 +384,7 @@ impl SimConnectMonitor {
                                 }
 
                                 // Set initial departure if on ground
-                                if data.is_on_ground > 0.5 || data.altitude_agl < 10.0 {
+                                if data.is_on_ground > 0.5 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
                                             if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
@@ -412,7 +412,7 @@ impl SimConnectMonitor {
                             let _ = analyzer.update(data, start_time.as_ref().unwrap());
                         }
 
-                        if flight_ongoing {
+                        if flight_ongoing && data.is_on_ground < 0.5 && data.ground_speed > 5.0 {
                             // Update max metrics
                             match max_metrics {
                                 Some(ref mut m) => m.update_max(data),
