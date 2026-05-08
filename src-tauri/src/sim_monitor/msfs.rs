@@ -147,6 +147,9 @@ impl SimConnectMonitor {
 
         let mut on_ground_since: Option<std::time::Instant> = None;
         let mut stationary_since: Option<std::time::Instant> = None;
+        let mut last_agl = 0.0;
+        let mut touchdown_time: Option<std::time::Instant> = None;
+        let mut touchdown_update_done = false;
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -187,6 +190,9 @@ impl SimConnectMonitor {
                         
                         on_ground_since = None;
                         stationary_since = None;
+                        last_agl = 0.0;
+                        touchdown_time = None;
+                        touchdown_update_done = false;
 
                         let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
 
@@ -305,6 +311,12 @@ impl SimConnectMonitor {
                                     }
                                 }
 
+                                // Final update to analyzer to ensure duration and max values are accurate
+                                let final_ts = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+                                let m = metrics.lock().unwrap();
+                                analyzer.update(&m, &final_ts);
+                                drop(m);
+
                                 let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
                                 let duration_mins = analyzer.get_duration_minutes();
                                 if let Err(e) = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true) {
@@ -412,7 +424,7 @@ impl SimConnectMonitor {
                             let _ = analyzer.update(data, start_time.as_ref().unwrap());
                         }
 
-                        if flight_ongoing && data.is_on_ground < 0.5 && data.ground_speed > 5.0 {
+                        if flight_ongoing {
                             // Update max metrics
                             match max_metrics {
                                 Some(ref mut m) => m.update_max(data),
@@ -420,7 +432,27 @@ impl SimConnectMonitor {
                             }
 
                             let now = Utc::now();
+                            let now_instant = std::time::Instant::now();
                             let mut sample_rate_ms = 1000;
+
+                            let mut force_update = false;
+                            if (last_agl < 100.0 && data.altitude_agl >= 100.0) || (last_agl > 100.0 && data.altitude_agl <= 100.0) {
+                                force_update = true;
+                            }
+                            last_agl = data.altitude_agl;
+
+                            if data.is_on_ground > 0.5 && analyzer.current_phase == crate::models::FlightPhase::Landing {
+                                if touchdown_time.is_none() {
+                                    touchdown_time = Some(now_instant);
+                                } else if touchdown_time.unwrap().elapsed().as_secs() >= 5 && !touchdown_update_done {
+                                    force_update = true;
+                                    touchdown_update_done = true;
+                                }
+                            } else {
+                                touchdown_time = None;
+                                touchdown_update_done = false;
+                            }
+
                             if data.is_on_ground < 0.5 {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
@@ -437,12 +469,12 @@ impl SimConnectMonitor {
                                 let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE);
                             }
 
-                            if now.signed_duration_since(last_log_time) >= chrono::Duration::milliseconds(sample_rate_ms) {
+                            if force_update || now.signed_duration_since(last_log_time) >= chrono::Duration::milliseconds(sample_rate_ms) {
                                 last_log_time = now;
                                 let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
                                 
                                 let mut force_sync = false;
-                                if data.ground_speed.abs() > 0.1 || data.vertical_speed.abs() > 10.0 {
+                                if force_update || data.ground_speed.abs() > 0.1 || data.vertical_speed.abs() > 10.0 {
                                     if let Some(new_phase) = analyzer.update(data, &now_str) {
                                         let _ = app.emit("flight-phase-change", new_phase);
                                         if new_phase == crate::models::FlightPhase::Takeoff {
@@ -504,6 +536,18 @@ impl SimConnectMonitor {
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_altitude', ?1)", params![analyzer.max_alt.to_string()]);
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_ground_speed', ?1)", params![analyzer.max_gs.to_string()]);
                                         let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('fuel_consumed', ?1)", params![fuel_consumed.to_string()]);
+
+                                        if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('flight_events', ?1)", params![events_json]);
+                                        }
+
+                                        if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                            let arrival_icao = analyzer.find_end_icao(&db);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![arrival_icao]);
+                                            if let Some(airport) = db.get_by_ident(&arrival_icao) {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![airport.name]);
+                                            }
+                                        }
                                     }
                                 }
 
@@ -614,6 +658,10 @@ impl SimConnectMonitor {
                                             if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
                                                 let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
                                             }
+
+                                            // Final update to analyzer to ensure duration and max values are accurate
+                                            let final_ts = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+                                            analyzer.update(data, &final_ts);
 
                                             let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
                                             let duration_mins = analyzer.get_duration_minutes();
