@@ -19,7 +19,6 @@ interface BatchImportStatus {
 export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: (flight: FlightSummary) => void, currentFlightId?: string }) {
     const [summaries, setSummaries] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
-    const [scanProgress, setScanProgress] = useState<{ current: number, total: number } | null>(null);
     const [importing, setImporting] = useState(false);
     const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
     const [batchStatus, setBatchStatus] = useState<BatchImportStatus | null>(null);
@@ -28,13 +27,11 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
 
     const loadSummaries = () => {
         setLoading(true);
-        setScanProgress(null);
         invoke<FlightSummary[]>("get_flight_summaries")
             .then(setSummaries)
             .catch(console.error)
             .finally(() => {
                 setLoading(false);
-                setScanProgress(null);
             });
     };
 
@@ -51,14 +48,9 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
             setImportProgress(event.payload);
         });
 
-        const unlistenScan = listen<{ current: number, total: number }>("scan-progress", (event) => {
-            setScanProgress(event.payload);
-        });
-
         return () => {
             unlistenUpdated.then(f => f());
             unlistenProgress.then(f => f());
-            unlistenScan.then(f => f());
         };
     }, [importing]);
 
@@ -119,7 +111,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
         </div>
     );
 
-    const isProcessing = importing || (loading && scanProgress && scanProgress.total > 1);
+    const isProcessing = importing;
 
     return (
         <div className="logs-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
@@ -144,60 +136,37 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                     textAlign: "center",
                     boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
                 }}>
-                    {importing ? (
-                        <>
-                            <div style={{ marginBottom: "2rem" }}>
-                                <h3 style={{ margin: "0 0 10px 0" }}>Batch Import in Progress</h3>
-                                <p style={{ color: "#aaa", fontSize: "0.9rem" }}>
-                                    File {batchStatus?.completedFiles} of {batchStatus?.totalFiles} processed
-                                </p>
-                            </div>
+                    <div style={{ marginBottom: "2rem" }}>
+                        <h3 style={{ margin: "0 0 10px 0" }}>Batch Import in Progress</h3>
+                        <p style={{ color: "#aaa", fontSize: "0.9rem" }}>
+                            File {batchStatus?.completedFiles} of {batchStatus?.totalFiles} processed
+                        </p>
+                    </div>
 
-                            <div style={{ marginBottom: "2rem" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#888", marginBottom: "8px" }}>
-                                    <span>Total Progress</span>
-                                    <span>{Math.round(((batchStatus?.completedFiles || 0) / (batchStatus?.totalFiles || 1)) * 100)}%</span>
-                                </div>
-                                {renderProgressBar(batchStatus?.completedFiles || 0, batchStatus?.totalFiles || 1)}
-                            </div>
+                    <div style={{ marginBottom: "2rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#888", marginBottom: "8px" }}>
+                            <span>Total Progress</span>
+                            <span>{Math.round(((batchStatus?.completedFiles || 0) / (batchStatus?.totalFiles || 1)) * 100)}%</span>
+                        </div>
+                        {renderProgressBar(batchStatus?.completedFiles || 0, batchStatus?.totalFiles || 1)}
+                    </div>
 
-                            <div style={{ padding: "1.5rem", background: "#1a1a1a", borderRadius: "8px", border: "1px solid #333", textAlign: "left" }}>
-                                <div style={{ fontSize: "0.8rem", color: "#4db8ff", fontWeight: "bold", marginBottom: "10px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                                    CURRENT: {batchStatus?.currentFileName}
-                                </div>
-                                
-                                <div style={{ fontSize: "0.85rem", color: "#eee", marginBottom: "12px" }}>
-                                    {importProgress?.state === 'saving' ? '💾 Saving to flight database...' : 
-                                     importProgress?.state === 'finalizing' ? '📊 Analyzing flight dynamics...' : 
-                                     '📂 Parsing CSV data points...'}
-                                </div>
+                    <div style={{ padding: "1.5rem", background: "#1a1a1a", borderRadius: "8px", border: "1px solid #333", textAlign: "left" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#4db8ff", fontWeight: "bold", marginBottom: "10px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                            CURRENT: {batchStatus?.currentFileName}
+                        </div>
+                        
+                        <div style={{ fontSize: "0.85rem", color: "#eee", marginBottom: "12px" }}>
+                            {importProgress?.state === 'saving' ? '💾 Saving to flight database...' : 
+                                importProgress?.state === 'finalizing' ? '📊 Analyzing flight dynamics...' : 
+                                '📂 Parsing CSV data points...'}
+                        </div>
 
-                                {importProgress && renderProgressBar(importProgress.current, importProgress.total, "#2196f3", "4px")}
-                                <div style={{ marginTop: "8px", textAlign: "right", fontSize: "0.75rem", color: "#666" }}>
-                                    {importProgress ? `${importProgress.current.toLocaleString()} / ${importProgress.total.toLocaleString()} rows` : "Initializing..."}
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div style={{ marginBottom: "2rem" }}>
-                                <h3 style={{ margin: "0 0 10px 0" }}>Scanning Flight History</h3>
-                                <p style={{ color: "#aaa", fontSize: "0.9rem" }}>
-                                    Analyzing existing flight databases...
-                                </p>
-                            </div>
-                            <div style={{ marginBottom: "1rem" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#888", marginBottom: "8px" }}>
-                                    <span>Progress</span>
-                                    <span>{Math.round(((scanProgress?.current || 0) / (scanProgress?.total || 1)) * 100)}%</span>
-                                </div>
-                                {renderProgressBar(scanProgress?.current || 0, scanProgress?.total || 1, "#4caf50")}
-                            </div>
-                            <div style={{ fontSize: "0.75rem", color: "#666", textAlign: "right" }}>
-                                {scanProgress?.current} / {scanProgress?.total} files
-                            </div>
-                        </>
-                    )}
+                        {importProgress && renderProgressBar(importProgress.current, importProgress.total, "#2196f3", "4px")}
+                        <div style={{ marginTop: "8px", textAlign: "right", fontSize: "0.75rem", color: "#666" }}>
+                            {importProgress ? `${importProgress.current.toLocaleString()} / ${importProgress.total.toLocaleString()} rows` : "Initializing..."}
+                        </div>
+                    </div>
                 </div>
             ) : loading ? (
                 <div style={{ padding: "4rem", textAlign: "center", color: "#888" }}>
