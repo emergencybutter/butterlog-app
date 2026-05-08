@@ -110,6 +110,11 @@ const Icons = {
       <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-1.1.1-1.5.5l-.3.3c-.4.4-.5 1-.1 1.5l7.5 4.5-4.5 4.5-2.5-.5c-.5-.1-1.1.1-1.5.5l-.3.3c-.4.4-.5 1-.1 1.5l2 2 2 2c.5.4 1.1.3 1.5-.1l.3-.3c.4-.4.6-1 .5-1.5l-.5-2.5 4.5-4.5 4.5 7.5c.5.4 1.1.3 1.5-.1l.3-.3c.4-.4.6-1 .5-1.5z"></path>
     </svg>
   ),
+  Activity: () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+    </svg>
+  ),
   Settings: () => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3"></circle>
@@ -189,6 +194,21 @@ function App() {
   const getSimNameDisplay = () => {
     if (connectedSims.length === 0) return "SIM";
     return connectedSims.map(s => s.toUpperCase()).join(" + ");
+  };
+
+  const handleTrackClick = async () => {
+    try {
+      if (currentFlightId) {
+        const summaries = await invoke<FlightSummary[]>("get_flight_summaries");
+        const ongoing = summaries.find(s => s.filename.replace(".db", "") === currentFlightId);
+        if (ongoing) {
+          setSelectedFlight(ongoing);
+          setView("details");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to track flight:", e);
+    }
   };
 
   const renderContent = () => {
@@ -273,7 +293,7 @@ function App() {
         <nav className="sidebar">
           <div className="sidebar-top">
             <div 
-              className={`sidebar-item ${view === 'history' || view === 'details' ? 'active' : ''}`} 
+              className={`sidebar-item ${view === 'history' || (view === 'details' && selectedFlight?.filename.replace(".db", "") !== currentFlightId) ? 'active' : ''}`} 
               onClick={() => {
                 setView('history');
                 setSelectedFlight(null);
@@ -281,6 +301,14 @@ function App() {
               title="Logs"
             >
               <span className="icon"><Icons.Logs /></span>
+            </div>
+            <div 
+              className={`sidebar-item ${view === 'details' && selectedFlight?.filename.replace(".db", "") === currentFlightId ? 'active' : ''} ${!currentFlightId ? 'disabled' : ''}`} 
+              onClick={handleTrackClick}
+              title="Track Active Flight"
+              style={{ opacity: currentFlightId ? 1 : 0.4, cursor: currentFlightId ? 'pointer' : 'default' }}
+            >
+              <span className="icon"><Icons.Activity /></span>
             </div>
             <div 
               className={`sidebar-item ${view === 'aircraft' ? 'active' : ''}`} 

@@ -11,7 +11,6 @@ interface Config {
     autoUploadScreenshots: boolean;
     enableWebhook: boolean;
     webhookUrl: string;
-    xplaneWebsocketUrl: string;
     openAtLogin: boolean;
     startMinimized: boolean;
 }
@@ -172,16 +171,6 @@ export function Settings({ onBack }: { onBack: () => void }) {
                         <p style={{ fontSize: "0.85rem", color: "#888", margin: "0 0 0.5rem 0" }}>
                             The app automatically detects and connects to Microsoft Flight Simulator and X-Plane.
                         </p>
-                        <div className="setting-input-group">
-                            <label>X-Plane WebSocket URL:</label>
-                            <input 
-                                type="text" 
-                                className="setting-input"
-                                value={config.xplaneWebsocketUrl} 
-                                onChange={(e) => handleChange("xplaneWebsocketUrl", e.target.value)}
-                                placeholder="ws://localhost:8080/api/v1/telemetry"
-                            />
-                        </div>
                     </div>
                 </section>
 

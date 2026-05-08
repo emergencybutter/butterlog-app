@@ -17,7 +17,6 @@ pub struct Config {
     pub auto_upload_screenshots: bool,
     pub enable_webhook: bool,
     pub webhook_url: String,
-    pub xplane_websocket_url: String,
     pub open_at_login: bool,
     pub start_minimized: bool,
 }
@@ -54,7 +53,6 @@ impl Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
-            xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
             open_at_login: false,
             start_minimized: false,
         }
@@ -73,7 +71,6 @@ impl Default for Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
-            xplane_websocket_url: "ws://localhost:8080/api/v1/telemetry".to_string(),
             open_at_login: false,
             start_minimized: false,
         }
