@@ -522,6 +522,7 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             vs: Math.round(row.metrics.VSpd),
             pitch: parseFloat(row.metrics.Pitch.toFixed(1)),
             bank: parseFloat(row.metrics.Roll.toFixed(1)),
+            gforce: row.metrics.gforce !== undefined ? parseFloat(row.metrics.gforce.toFixed(2)) : (row.metrics.NormAc !== undefined ? parseFloat(row.metrics.NormAc.toFixed(2)) : 1.0),
         }));
     }, [data]);
 
@@ -794,6 +795,26 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
                                 {takeoffPoint && <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'LIFT OFF', fill: '#f44336', fontSize: 10, position: 'top' }} />}
                                 {landingPoint && <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'TOUCHDOWN', fill: '#f44336', fontSize: 10, position: 'top' }} />}
                                 <Line type="monotone" dataKey="vs" name="Vertical Speed" stroke="#f44336" dot={false} strokeWidth={1.5} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>
+                    <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>G-Force (G)</h3>
+                    <div style={{ width: '100%', height: 200, minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <LineChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                                <XAxis dataKey="time" stroke="#666" fontSize={12} tick={{fill: '#666'}} />
+                                <YAxis stroke="#666" fontSize={12} tick={{fill: '#666'}} domain={['auto', 'auto']} />
+                                <Tooltip 
+                                    contentStyle={{ background: '#2a2a2a', border: '1px solid #444' }}
+                                />
+                                {takeoffPoint && <ReferenceLine x={takeoffPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'LIFT OFF', fill: '#f44336', fontSize: 10, position: 'top' }} />}
+                                {landingPoint && <ReferenceLine x={landingPoint} stroke="#f44336" strokeWidth={1} label={{ value: 'TOUCHDOWN', fill: '#f44336', fontSize: 10, position: 'top' }} />}
+                                <ReferenceLine y={1.0} stroke="#555" strokeDasharray="3 3" />
+                                <Line type="monotone" dataKey="gforce" name="G-Force" stroke="#e91e63" dot={false} strokeWidth={1.5} />
                             </LineChart>
                         </ResponsiveContainer>
                     </div>

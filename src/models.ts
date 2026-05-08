@@ -67,6 +67,8 @@ export interface FlightMetrics {
   HPLfd: number;
   VPLwas: number;
   sim_on_ground: number;
+  altitude_agl: number;
+  gforce: number;
 }
 
 export interface FlightEvent {
