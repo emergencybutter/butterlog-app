@@ -258,24 +258,26 @@ impl SimConnectMonitor {
                                 let end_icao = analyzer.find_end_icao(&db);
                                 
                                 // Final Webhook Sync
-                                let summary = WebhookFlightSummary {
-                                    log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                    airframe_name: aircraft_info.title.clone(),
-                                    simulator: "MSFS".to_string(),
-                                    simulator_version: "SimConnect".to_string(),
-                                    departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
-                                    arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
-                                    takeoff_time: takeoff_time.clone(),
-                                    landing_time: landing_time.clone(),
-                                    start_time: start_time.clone(),
-                                    end_time: Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
-                                    takeoff_snapshot,
-                                    landing_snapshot,
-                                    current_snapshot: metrics.lock().map(|m| *m).ok(),
-                                    max_entries: max_metrics,
-                                };
-                                webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
-                                webhook_manager.reset();
+                                if takeoff_time.is_some() {
+                                    let summary = WebhookFlightSummary {
+                                        log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                        airframe_name: aircraft_info.title.clone(),
+                                        simulator: "MSFS".to_string(),
+                                        simulator_version: "SimConnect".to_string(),
+                                        departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
+                                        arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                        takeoff_time: takeoff_time.clone(),
+                                        landing_time: landing_time.clone(),
+                                        start_time: start_time.clone(),
+                                        end_time: Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
+                                        takeoff_snapshot,
+                                        landing_snapshot,
+                                        current_snapshot: metrics.lock().map(|m| *m).ok(),
+                                        max_entries: max_metrics,
+                                    };
+                                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                                    webhook_manager.reset();
+                                }
 
                                 let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                                 let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
@@ -552,7 +554,7 @@ impl SimConnectMonitor {
                                 }
 
                                 // Sync Webhook
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                if takeoff_time.is_some() {
                                     let summary = WebhookFlightSummary {
                                         log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                         airframe_name: aircraft_info.title.clone(),
@@ -611,24 +613,26 @@ impl SimConnectMonitor {
                                             let start_icao = analyzer.find_start_icao(&db);
                                             let end_icao = analyzer.find_end_icao(&db);
                                             
-                                            let summary = WebhookFlightSummary {
-                                                log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                                airframe_name: aircraft_info.title.clone(),
-                                                simulator: "MSFS".to_string(),
-                                                simulator_version: "SimConnect".to_string(),
-                                                departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
-                                                arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
-                                                takeoff_time: takeoff_time.clone(),
-                                                landing_time: landing_time.clone(),
-                                                start_time: start_time.clone(),
-                                                end_time: Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
-                                                takeoff_snapshot: takeoff_snapshot.clone(),
-                                                landing_snapshot: landing_snapshot.clone(),
-                                                current_snapshot: Some(*data),
-                                                max_entries: max_metrics.clone(),
-                                            };
-                                            webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
-                                            webhook_manager.reset();
+                                            if takeoff_time.is_some() {
+                                                let summary = WebhookFlightSummary {
+                                                    log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                                    airframe_name: aircraft_info.title.clone(),
+                                                    simulator: "MSFS".to_string(),
+                                                    simulator_version: "SimConnect".to_string(),
+                                                    departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
+                                                    arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                                    takeoff_time: takeoff_time.clone(),
+                                                    landing_time: landing_time.clone(),
+                                                    start_time: start_time.clone(),
+                                                    end_time: Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
+                                                    takeoff_snapshot: takeoff_snapshot.clone(),
+                                                    landing_snapshot: landing_snapshot.clone(),
+                                                    current_snapshot: Some(*data),
+                                                    max_entries: max_metrics.clone(),
+                                                };
+                                                webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                                                webhook_manager.reset();
+                                            }
 
                                             let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                                             let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());

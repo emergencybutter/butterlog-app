@@ -254,7 +254,7 @@ impl XPlaneMonitor {
                                     }
                                 }
 
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                if takeoff_time.is_some() {
                                     let summary = WebhookFlightSummary {
                                         log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                         airframe_name: aircraft_info.title.clone(),
@@ -343,7 +343,9 @@ impl XPlaneMonitor {
                     current_snapshot: metrics.lock().map(|m| *m).ok(),
                     max_entries: max_metrics,
                 };
-                webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                if takeoff_time.is_some() {
+                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                }
                 crate::append_log(app, "[X-Plane] Finalized flight sync.".to_string());
 
                 // Final update to analyzer to ensure duration and max values are accurate
