@@ -255,29 +255,31 @@ impl XPlaneMonitor {
                                 }
 
                                 if takeoff_time.is_some() {
-                                    let summary = WebhookFlightSummary {
-                                        log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                        airframe_name: aircraft_info.title.clone(),
-                                        simulator: "X-Plane".to_string(),
-                                        simulator_version: "12".to_string(),
-                                        departure: AirportInfo { 
-                                            icao: analyzer.find_start_icao(&db), 
-                                            name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                        },
-                                        arrival: AirportInfo { 
-                                            icao: analyzer.find_end_icao(&db), 
-                                            name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                        },
-                                        takeoff_time: takeoff_time.clone(),
-                                        landing_time: landing_time.clone(),
-                                        start_time: start_time.clone(),
-                                        end_time: Some(now_str),
-                                        takeoff_snapshot,
-                                        landing_snapshot,
-                                        current_snapshot: Some(m),
-                                        max_entries: max_metrics,
-                                    };
-                                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        let summary = WebhookFlightSummary {
+                                            log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                            airframe_name: aircraft_info.title.clone(),
+                                            simulator: "X-Plane".to_string(),
+                                            simulator_version: "12".to_string(),
+                                            departure: AirportInfo { 
+                                                icao: analyzer.find_start_icao(&db), 
+                                                name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                            },
+                                            arrival: AirportInfo { 
+                                                icao: analyzer.find_end_icao(&db), 
+                                                name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                            },
+                                            takeoff_time: takeoff_time.clone(),
+                                            landing_time: landing_time.clone(),
+                                            start_time: start_time.clone(),
+                                            end_time: Some(now_str),
+                                            takeoff_snapshot,
+                                            landing_snapshot,
+                                            current_snapshot: Some(m),
+                                            max_entries: max_metrics,
+                                        };
+                                        webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
+                                    }
                                 }
 
                                 // Auto-close logic: on ground > 30s or stationary > 10s
