@@ -28,7 +28,11 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
     const loadSummaries = () => {
         setLoading(true);
         invoke<FlightSummary[]>("get_flight_summaries")
-            .then(setSummaries)
+            .then((res) => {
+                console.log("[Debug] Summaries received from backend:", res.map(s => s.filename));
+                console.log("[Debug] Current flight ID being logged:", currentFlightId);
+                setSummaries(res);
+            })
             .catch(console.error)
             .finally(() => {
                 setLoading(false);

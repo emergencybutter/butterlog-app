@@ -204,6 +204,7 @@ impl SimConnectMonitor {
                         current_log_path = Some(path.clone());
                         {
                             let mut fid = current_flight_id_mutex.lock().unwrap();
+                            println!("{} {}", filename, fid);
                             *fid = filename.replace(".db", "");
                         }
 
@@ -242,6 +243,10 @@ impl SimConnectMonitor {
                     } else if event.event_id == event_sim_stop {
                         crate::append_log(app, format!("[{}] Received SimStop event. Closing and analyzing flight log.", Utc::now().format("%H:%M:%S")));
                         flight_ongoing = false;
+                        {
+                            let mut fid = current_flight_id_mutex.lock().unwrap();
+                            fid.clear();
+                        }
                         {
                             let mut m = monitoring.lock().unwrap();
                             *m = false;
@@ -393,6 +398,10 @@ impl SimConnectMonitor {
                             let path = internal_log_dir.join(&filename);
                             crate::append_log(app, format!("[MSFS] Aircraft movement detected (GS > 10.0). Starting fallback flight log: {}", path.display()));
                             current_log_path = Some(path.clone());
+                            {
+                                let mut fid = current_flight_id_mutex.lock().unwrap();
+                                *fid = filename.replace(".db", "");
+                            }
                             if let Ok(conn) = Connection::open(&path) {
                                 if let Err(e) = init_sqlite_db(&conn) {
                                     crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
@@ -693,6 +702,10 @@ impl SimConnectMonitor {
                                     }
 
                                     flight_ongoing = false;
+                                    {
+                                        let mut fid = current_flight_id_mutex.lock().unwrap();
+                                        fid.clear();
+                                    }
                                     { let mut m = monitoring.lock().unwrap(); *m = false; }
                                     db_conn = None;
                                     on_ground_since = None;

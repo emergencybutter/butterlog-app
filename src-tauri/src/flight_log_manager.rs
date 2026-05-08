@@ -457,6 +457,9 @@ fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
 }
 
 pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
+    
+    crate::append_log(&app, format!("[Logs] Scanning logs."));
+
     let app_data_dir = app.path().app_data_dir().unwrap();
     let log_dir = app_data_dir.join("flightlogs");
 
@@ -472,8 +475,13 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     for (i, entry) in entries_vec.into_iter().enumerate() {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("db") {
+            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
+            crate::append_log(&app, format!("[Debug] Found log file: {}", filename));
             if let Some(summary) = parse_db_file(&app, &path) {
+                crate::append_log(&app, format!("[Logs] adding:{}.", summary.filename));
                 summaries.push(summary);
+            } else {
+                crate::append_log(&app, format!("[Debug] Failed to parse log file: {}", filename));
             }
         }
         

@@ -313,6 +313,10 @@ impl XPlaneMonitor {
         }
 
         if !flight_ongoing { // Finalization logic
+            {
+                let mut fid = current_flight_id_mutex.lock().unwrap();
+                fid.clear();
+            }
             if let Some(db) = app.try_state::<AirportsDatabase>() {
                 // Advanced Landing Analysis
                 if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
