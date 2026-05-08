@@ -375,7 +375,7 @@ impl SimConnectMonitor {
                             *m = *data;
                         }
 
-                        if !flight_ongoing {
+                        if !flight_ongoing && data.ground_speed > 10.0 {
                             flight_ongoing = true;
                             { let mut m = monitoring.lock().unwrap(); *m = true; }
                             db_conn = None;
@@ -391,6 +391,7 @@ impl SimConnectMonitor {
                             let _ = create_dir_all(&internal_log_dir);
                             let filename = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
                             let path = internal_log_dir.join(&filename);
+                            crate::append_log(app, format!("[MSFS] Aircraft movement detected (GS > 10.0). Starting fallback flight log: {}", path.display()));
                             current_log_path = Some(path.clone());
                             if let Ok(conn) = Connection::open(&path) {
                                 if let Err(e) = init_sqlite_db(&conn) {
@@ -596,10 +597,12 @@ impl SimConnectMonitor {
                                     stationary_since = None;
                                 }
 
-                                let should_close = if let Some(t) = on_ground_since {
-                                    t.elapsed().as_secs() > 30
-                                } else { false } || if let Some(t) = stationary_since {
-                                    t.elapsed().as_secs() > 10
+                                let should_close = if takeoff_time.is_some() && landing_time.is_some() {
+                                    (if let Some(t) = on_ground_since {
+                                        t.elapsed().as_secs() > 30
+                                    } else { false }) || (if let Some(t) = stationary_since {
+                                        t.elapsed().as_secs() > 10
+                                    } else { false })
                                 } else { false };
 
                                 if should_close {
