@@ -122,6 +122,9 @@ pub async fn get_aircraft_stats(app: AppHandle) -> Result<Vec<AircraftStats>, St
 }
 
 pub fn init_sqlite_db(conn: &Connection) -> rusqlite::Result<()> {
+    // Enable WAL mode
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    
     conn.execute(
         "CREATE TABLE IF NOT EXISTS metrics (
             timestamp TEXT PRIMARY KEY,
