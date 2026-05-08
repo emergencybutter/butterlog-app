@@ -432,13 +432,28 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
     );
 }
 
-export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBack: () => void }) {
+export function FlightDetails({ flight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
     const [endRunways, setEndRunways] = useState<Runway[]>([]);
     const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
+
+    const isCurrentFlight = useMemo(() => {
+        return currentFlightId && flight.filename.replace(".db", "") === currentFlightId;
+    }, [currentFlightId, flight.filename]);
+
+    const fetchData = () => {
+        const flightId = flight.filename.replace(".db", "");
+        Promise.all([
+            invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
+        ]).then(([flightData, scrs]) => {
+            setData(flightData);
+            setScreenshots(scrs);
+        }).finally(() => setLoading(false));
+    };
 
     useEffect(() => {
         setLoading(true);
@@ -449,13 +464,17 @@ export function FlightDetails({ flight, onBack }: { flight: FlightSummary, onBac
             invoke<Runway[]>("get_runways", { ident: flight.endIcao }),
             invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
         ]).then(([flightData, startRwys, endRwys, scrs]) => {
-            console.log(`[Debug] Loaded ${scrs.length} screenshots for flight ${flightId}:`, scrs);
             setData(flightData);
             setStartRunways(startRwys);
             setEndRunways(endRwys);
             setScreenshots(scrs);
         }).finally(() => setLoading(false));
-    }, [flight.filename, flight.startIcao, flight.endIcao]);
+
+        if (isCurrentFlight) {
+            const interval = setInterval(fetchData, 2000);
+            return () => clearInterval(interval);
+        }
+    }, [flight.filename, flight.startIcao, flight.endIcao, isCurrentFlight]);
 
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
         if (data.length === 0) return { departureTrajectory: [], arrivalTrajectory: [] };

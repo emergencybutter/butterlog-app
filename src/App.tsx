@@ -203,7 +203,7 @@ function App() {
         />;
       case "details":
         return selectedFlight ? (
-          <FlightDetails flight={selectedFlight} onBack={() => setView("history")} />
+          <FlightDetails flight={selectedFlight} currentFlightId={currentFlightId} onBack={() => setView("history")} />
         ) : (
           <div>No flight selected</div>
         );
