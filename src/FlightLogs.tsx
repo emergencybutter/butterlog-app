@@ -100,7 +100,8 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
     };
 
     const filteredSummaries = summaries.filter(s => {
-        if (showIncomplete) return true;
+        const isCurrent = currentFlightId && s.filename.replace(".db", "") === currentFlightId;
+        if (showIncomplete || isCurrent) return true;
         return s.startIcao !== "Airborne" && s.endIcao !== "Airborne";
     });
 
