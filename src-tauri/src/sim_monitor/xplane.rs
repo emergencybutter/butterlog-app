@@ -77,6 +77,7 @@ impl XPlaneMonitor {
         let mut last_agl = 0.0;
         let mut touchdown_time: Option<std::time::Instant> = None;
         let mut touchdown_update_done = false;
+        let mut auto_finalized = false;
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -232,6 +233,7 @@ impl XPlaneMonitor {
                                         takeoff_snapshot = Some(m);
                                         takeoff_time = Some(now_str.clone());
                                         force_sync = true;
+                                        auto_finalized = false;
 
                                         // Immediate takeoff event in summary
                                         if let Some(ref conn) = db_conn {
@@ -330,10 +332,73 @@ impl XPlaneMonitor {
                                 } else { false })
                             } else { false };
 
-                            if should_close {
-                                crate::append_log(&app, "[X-Plane] Auto-closing flight due to inactivity or ground status.".to_string());
-                                flight_ongoing = false; // This will trigger the finalization logic after the loop
-                                break;
+                            if should_close && !auto_finalized {
+                                crate::append_log(&app, "[X-Plane] Aircraft stationary. Updating flight summary and stats.".to_string());
+                                auto_finalized = true;
+
+                                if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                    if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
+                                        analyzer.finalize_landing_performance(&db, &r_db);
+                                    }
+
+                                    let start_icao = analyzer.find_start_icao(&db);
+                                    let end_icao = analyzer.find_end_icao(&db);
+                                    
+                                    if takeoff_time.is_some() {
+                                        let summary = WebhookFlightSummary {
+                                            log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                            airframe_name: aircraft_info.title.clone(),
+                                            simulator: "X-Plane".to_string(),
+                                            simulator_version: "12".to_string(),
+                                            departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
+                                            arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                            takeoff_time: takeoff_time.clone(),
+                                            landing_time: landing_time.clone(),
+                                            start_time: start_time.clone(),
+                                            end_time: Some(now_str.clone()),
+                                            takeoff_snapshot: takeoff_snapshot.clone(),
+                                            landing_snapshot: landing_snapshot.clone(),
+                                            current_snapshot: Some(m),
+                                            max_entries: max_metrics.clone(),
+                                        };
+                                        webhook_manager.sync_flight(&app, &summary, db_conn.as_ref(), true);
+                                    }
+
+                                    if let Some(ref conn) = db_conn {
+                                        let mut summary_data = vec![
+                                            ("departure_icao", start_icao.clone()),
+                                            ("arrival_icao", end_icao.clone()),
+                                            ("aircraft_title", aircraft_info.title.clone()),
+                                            ("max_altitude", analyzer.max_alt.to_string()),
+                                            ("max_ground_speed", analyzer.max_gs.to_string()),
+                                            ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
+                                        ];
+
+                                        if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+                                            if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+                                            if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+                                            if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+                                            if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+                                        }
+
+                                        for (k, v) in summary_data {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
+                                        }
+
+                                        if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                        }
+
+                                        let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                        let duration_mins = analyzer.get_duration_minutes();
+                                        let _ = crate::flight_log_manager::update_aircraft_stats(&app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
+                                    }
+
+                                    let _ = app.emit("flight-logs-updated", ());
+                                }
+
+                                on_ground_since = None;
+                                stationary_since = None;
                             }
                         }
                     }
@@ -341,7 +406,7 @@ impl XPlaneMonitor {
             }
         }
 
-        if !flight_ongoing { // Finalization logic
+        if flight_ongoing { // Finalization logic
             {
                 let mut fid = current_flight_id_mutex.lock().unwrap();
                 fid.clear();

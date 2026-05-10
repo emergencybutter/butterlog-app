@@ -150,6 +150,7 @@ impl SimConnectMonitor {
         let mut last_agl = 0.0;
         let mut touchdown_time: Option<std::time::Instant> = None;
         let mut touchdown_update_done = false;
+        let mut auto_finalized = false;
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -525,6 +526,7 @@ impl SimConnectMonitor {
                                             takeoff_snapshot = Some(*data);
                                             takeoff_time = Some(now_str.clone());
                                             force_sync = true;
+                                            auto_finalized = false;
 
                                             // Immediate takeoff event in summary
                                             if let Some(ref conn) = db_conn {
@@ -646,8 +648,9 @@ impl SimConnectMonitor {
                                     } else { false })
                                 } else { false };
 
-                                if should_close {
-                                    crate::append_log(app, "[MSFS] Auto-closing flight due to inactivity or ground status.".to_string());
+                                if should_close && !auto_finalized {
+                                    crate::append_log(app, "[MSFS] Aircraft stationary. Updating flight summary and stats.".to_string());
+                                    auto_finalized = true;
                                     
                                     // Finalize logic manually
                                     if let Some(ref conn) = db_conn {
@@ -717,29 +720,10 @@ impl SimConnectMonitor {
                                             let duration_mins = analyzer.get_duration_minutes();
                                             let _ = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
 
-                                            drop(db_conn.take());
-
-                                            let has_movement = analyzer.max_gs > 5.0 || analyzer.max_alt > 50.0;
-                                            let is_very_short = duration_mins < 1;
-                                            
-                                            if is_very_short || !has_movement {
-                                                if let Some(path) = current_log_path.take() {
-                                                    let _ = std::fs::remove_file(&path);
-                                                    crate::append_log(app, format!("[MSFS] Deleted short/empty flight log: {}", path.display()));
-                                                }
-                                            }
-
                                             let _ = app.emit("flight-logs-updated", ());
                                         }
                                     }
 
-                                    flight_ongoing = false;
-                                    {
-                                        let mut fid = current_flight_id_mutex.lock().unwrap();
-                                        fid.clear();
-                                    }
-                                    { let mut m = monitoring.lock().unwrap(); *m = false; }
-                                    db_conn = None;
                                     on_ground_since = None;
                                     stationary_since = None;
                                 }
