@@ -1,5 +1,4 @@
 use crate::airports::AirportsDatabase;
-use crate::config::ConfigManager;
 use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
 use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportInfo};
 use crate::sim_monitor::SimMonitor;
@@ -133,10 +132,10 @@ impl XPlaneMonitor {
                         let internal_log_dir = app_data_dir.join("flightlogs");
                         let _ = create_dir_all(&internal_log_dir);
                         
-                        let (path, filename) = if let Some(p) = resumed_path {
+                        let (path, filename) = if let Some(ref p) = resumed_path {
                             let f = p.file_name().unwrap().to_string_lossy().to_string();
                             crate::append_log(&app, format!("[X-Plane] Resuming existing flight log: {}", f));
-                            (p, f)
+                            (p.clone(), f)
                         } else {
                             let f = format!("butterlog_xp_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
                             let p = internal_log_dir.join(&f);
@@ -156,7 +155,7 @@ impl XPlaneMonitor {
                                 if let Err(e) = analyzer.restore(&conn) {
                                     crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e));
                                 } else {
-                                    start_time = analyzer.start_timestamp.clone();
+                                    start_time = analyzer.first_timestamp.clone();
                                     takeoff_time = analyzer.takeoff_timestamp.clone();
                                 }
                             }
@@ -300,7 +299,8 @@ impl XPlaneMonitor {
                                         takeoff_time: takeoff_time.clone(),
                                         landing_time: landing_time.clone(),
                                         start_time: start_time.clone(),
-                                        end_time: Some(now_str),
+                                        end_time: Some(now_str.clone()),
+
                                         takeoff_snapshot,
                                         landing_snapshot,
                                         current_snapshot: Some(m),
@@ -434,7 +434,8 @@ impl XPlaneMonitor {
                     takeoff_time: takeoff_time.clone(),
                     landing_time: landing_time.clone(),
                     start_time: start_time.clone(),
-                    end_time: Some(now_str),
+                    end_time: Some(now_str.clone()),
+
                     takeoff_snapshot,
                     landing_snapshot,
                     current_snapshot: metrics.lock().map(|m| *m).ok(),

@@ -215,10 +215,10 @@ impl SimConnectMonitor {
                         let internal_log_dir = app_data_dir.join("flightlogs");
                         let _ = create_dir_all(&internal_log_dir);
                         
-                        let (path, filename) = if let Some(p) = resumed_path {
+                        let (path, filename) = if let Some(ref p) = resumed_path {
                             let f = p.file_name().unwrap().to_string_lossy().to_string();
                             crate::append_log(app, format!("[MSFS] Resuming existing flight log: {}", f));
-                            (p, f)
+                            (p.clone(), f)
                         } else {
                             let f = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
                             let p = internal_log_dir.join(&f);
@@ -238,14 +238,13 @@ impl SimConnectMonitor {
 
                             // Restore analyzer state if resuming
                             if current_log_path.as_ref().map(|p| p.to_string_lossy().contains("butterlog_")).unwrap_or(false) && resumed_path.is_some() {
-                                if let Err(e) = analyzer.restore(&conn) {
-                                    crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
-                                } else {
-                                    start_time = analyzer.start_timestamp.clone();
-                                    takeoff_time = analyzer.takeoff_timestamp.clone();
-                                }
+                            if let Err(e) = analyzer.restore(&conn) {
+                                crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
+                            } else {
+                                start_time = analyzer.first_timestamp.clone();
+                                takeoff_time = analyzer.takeoff_timestamp.clone();
                             }
-
+                            }
                             // Set initial departure if on ground
                             let m_lock = metrics.lock().unwrap();
                             if m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0 {

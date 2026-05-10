@@ -1,6 +1,7 @@
 use crate::airports::AirportsDatabase;
 use crate::models::{FlightEvent, FlightMetrics, FlightPhase};
 use crate::runways::{Runway, RunwaysDatabase};
+use rusqlite::{Connection, Row};
 use std::collections::{HashMap, VecDeque};
 
 pub struct FlightAnalyzer {
@@ -19,7 +20,7 @@ pub struct FlightAnalyzer {
     last_autopilot_active: bool,
     last_v_spd: f64,
     pub takeoff_timestamp: Option<String>,
-    first_timestamp: Option<String>,
+    pub first_timestamp: Option<String>,
     last_timestamp: Option<String>,
 
     // Stability check state
@@ -384,7 +385,7 @@ impl FlightAnalyzer {
         self.reset();
         
         let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([], |row: &Row| {
             Ok(crate::flight_log_manager::FlightLogRow {
                 timestamp: row.get(0)?,
                 metrics: crate::flight_log_manager::map_row_to_metrics(row)?,

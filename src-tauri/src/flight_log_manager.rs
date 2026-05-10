@@ -3,7 +3,7 @@ use crate::config::ConfigManager;
 use crate::models::{FlightEvent, FlightMetrics};
 use chrono::{FixedOffset, NaiveDateTime, TimeZone, Utc};
 use directories::UserDirs;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -382,7 +382,7 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
 }
 
 
-fn map_row_to_metrics(row: &Row) -> rusqlite::Result<FlightMetrics> {
+pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics> {
     Ok(FlightMetrics {
         latitude: row.get(1)?,
         longitude: row.get(2)?,
