@@ -196,21 +196,53 @@ impl SimConnectMonitor {
 
                         let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
 
+                        // Resumption check
+                        let m_lock = metrics.lock().unwrap();
+                        let current_m = *m_lock;
+                        drop(m_lock);
+
+                        let mut resumed_path = None;
+                        if current_m.is_on_ground < 0.5 {
+                            // Fetch aircraft title first if possible (SimConnect is async, so we might need a quick poll)
+                            // But usually, it's safer to wait for movement detection if title is empty.
+                            if !aircraft_info.title.is_empty() {
+                                resumed_path = crate::flight_log_manager::try_find_resume_flight(app, &current_m, &aircraft_info.title);
+                            }
+                        }
+
                         let app_data_dir = app.path().app_data_dir().unwrap();
                         let internal_log_dir = app_data_dir.join("flightlogs");
                         let _ = create_dir_all(&internal_log_dir);
-                        let filename = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
-                        let path = internal_log_dir.join(&filename);
+                        
+                        let (path, filename) = if let Some(p) = resumed_path {
+                            let f = p.file_name().unwrap().to_string_lossy().to_string();
+                            crate::append_log(app, format!("[MSFS] Resuming existing flight log: {}", f));
+                            (p, f)
+                        } else {
+                            let f = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
+                            let p = internal_log_dir.join(&f);
+                            (p, f)
+                        };
+
                         current_log_path = Some(path.clone());
                         {
                             let mut fid = current_flight_id_mutex.lock().unwrap();
-                            println!("{} {}", filename, fid);
                             *fid = filename.replace(".db", "");
                         }
 
                         if let Ok(conn) = Connection::open(&path) {
                             if let Err(e) = init_sqlite_db(&conn) {
                                 crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
+                            }
+
+                            // Restore analyzer state if resuming
+                            if current_log_path.as_ref().map(|p| p.to_string_lossy().contains("butterlog_")).unwrap_or(false) && resumed_path.is_some() {
+                                if let Err(e) = analyzer.restore(&conn) {
+                                    crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
+                                } else {
+                                    start_time = analyzer.start_timestamp.clone();
+                                    takeoff_time = analyzer.takeoff_timestamp.clone();
+                                }
                             }
 
                             // Set initial departure if on ground

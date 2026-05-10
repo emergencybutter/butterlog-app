@@ -380,6 +380,25 @@ impl FlightAnalyzer {
             .unwrap_or_else(|| "XXXX".to_string())
     }
 
+    pub fn restore(&mut self, conn: &Connection) -> anyhow::Result<()> {
+        self.reset();
+        
+        let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(crate::flight_log_manager::FlightLogRow {
+                timestamp: row.get(0)?,
+                metrics: crate::flight_log_manager::map_row_to_metrics(row)?,
+            })
+        })?;
+
+        for row in rows {
+            let row = row?;
+            self.update(&row.metrics, &row.timestamp);
+        }
+
+        Ok(())
+    }
+
     // Refactored to be called by the monitor which has all DBs
     pub fn finalize_landing_performance(&mut self, airports_db: &AirportsDatabase, runways_db: &RunwaysDatabase) {
         let end_icao = self.find_end_icao(airports_db);

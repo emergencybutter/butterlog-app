@@ -498,8 +498,75 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     summaries.sort_by(|a, b| b.start_time.cmp(&a.start_time));
 
     Ok(summaries)
-}
+    }
 
+    pub fn try_find_resume_flight(
+    app: &AppHandle,
+    current_metrics: &FlightMetrics,
+    aircraft_title: &str,
+    ) -> Option<PathBuf> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let log_dir = app_data_dir.join("flightlogs");
+
+    if !log_dir.exists() {
+    return None;
+    }
+
+    let entries = fs::read_dir(log_dir).ok()?;
+    let mut files: Vec<_> = entries
+    .filter_map(|e| e.ok())
+    .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("db"))
+    .collect();
+
+    // Sort by modification time (newest first)
+    files.sort_by(|a, b| {
+    let ma = a.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+    let mb = b.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+    mb.cmp(&ma)
+    });
+
+    for entry in files.iter().take(3) { // Check 3 most recent
+    let path = entry.path();
+    if let Some(summary) = parse_db_file(app, &path) {
+        // Must be airborne end
+        if summary.end_icao != "Airborne" {
+            continue;
+        }
+
+        // Aircraft must match
+        if summary.aircraft_title != aircraft_title {
+            continue;
+        }
+
+        // Open DB and get last metrics
+        if let Ok(conn) = Connection::open(&path) {
+            let last_metrics_res = conn.query_row(
+                "SELECT * FROM metrics ORDER BY timestamp DESC LIMIT 1",
+                [],
+                |row| map_row_to_metrics(row)
+            );
+
+            if let Ok(last_m) = last_metrics_res {
+                let dist = crate::sim_monitor::calculate_distance(
+                    current_metrics.latitude,
+                    current_metrics.longitude,
+                    last_m.latitude,
+                    last_m.longitude
+                );
+
+                let alt_diff = (current_metrics.gps_altitude_msl - last_m.gps_altitude_msl).abs();
+
+                if dist <= 10.0 && alt_diff <= 1000.0 {
+                    crate::append_log(app, format!("[Resumption] Found match: {}. Dist: {:.1}nm, Alt Diff: {:.0}ft", summary.filename, dist, alt_diff));
+                    return Some(path);
+                }
+            }
+        }
+    }
+    }
+
+    None
+    }
 fn parse_utc_offset(offset_str: &str) -> Option<FixedOffset> {
     let offset_str = offset_str.trim();
     if offset_str.is_empty() {
