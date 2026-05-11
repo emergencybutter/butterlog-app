@@ -122,7 +122,7 @@ impl XPlaneMonitor {
                         let mut resumed_path = None;
                         if m.is_on_ground < 0.5 {
                             // X-Plane ACF title might not be ready in the first frame, but we try anyway
-                            let title = data["sim/aircraft/view/acf_title"].as_str().unwrap_or("");
+                            let title = data["sim/aircraft/view/acf_title"].as_str().unwrap_or(&aircraft_info.title);
                             if !title.is_empty() {
                                 resumed_path = crate::flight_log_manager::try_find_resume_flight(&app, &m, title);
                             }
@@ -176,16 +176,18 @@ impl XPlaneMonitor {
                         }
 
                         if let Some(title) = data["sim/aircraft/view/acf_title"].as_str() {
-                            let title_str = title.to_string();
-                            aircraft_info.title = title_str.clone();
-                            
-                            if let Some(ref conn) = db_conn {
-                                crate::append_log(&app, format!("[X-Plane] Set aircraft title: {}", title_str));
-                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
-                            }
+                            if !title.is_empty() {
+                                let title_str = title.to_string();
+                                aircraft_info.title = title_str.clone();
+                                
+                                if let Some(ref conn) = db_conn {
+                                    crate::append_log(&app, format!("[X-Plane] Set aircraft title: {}", title_str));
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                }
 
-                            let mut info = aircraft_info_mutex.lock().unwrap();
-                            info.title = title_str;
+                                let mut info = aircraft_info_mutex.lock().unwrap();
+                                info.title = title_str;
+                            }
                         }
                         
                         // Process first point immediately

@@ -128,8 +128,10 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for prop rpm
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for gear ratio
 
-        sc.add_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE", "string256")?;
-        sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME)?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
+        // Initial request for aircraft title
+        sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
+        sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND)?;
 
         let mut current_log_path: Option<PathBuf> = None;
         let mut db_conn: Option<Connection> = None;
@@ -169,18 +171,22 @@ impl SimConnectMonitor {
                 if msg.is_quit() {
                     return Ok(());
                 }
+                if let Some(exception) = msg.as_exception() {
+                    crate::append_log(app, format!("[BUG] SimConnectException:: {} {} {}", exception.exception, exception.send_id, exception.index));
+                }
 
                 if let Some(event) = msg.as_event() {
                     if event.event_id == event_sim_start {
                         crate::append_log(app, format!("[{}] Received SimStart event. Starting new flight log.", Utc::now().format("%H:%M:%S")));
                         flight_ongoing = true;
+                        sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
                         {
                             let mut m = monitoring.lock().unwrap();
                             *m = true;
                         }
                         db_conn = None;
                         analyzer.reset();
-                        aircraft_info = AircraftInfo::default();
+                        aircraft_info = aircraft_info_mutex.lock().unwrap().clone();
                         webhook_manager.reset();
                         takeoff_snapshot = None;
                         landing_snapshot = None;
@@ -194,8 +200,6 @@ impl SimConnectMonitor {
                         last_agl = 0.0;
                         touchdown_time = None;
                         touchdown_update_done = false;
-
-                        let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
 
                         // Resumption check
                         let m_lock = metrics.lock().unwrap();
@@ -384,20 +388,23 @@ impl SimConnectMonitor {
                 }
 
                 if msg.request_id() == Some(aircraft_request_id) {
+                    //crate::append_log(app, format!("[MSFS] aircraft_request_id {}", aircraft_request_id));
                     if let Some(data) = msg.as_sim_object_data::<[u8; 256]>() {
                         let s = String::from_utf8_lossy(data);
                         let title = s.split('\0').next().unwrap_or("").trim().to_string();
-                        aircraft_info.title = title.clone();
-                        
-                        if let Some(ref conn) = db_conn {
-                            crate::append_log(app, format!("[MSFS] Set aircraft title: {}", title));
-                            if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
-                                crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                        if !title.is_empty() {
+                            aircraft_info.title = title.clone();
+                            
+                            if let Some(ref conn) = db_conn {
+                                crate::append_log(app, format!("[MSFS] Set aircraft title: {}", title));
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                             }
-                        }
 
-                        let mut info = aircraft_info_mutex.lock().unwrap();
-                        info.title = title;
+                            let mut info = aircraft_info_mutex.lock().unwrap();
+                            info.title = title;
+                        }
                     }
                 }
 
@@ -414,21 +421,40 @@ impl SimConnectMonitor {
 
                         if !flight_ongoing && data.ground_speed > 10.0 {
                             flight_ongoing = true;
+                            
+                            sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
+
                             { let mut m = monitoring.lock().unwrap(); *m = true; }
                             db_conn = None;
                             analyzer.reset();
-                            aircraft_info = AircraftInfo::default();
+                            aircraft_info = aircraft_info_mutex.lock().unwrap().clone();
                             webhook_manager.reset();
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
 
-                            let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, PERIOD_VISUAL_FRAME);
+
+                            
+                            let mut resumed_path = None;
+                            if !aircraft_info.title.is_empty() {
+                                resumed_path = crate::flight_log_manager::try_find_resume_flight(app, data, &aircraft_info.title);
+                            }
+                            
+                            
                             let app_data_dir = app.path().app_data_dir().unwrap();
                             let internal_log_dir = app_data_dir.join("flightlogs");
                             let _ = create_dir_all(&internal_log_dir);
-                            let filename = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
-                            let path = internal_log_dir.join(&filename);
-                            crate::append_log(app, format!("[MSFS] Aircraft movement detected (GS > 10.0). Starting fallback flight log: {}", path.display()));
+                            
+                            let (path, filename) = if let Some(ref p) = resumed_path {
+                                let f = p.file_name().unwrap().to_string_lossy().to_string();
+                                crate::append_log(app, format!("[MSFS] Resuming existing flight log: {}", f));
+                                (p.clone(), f)
+                            } else {
+                                let f = format!("butterlog_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
+                                let p = internal_log_dir.join(&f);
+                                crate::append_log(app, format!("[MSFS] Aircraft movement detected (GS > 10.0). Starting fallback flight log: {}", p.display()));
+                                (p, f)
+                            };
+
                             current_log_path = Some(path.clone());
                             {
                                 let mut fid = current_flight_id_mutex.lock().unwrap();
@@ -506,11 +532,6 @@ impl SimConnectMonitor {
                                         }
                                     }
                                 }
-                            }
-
-                            // Periodically request aircraft title if still empty
-                            if aircraft_info.title.is_empty() && now.timestamp() % 5 == 0 {
-                                let _ = sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE);
                             }
 
                             if force_update || now.signed_duration_since(last_log_time) >= chrono::Duration::milliseconds(sample_rate_ms) {
