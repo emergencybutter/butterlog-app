@@ -16,10 +16,11 @@ pub struct Screenshot {
     pub timestamp: String,
     pub latitude: f64,
     pub longitude: f64,
+    pub remote_hash: Option<String>,
 }
 
 pub struct ScreenshotManager {
-    db_path: PathBuf,
+    pub db_path: PathBuf,
 }
 
 impl ScreenshotManager {
@@ -41,10 +42,14 @@ impl ScreenshotManager {
                 path TEXT NOT NULL UNIQUE,
                 timestamp TEXT NOT NULL,
                 latitude REAL NOT NULL,
-                longitude REAL NOT NULL
+                longitude REAL NOT NULL,
+                remote_hash TEXT
             )",
             [],
         ).expect("Failed to create screenshots table");
+
+        // Migration: Add remote_hash if it doesn't exist (for existing databases)
+        let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_hash TEXT", []);
 
         Self { db_path }
     }
@@ -63,9 +68,18 @@ impl ScreenshotManager {
         Ok(())
     }
 
+    pub fn mark_as_uploaded(&self, id: i64, hash: &str) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE screenshots SET remote_hash = ?1 WHERE id = ?2",
+            params![hash, id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn get_screenshots_for_flight(&self, flight_id: &str) -> Result<Vec<Screenshot>, String> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude FROM screenshots WHERE flight_id = ?1")
+        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash FROM screenshots WHERE flight_id = ?1")
             .map_err(|e| e.to_string())?;
         
         let rows = stmt.query_map(params![flight_id], |row| {
@@ -77,6 +91,7 @@ impl ScreenshotManager {
                 timestamp: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                remote_hash: row.get(7)?,
             })
         }).map_err(|e| e.to_string())?;
 
@@ -89,7 +104,7 @@ impl ScreenshotManager {
 
     pub fn get_random_screenshot_for_aircraft(&self, aircraft_title: &str) -> Result<Option<Screenshot>, String> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude FROM screenshots WHERE aircraft_title = ?1 ORDER BY RANDOM() LIMIT 1")
+        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash FROM screenshots WHERE aircraft_title = ?1 ORDER BY RANDOM() LIMIT 1")
             .map_err(|e| e.to_string())?;
         
         let mut rows = stmt.query_map(params![aircraft_title], |row| {
@@ -101,6 +116,7 @@ impl ScreenshotManager {
                 timestamp: row.get(4)?,
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
+                remote_hash: row.get(7)?,
             })
         }).map_err(|e| e.to_string())?;
 

@@ -110,6 +110,7 @@ export interface Screenshot {
   timestamp: string;
   latitude: number;
   longitude: number;
+  remoteHash?: string;
 }
 
 export interface Runway {
