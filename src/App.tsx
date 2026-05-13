@@ -292,6 +292,9 @@ function App() {
       <div className="app-layout">
         <nav className="sidebar">
           <div className="sidebar-top">
+            <div style={{ width: "100%", height: "60px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "5px", borderBottom: "1px solid #444" }}>
+              <img src="/icon.png" alt="Butterlog" style={{ width: "32px", height: "32px" }} />
+            </div>
             <div 
               className={`sidebar-item ${view === 'history' || (view === 'details' && selectedFlight?.filename.replace(".db", "") !== currentFlightId) ? 'active' : ''}`} 
               onClick={() => {

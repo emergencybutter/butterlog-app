@@ -8,6 +8,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Screenshot {
     pub id: i64,
     pub flight_id: String,
