@@ -564,6 +564,7 @@ impl SimConnectMonitor {
                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
                                                 }
                                             }
+                                            let _ = app.emit("flight-logs-updated", ());
                                         } else if new_phase == crate::models::FlightPhase::Landing {
                                             landing_snapshot = Some(*data);
                                             landing_time = Some(now_str.clone());
@@ -589,6 +590,7 @@ impl SimConnectMonitor {
                                                     }
                                                 }
                                             }
+                                            let _ = app.emit("flight-logs-updated", ());
                                         }
                                     }
 
