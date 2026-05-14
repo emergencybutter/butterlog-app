@@ -8,6 +8,8 @@ Butterlog is a flight logging and analysis tool for flight simulators (Microsoft
 
 ### Installation
 
+Before installing 0.3.x, uninstall butterlog 0.2.x. Future versions won't require such manual step.
+
 1. Download the latest version of Butterlog.
 2. Run the installer or executable.
 3. On first launch, Windows might show a "SmartScreen" warning. Click "More info" and "Run anyway".
