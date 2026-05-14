@@ -308,7 +308,13 @@ pub fn run() {
             let airports_app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 // Load airports.csv and register into Tauri managed state
-                match airports::AirportsDatabase::load_from_csv("../public/airports.csv") {
+                let airports_path = airports_app_handle
+                    .path()
+                    .resource_dir()
+                    .expect("Failed to get resource dir")
+                    .join("public/airports.csv");
+
+                match airports::AirportsDatabase::load_from_csv(airports_path) {
                     Ok(db) => {
                         append_log(
                             &airports_app_handle,
@@ -331,7 +337,13 @@ pub fn run() {
             let runways_app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 // Load runways.csv and register into Tauri managed state
-                match runways::RunwaysDatabase::load_from_csv("../public/runways.csv") {
+                let runways_path = runways_app_handle
+                    .path()
+                    .resource_dir()
+                    .expect("Failed to get resource dir")
+                    .join("public/runways.csv");
+
+                match runways::RunwaysDatabase::load_from_csv(runways_path) {
                     Ok(db) => {
                         append_log(
                             &runways_app_handle,
