@@ -6,6 +6,7 @@ use chrono::Utc;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, Config as NotifyConfig};
 use std::time::{Duration, UNIX_EPOCH};
 use regex::Regex;
+use crate::config::ConfigManager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -59,14 +60,14 @@ impl ScreenshotManager {
         Connection::open(&self.db_path).map_err(|e| e.to_string())
     }
 
-    pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64) -> Result<(), String> {
+    pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64) -> Result<i64, String> {
         let conn = self.get_connection()?;
         conn.execute(
             "INSERT OR REPLACE INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![flight_id, aircraft_title, path, timestamp, lat, lon],
         ).map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn mark_as_uploaded(&self, id: i64, hash: &str) -> Result<(), String> {
@@ -239,7 +240,7 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
                 let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let manager = app.state::<ScreenshotManager>();
                 
-                if let Err(e) = manager.record_screenshot(
+                match manager.record_screenshot(
                     &flight_id,
                     &aircraft_title,
                     path.to_str().unwrap_or(""),
@@ -247,10 +248,23 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
                     metrics.latitude,
                     metrics.longitude
                 ) {
-                    crate::append_log(app, format!("Failed to record screenshot: {}", e));
-                } else {
-                    crate::append_log(app, format!("Captured screenshot for flight {}: {:?}", flight_id, file_name));
-                    let _ = app.emit("new-screenshot", ());
+                    Err(e) => crate::append_log(app, format!("Failed to record screenshot: {}", e)),
+                    Ok(screenshot_id) => {
+                        crate::append_log(app, format!("Captured screenshot for flight {}: {:?}", flight_id, file_name));
+                        let _ = app.emit("new-screenshot", ());
+
+                        // Auto-upload if enabled
+                        let config = app.state::<ConfigManager>().get_config();
+                        if config.auto_upload_screenshots {
+                            let app_clone = app.clone();
+                            let flight_id_clone = flight_id.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = perform_screenshot_upload(app_clone.clone(), screenshot_id, flight_id_clone).await {
+                                    crate::append_log(&app_clone, format!("Auto-upload failed for screenshot {}: {}", screenshot_id, e));
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -453,4 +467,99 @@ pub async fn get_screenshots_for_flight(app: AppHandle, flight_id: String) -> Re
 pub async fn get_random_screenshot_for_aircraft(app: AppHandle, aircraft_title: String) -> Result<Option<Screenshot>, String> {
     let manager = app.state::<ScreenshotManager>();
     manager.get_random_screenshot_for_aircraft(&aircraft_title)
+}
+
+async fn get_remote_id_internal(app: &AppHandle, flight_id: &str) -> Result<Option<i64>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join("flightlogs");
+    let path = log_dir.join(format!("{}.db", flight_id));
+    
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    let res: Option<String> = conn.query_row(
+        "SELECT value FROM summary WHERE key = 'remote_id'",
+        [],
+        |r| r.get(0)
+    ).optional().map_err(|e| e.to_string())?;
+
+    if let Some(id_str) = res {
+        return Ok(id_str.parse::<i64>().ok());
+    }
+    Ok(None)
+}
+
+pub async fn perform_screenshot_upload(
+    app: AppHandle,
+    screenshot_id: i64,
+    flight_id: String,
+) -> Result<String, String> {
+    let remote_id = get_remote_id_internal(&app, &flight_id).await?.ok_or("Flight not synced with remote server (no remote ID)")?;
+    
+    let config = app.state::<ConfigManager>().get_config();
+    if !config.enable_webhook || config.webhook_url.is_empty() {
+        return Err("Webhook service is not enabled or URL is missing".to_string());
+    }
+
+    let mut base_url = config.webhook_url.clone();
+    if base_url.ends_with('/') {
+        base_url.pop();
+    }
+
+    // Get screenshot path
+    let sc_manager = app.state::<ScreenshotManager>();
+    let screenshot = {
+        let conn = Connection::open(&sc_manager.db_path).map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT path FROM screenshots WHERE id = ?1",
+            rusqlite::params![screenshot_id],
+            |r| r.get::<_, String>(0)
+        ).map_err(|e| format!("Screenshot not found in database: {}", e))?
+    };
+
+    let path = std::path::PathBuf::from(&screenshot);
+    if !path.exists() {
+        return Err(format!("Screenshot file not found at {:?}", path));
+    }
+
+    let file_bytes = std::fs::read(&path).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.png").to_string();
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/flights/{}/screenshots", base_url, remote_id);
+
+    let part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(file_name)
+        .mime_str("image/png")
+        .map_err(|e| e.to_string())?;
+
+    let form = reqwest::multipart::Form::new().part("screenshot", part);
+
+    let res = client.post(&url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        return Err(format!("Upload failed with status {}: {}", status, text));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct UploadResponse {
+        hash: String,
+    }
+
+    let data = res.json::<UploadResponse>().await.map_err(|e| format!("Failed to parse upload response: {}", e))?;
+    
+    // Mark as uploaded in DB
+    sc_manager.mark_as_uploaded(screenshot_id, &data.hash)?;
+
+    crate::append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
+
+    Ok(data.hash)
 }

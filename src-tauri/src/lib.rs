@@ -191,72 +191,8 @@ async fn upload_screenshot(
     screenshot_id: i64,
     flight_filename: String,
 ) -> Result<String, String> {
-    let remote_id = get_remote_id(app.clone(), flight_filename).await?.ok_or("Flight not synced with remote server (no remote ID)")?;
-    
-    let config = app.state::<ConfigManager>().get_config();
-    if !config.enable_webhook || config.webhook_url.is_empty() {
-        return Err("Webhook service is not enabled or URL is missing".to_string());
-    }
-
-    let mut base_url = config.webhook_url.clone();
-    if base_url.ends_with('/') {
-        base_url.pop();
-    }
-
-    // Get screenshot path
-    let sc_manager = app.state::<ScreenshotManager>();
-    let screenshot = {
-        let conn = rusqlite::Connection::open(&sc_manager.db_path).map_err(|e| e.to_string())?;
-        conn.query_row(
-            "SELECT path FROM screenshots WHERE id = ?1",
-            rusqlite::params![screenshot_id],
-            |r| r.get::<_, String>(0)
-        ).map_err(|e| format!("Screenshot not found in database: {}", e))?
-    };
-
-    let path = std::path::PathBuf::from(&screenshot);
-    if !path.exists() {
-        return Err(format!("Screenshot file not found at {:?}", path));
-    }
-
-    let file_bytes = std::fs::read(&path).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.png").to_string();
-
-    let client = reqwest::Client::new();
-    let url = format!("{}/flights/{}/screenshots", base_url, remote_id);
-
-    let part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(file_name)
-        .mime_str("image/png")
-        .map_err(|e| e.to_string())?;
-
-    let form = reqwest::multipart::Form::new().part("screenshot", part);
-
-    let res = client.post(&url)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("Upload request failed: {}", e))?;
-
-    if !res.status().is_success() {
-        let status = res.status();
-        let text = res.text().await.unwrap_or_default();
-        return Err(format!("Upload failed with status {}: {}", status, text));
-    }
-
-    #[derive(serde::Deserialize)]
-    struct UploadResponse {
-        hash: String,
-    }
-
-    let data = res.json::<UploadResponse>().await.map_err(|e| format!("Failed to parse upload response: {}", e))?;
-    
-    // Mark as uploaded in DB
-    sc_manager.mark_as_uploaded(screenshot_id, &data.hash)?;
-
-    append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
-
-    Ok(data.hash)
+    let flight_id = flight_filename.replace(".db", "");
+    screenshot_manager::perform_screenshot_upload(app, screenshot_id, flight_id).await
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
