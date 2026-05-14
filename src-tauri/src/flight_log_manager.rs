@@ -757,7 +757,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
     for row in data {
         let ts_parts: Vec<&str> = row.timestamp.split(' ').collect();
         let date = ts_parts[0];
-        let time = ts_parts[1];
+        let time = ts_parts[1].split('.').next().unwrap_or(ts_parts[1]);
         let m = row.metrics;
 
         let utc_offset = "+00:00";
