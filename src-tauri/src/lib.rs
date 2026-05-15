@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
+use tauri::path::BaseDirectory;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
@@ -73,6 +74,20 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
 #[tauri::command]
 async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     scan_logs(app)
+}
+
+#[tauri::command]
+async fn get_flight_summary(app: AppHandle, filename: String) -> Result<FlightSummary, String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let log_dir = app_data_dir.join("flightlogs");
+    let path = log_dir.join(&filename);
+    
+    if !path.exists() {
+        return Err("Flight log not found".to_string());
+    }
+
+    crate::flight_log_manager::parse_db_file(&app, &path)
+        .ok_or_else(|| "Failed to parse flight summary".to_string())
 }
 
 #[tauri::command]
@@ -310,11 +325,10 @@ pub fn run() {
                 // Load airports.csv and register into Tauri managed state
                 let airports_path = airports_app_handle
                     .path()
-                    .resource_dir()
-                    .expect("Failed to get resource dir")
-                    .join("public/airports.csv");
+                    .resolve("../public/airports.csv", BaseDirectory::Resource)
+                    .expect("Failed to resolve airports.csv resource");
 
-                match airports::AirportsDatabase::load_from_csv(airports_path) {
+                match airports::AirportsDatabase::load_from_csv(&airports_path) {
                     Ok(db) => {
                         append_log(
                             &airports_app_handle,
@@ -328,7 +342,7 @@ pub fn run() {
                     Err(err) => {
                         append_log(
                             &airports_app_handle,
-                            format!("Failed to load airports.csv: {}", err),
+                            format!("Failed to load airports.csv at {:?}: {}", airports_path, err),
                         );
                     }
                 }
@@ -339,11 +353,10 @@ pub fn run() {
                 // Load runways.csv and register into Tauri managed state
                 let runways_path = runways_app_handle
                     .path()
-                    .resource_dir()
-                    .expect("Failed to get resource dir")
-                    .join("public/runways.csv");
+                    .resolve("../public/runways.csv", BaseDirectory::Resource)
+                    .expect("Failed to resolve runways.csv resource");
 
-                match runways::RunwaysDatabase::load_from_csv(runways_path) {
+                match runways::RunwaysDatabase::load_from_csv(&runways_path) {
                     Ok(db) => {
                         append_log(
                             &runways_app_handle,
@@ -357,7 +370,7 @@ pub fn run() {
                     Err(err) => {
                         append_log(
                             &runways_app_handle,
-                            format!("Failed to load runways.csv: {}", err),
+                            format!("Failed to load runways.csv at {:?}: {}", runways_path, err),
                         );
                     }
                 }
@@ -408,6 +421,7 @@ pub fn run() {
             get_config_async,
             set_config_async,
             get_flight_summaries,
+            get_flight_summary,
             get_flight_data,
             export_flight_to_csv,
             import_flight_from_csv,

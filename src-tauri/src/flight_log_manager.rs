@@ -278,10 +278,6 @@ pub async fn get_flight_data(
         }
     }
 
-    crate::append_log(
-        &app,
-        format!("Opening flight log for data retrieval: {}", filename),
-    );
     let conn = Connection::open(path).map_err(|e| {
         let err = e.to_string();
         crate::append_log(&app, format!("Database error (open): {}", err));
@@ -591,7 +587,7 @@ fn parse_utc_offset(offset_str: &str) -> Option<FixedOffset> {
     }
 }
 
-fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
+pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
     let filename = path.file_name()?.to_str()?.to_string();
     let metadata = fs::metadata(path).ok()?;
 

@@ -448,12 +448,7 @@ pub async fn get_screenshots_for_flight(app: AppHandle, flight_id: String) -> Re
     let res = manager.get_screenshots_for_flight(&flight_id);
     
     match &res {
-        Ok(scrs) => {
-            crate::append_log(&app, format!("[Debug] Retrieved {} screenshots for flight {}. Coordinates: {:?}", 
-                scrs.len(), 
-                flight_id,
-                scrs.iter().map(|s| (s.latitude, s.longitude)).collect::<Vec<_>>()
-            ));
+        Ok(_scrs) => {
         }
         Err(e) => {
             crate::append_log(&app, format!("[Debug] Failed to retrieve screenshots for flight {}: {}", flight_id, e));
@@ -560,6 +555,9 @@ pub async fn perform_screenshot_upload(
     sc_manager.mark_as_uploaded(screenshot_id, &data.hash)?;
 
     crate::append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
+
+    // Notify UI
+    let _ = app.emit("screenshot-uploaded", screenshot_id);
 
     Ok(data.hash)
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { 
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine
@@ -432,7 +433,8 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
     );
 }
 
-export function FlightDetails({ flight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
+export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
+    const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
     const [endRunways, setEndRunways] = useState<Runway[]>([]);
@@ -458,6 +460,15 @@ export function FlightDetails({ flight, onBack, currentFlightId }: { flight: Fli
         }).finally(() => setLoading(false));
     };
 
+    const fetchSummary = async () => {
+        try {
+            const updatedSummary = await invoke<FlightSummary>("get_flight_summary", { filename: flight.filename });
+            setFlight(updatedSummary);
+        } catch (e) {
+            console.error("Failed to fetch flight summary:", e);
+        }
+    };
+
     useEffect(() => {
         setLoading(true);
         const flightId = flight.filename.replace(".db", "");
@@ -477,10 +488,35 @@ export function FlightDetails({ flight, onBack, currentFlightId }: { flight: Fli
             setRemoteId(rId);
         }).finally(() => setLoading(false));
 
+        const unlistenNew = listen("new-screenshot", () => {
+            const flightId = flight.filename.replace(".db", "");
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then(setScreenshots);
+        });
+
+        const unlistenUploaded = listen("screenshot-uploaded", () => {
+            const flightId = flight.filename.replace(".db", "");
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then(setScreenshots);
+        });
+
+        const unlistenSummary = listen("flight-logs-updated", () => {
+            fetchSummary();
+        });
+
         if (isCurrentFlight) {
             const interval = setInterval(fetchData, 2000);
-            return () => clearInterval(interval);
+            return () => {
+                clearInterval(interval);
+                unlistenNew.then(fn => fn());
+                unlistenUploaded.then(fn => fn());
+                unlistenSummary.then(fn => fn());
+            };
         }
+
+        return () => {
+            unlistenNew.then(fn => fn());
+            unlistenUploaded.then(fn => fn());
+            unlistenSummary.then(fn => fn());
+        };
     }, [flight.filename, flight.startIcao, flight.endIcao, isCurrentFlight]);
 
     const handleUploadScreenshot = async (screenshotId: number) => {
