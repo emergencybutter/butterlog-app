@@ -1,6 +1,6 @@
 use crate::config::ConfigManager;
 use crate::models::WebhookFlightSummary;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -46,11 +46,10 @@ impl WebhookManager {
         *time = None;
     }
 
-    pub fn sync_flight(
+    pub async fn sync_flight(
         &self, 
         app: &AppHandle, 
         summary: &WebhookFlightSummary,
-        db_conn: Option<&Connection>,
         force_update: bool
     ) {
         let base_url = match self.get_base_url(app) {
@@ -58,26 +57,22 @@ impl WebhookManager {
             None => return,
         };
 
-        let mut current_id = self.current_remote_id.lock().unwrap();
-        let mut last_time = self.last_update_time.lock().unwrap();
+        let mut current_id = self.current_remote_id.lock().unwrap().clone();
+        let last_time = self.last_update_time.lock().unwrap().clone();
 
         // 1. Try to recover ID from DB if memory is empty
-        if current_id.is_none() {
-            if let Some(conn) = db_conn {
+        if current_id.is_none() && !summary.log_path.is_empty() {
+            if let Ok(conn) = Connection::open(&summary.log_path) {
                 let existing: Option<String> = conn.query_row(
                     "SELECT value FROM summary WHERE key = 'remote_id'",
                     [],
                     |r| r.get(0)
-                ).map_err(|e| {
-                    if !matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-                        crate::append_log(app, format!("[Webhook] Database error (read remote_id): {}", e));
-                    }
-                    e
-                }).optional().unwrap_or(None);
+                ).optional().unwrap_or(None);
 
                 if let Some(id_str) = existing {
                     if let Ok(id) = id_str.parse::<i64>() {
-                        *current_id = Some(id);
+                        current_id = Some(id);
+                        *self.current_remote_id.lock().unwrap() = Some(id);
                     }
                 }
             }
@@ -85,14 +80,14 @@ impl WebhookManager {
 
         let now = std::time::Instant::now();
         if !force_update {
-            if let Some(last) = *last_time {
+            if let Some(last) = last_time {
                 if now.duration_since(last).as_secs() < 300 {
                     return;
                 }
             }
         }
 
-        match *current_id {
+        match current_id {
             Some(id) => {
                 // Update
                 let url = format!("{}/flights/{}", base_url, id);
@@ -101,10 +96,10 @@ impl WebhookManager {
                     "statistics": summary
                 });
 
-                match self.client.put(&url).json(&body).send() {
+                match self.client.put(&url).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
-                            *last_time = Some(now);
+                            *self.last_update_time.lock().unwrap() = Some(now);
                         } else {
                             crate::append_log(app, format!("[Webhook] Update failed (ID {}): {}", id, res.status()));
                         }
@@ -122,20 +117,22 @@ impl WebhookManager {
                     "statistics": summary
                 });
 
-                match self.client.post(&url).json(&body).send() {
+                match self.client.post(&url).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
-                            if let Ok(data) = res.json::<WebhookFlightResponse>() {
-                                *current_id = Some(data.id);
-                                *last_time = Some(now);
+                            if let Ok(data) = res.json::<WebhookFlightResponse>().await {
+                                *self.current_remote_id.lock().unwrap() = Some(data.id);
+                                *self.last_update_time.lock().unwrap() = Some(now);
                                 
                                 // 2. Persist new ID to DB
-                                if let Some(conn) = db_conn {
-                                    if let Err(e) = conn.execute(
-                                        "INSERT OR REPLACE INTO summary (key, value) VALUES ('remote_id', ?1)",
-                                        params![data.id.to_string()],
-                                    ) {
-                                        crate::append_log(app, format!("[Webhook] Error writing to DB: {}", e));
+                                if !summary.log_path.is_empty() {
+                                    if let Ok(conn) = Connection::open(&summary.log_path) {
+                                        if let Err(e) = conn.execute(
+                                            "INSERT OR REPLACE INTO summary (key, value) VALUES ('remote_id', ?1)",
+                                            params![data.id.to_string()],
+                                        ) {
+                                            crate::append_log(app, format!("[Webhook] Error writing to DB: {}", e));
+                                        }
                                     }
                                 }
                                 

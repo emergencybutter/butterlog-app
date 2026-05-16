@@ -316,7 +316,11 @@ impl SimConnectMonitor {
                                         current_snapshot: metrics.lock().map(|m| *m).ok(),
                                         max_entries: max_metrics,
                                     };
-                                    webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                                    let app_c = app.clone();
+                                    let sum_c = summary.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
+                                    });
                                     webhook_manager.reset();
                                 }
 
@@ -644,7 +648,11 @@ impl SimConnectMonitor {
                                             current_snapshot: Some(*data),
                                             max_entries: max_metrics,
                                         };
-                                        webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), force_sync);
+                                        let app_c = app.clone();
+                                        let sum_c = summary.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, force_sync).await;
+                                        });
                                     }
                                 }
 
@@ -701,7 +709,11 @@ impl SimConnectMonitor {
                                                     current_snapshot: Some(*data),
                                                     max_entries: max_metrics.clone(),
                                                 };
-                                                webhook_manager.sync_flight(app, &summary, db_conn.as_ref(), true);
+                                                let app_c = app.clone();
+                                    let sum_c = summary.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
+                                    });
                                                 webhook_manager.reset();
                                             }
 

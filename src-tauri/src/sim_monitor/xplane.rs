@@ -5,7 +5,7 @@ use crate::sim_monitor::SimMonitor;
 use crate::webhook_manager::WebhookManager;
 use crate::runways::RunwaysDatabase;
 use chrono::Utc;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, SinkExt};
 use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::fs::create_dir_all;
@@ -38,24 +38,104 @@ impl XPlaneMonitor {
 
     async fn run_monitor_async(
         app: AppHandle,
-        metrics: Arc<Mutex<FlightMetrics>>,
+        metrics_mutex: Arc<Mutex<FlightMetrics>>,
         aircraft_info_mutex: Arc<Mutex<AircraftInfo>>,
         current_flight_id_mutex: Arc<Mutex<String>>,
         running: Arc<Mutex<bool>>,
         connected: Arc<Mutex<bool>>,
         monitoring: Arc<Mutex<bool>>,
     ) -> anyhow::Result<()> {
-        let ws_url = "ws://localhost:8086/api/v3".to_string();
+        let base_host = "localhost:8086";
+        let rest_url = format!("http://{}/api/v3/datarefs", base_host);
+        let ws_url = format!("ws://{}/api/v3", base_host);
 
+        // Required dataref paths for flight tracking
+        let paths = vec![
+            "sim/flightmodel/position/latitude",
+            "sim/flightmodel/position/longitude",
+            "sim/flightmodel/position/elevation",
+            "sim/flightmodel/position/indicated_airspeed",
+            "sim/flightmodel/position/groundspeed",
+            "sim/flightmodel/position/vh_ind",
+            "sim/flightmodel/failures/onground_any",
+            "sim/flightmodel/position/y_agl",
+            "sim/flightmodel/position/mag_psi",
+            "sim/flightmodel/weight/m_fuel1",
+            "sim/flightmodel/weight/m_fuel2",
+            "sim/flightmodel/forces/g_nrm",
+            "sim/aircraft/view/acf_ui_name",
+        ];
+
+        // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
+        let client = reqwest::Client::new();
+        let mut path_to_id = std::collections::HashMap::new();
+        
+        crate::append_log(&app, format!("[X-Plane] Starting dataref discovery via REST..."));
+        
+        for path in &paths {
+            let resp = match client.get(&rest_url).query(&[("filter[name]", *path)]).send().await {
+                Ok(r) => r.json::<Value>().await?,
+                Err(e) => {
+                    crate::append_log(&app, format!("[X-Plane] Discovery failed for {}: {}", path, e));
+                    continue;
+                }
+            };
+
+            if let Some(data) = resp["data"].as_array() {
+                if let Some(item) = data.first() {
+                    if let Some(id) = item["id"].as_i64() {
+                        path_to_id.insert(path.to_string(), id.to_string());
+                    }
+                }
+            }
+        }
+
+        if path_to_id.is_empty() {
+            crate::append_log(&app, "[X-Plane] ERROR: No dataref IDs discovered. Connection aborted.".to_string());
+            return Err(anyhow::anyhow!("No datarefs discovered. Is X-Plane running?"));
+        }
+
+        crate::append_log(&app, format!("[X-Plane] Discovered {}/{} dataref IDs.", path_to_id.len(), paths.len()));
+        for path in &paths {
+            if let Some(id) = path_to_id.get(*path) {
+                if path.contains("groundspeed") || path.contains("onground") {
+                    crate::append_log(&app, format!("[X-Plane] Map: {} -> {}", path, id));
+                }
+            }
+        }
+
+        // 2. Connection Phase: Open WebSocket
         let (mut ws_stream, _) = match connect_async(&ws_url).await {
             Ok(s) => s,
-            Err(_) => {
+            Err(e) => {
+                crate::append_log(&app, format!("[X-Plane] WebSocket connection failed: {}", e));
                 return Err(anyhow::anyhow!("Connection failed"));
             }
         };
 
         { let mut c = connected.lock().unwrap(); *c = true; }
         crate::append_log(&app, "[X-Plane] Connected to WebSocket API.".to_string());
+
+        // 3. Subscription Phase: Send dataref_subscribe_values
+        let mut sub_datarefs = Vec::new();
+        for id_str in path_to_id.values() {
+            if let Ok(id) = id_str.parse::<i64>() {
+                sub_datarefs.push(serde_json::json!({ "id": id }));
+            }
+        }
+        
+        let subscribe_msg = serde_json::json!({
+            "req_id": 1,
+            "type": "dataref_subscribe_values",
+            "params": {
+                "datarefs": sub_datarefs
+            }
+        });
+
+        if let Err(e) = ws_stream.send(Message::Text(subscribe_msg.to_string().into())).await {
+            crate::append_log(&app, format!("[X-Plane] Subscription request failed: {}", e));
+            return Err(anyhow::anyhow!("Subscription failed"));
+        }
 
         let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
         let mut db_conn: Option<Connection> = None;
@@ -81,331 +161,416 @@ impl XPlaneMonitor {
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
 
+        let mut last_debug_log = std::time::Instant::now();
+        let mut m = FlightMetrics::default();
+        let mut last_pos: Option<(f64, f64)> = None;
+        let mut last_known_title = String::new();
+
+        // 4. Processing Phase: Handle dataref_update_values (partial updates)
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock().unwrap() { break; }
 
-            if let Ok(Message::Text(text)) = msg {
-                if let Ok(data) = serde_json::from_str::<Value>(&text) {
-                    let mut m = FlightMetrics::default();
-                    
-                    // Map the REST/WebSocket JSON fields to our internal metrics
-                    // Assuming the API uses standard dataref paths as keys
-                    m.latitude = data["sim/flightmodel/position/latitude"].as_f64().unwrap_or(0.0);
-                    m.longitude = data["sim/flightmodel/position/longitude"].as_f64().unwrap_or(0.0);
-                    m.gps_altitude_msl = data["sim/flightmodel/position/elevation"].as_f64().unwrap_or(0.0) * 3.28084;
-                    m.indicated_airspeed = data["sim/flightmodel/position/indicated_airspeed"].as_f64().unwrap_or(0.0);
-                    m.ground_speed = data["sim/flightmodel/position/groundspeed"].as_f64().unwrap_or(0.0) * 1.94384;
-                    m.vertical_speed = data["sim/flightmodel/position/vh_ind"].as_f64().unwrap_or(0.0) * 196.85;
-                    m.is_on_ground = if data["sim/flightmodel/failures/onground_any"].as_i64().unwrap_or(0) > 0 { 1.0 } else { 0.0 };
-                    m.altitude_agl = data["sim/flightmodel/position/y_agl"].as_f64().unwrap_or(0.0) * 3.28084;
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(data) = serde_json::from_str::<Value>(&text) {
+                        if data["type"] != "dataref_update_values" { continue; }
+                        let data_values = &data["data"];
+                        let mut updated = false;
 
-                    m.heading = data["sim/flightmodel/position/mag_psi"].as_f64().unwrap_or(0.0);
-                    m.fuel_quantity_left = data["sim/flightmodel/weight/m_fuel1"].as_f64().unwrap_or(0.0) * 0.1498; 
-                    m.fuel_quantity_right = data["sim/flightmodel/weight/m_fuel2"].as_f64().unwrap_or(0.0) * 0.1498;
-                    m.normal_acceleration = data["sim/flightmodel/forces/g_nrm"].as_f64().unwrap_or(1.0);
-
-                    { let mut metrics_lock = metrics.lock().unwrap(); *metrics_lock = m; }
-
-                    if !flight_ongoing && (m.is_on_ground < 0.5 || m.ground_speed > 10.0) {
-                        if m.is_on_ground > 0.5 {
-                            crate::append_log(&app, "[X-Plane] Aircraft movement detected on ground (GS > 10.0). Starting fallback flight log.".to_string());
-                        }
-                        flight_ongoing = true;
-                        { let mut mon = monitoring.lock().unwrap(); *mon = true; }
-                        db_conn = None;
-                        analyzer.reset();
-                        webhook_manager.reset();
-                        max_metrics = None;
-                        start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
-
-                        // Resumption check
-                        let mut resumed_path = None;
-                        if m.is_on_ground < 0.5 {
-                            // X-Plane ACF title might not be ready in the first frame, but we try anyway
-                            let title = data["sim/aircraft/view/acf_title"].as_str().unwrap_or(&aircraft_info.title);
-                            if !title.is_empty() {
-                                resumed_path = crate::flight_log_manager::try_find_resume_flight(&app, &m, title);
-                            }
-                        }
-
-                        let app_data_dir = app.path().app_data_dir().unwrap();
-                        let internal_log_dir = app_data_dir.join("flightlogs");
-                        let _ = create_dir_all(&internal_log_dir);
-                        
-                        let (path, filename) = if let Some(ref p) = resumed_path {
-                            let f = p.file_name().unwrap().to_string_lossy().to_string();
-                            crate::append_log(&app, format!("[X-Plane] Resuming existing flight log: {}", f));
-                            (p.clone(), f)
-                        } else {
-                            let f = format!("butterlog_xp_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
-                            let p = internal_log_dir.join(&f);
-                            (p, f)
+                        let get_path_val = |path: &str| -> Option<&Value> {
+                            path_to_id.get(path).and_then(|id| data_values.get(id))
                         };
 
-                        current_log_path = Some(path.clone());
-                        { let mut fid = current_flight_id_mutex.lock().unwrap(); *fid = filename.replace(".db", ""); }
-
-                        if let Ok(conn) = Connection::open(&path) {
-                            if let Err(e) = init_sqlite_db(&conn) {
-                                crate::append_log(&app, format!("[X-Plane] Error initializing DB: {}", e));
-                            }
-
-                            // Restore analyzer state if resuming
-                            if resumed_path.is_some() {
-                                if let Err(e) = analyzer.restore(&conn) {
-                                    crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e));
-                                } else {
-                                    start_time = analyzer.first_timestamp.clone();
-                                    takeoff_time = analyzer.takeoff_timestamp.clone();
+                        if let Some(v) = get_path_val("sim/flightmodel/position/latitude").and_then(|v| v.as_f64()) { m.latitude = v; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/position/longitude").and_then(|v| v.as_f64()) { m.longitude = v; updated = true; }
+                        
+                        // Check for teleportation (> 1nm jump)
+                        if updated {
+                            if let Some((l_lat, l_lon)) = last_pos {
+                                let d_lat = (m.latitude - l_lat).abs() * 60.0; // 1 deg lat = 60nm
+                                let d_lon = (m.longitude - l_lon).abs() * 60.0 * l_lat.to_radians().cos();
+                                let dist_sq = d_lat * d_lat + d_lon * d_lon;
+                                
+                                if dist_sq > 1.0 && flight_ongoing {
+                                    crate::append_log(&app, format!("[X-Plane] Position jump detected ({:.2}nm). Resetting flight.", dist_sq.sqrt()));
+                                    ws_stream.close(None).await.ok();
+                                    return Ok(()); // Loop in start() will restart discovery and new flight
                                 }
                             }
+                            last_pos = Some((m.latitude, m.longitude));
+                        }
 
-                            // Set initial departure if on ground
+                        if let Some(v) = get_path_val("sim/flightmodel/position/elevation").and_then(|v| v.as_f64()) { m.gps_altitude_msl = v * 3.28084; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/position/indicated_airspeed").and_then(|v| v.as_f64()) { m.indicated_airspeed = v; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/position/groundspeed").and_then(|v| v.as_f64()) { m.ground_speed = v * 1.94384; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/position/vh_ind").and_then(|v| v.as_f64()) { m.vertical_speed = v * 196.85; updated = true; }
+                        
+                        if let Some(val) = get_path_val("sim/flightmodel/failures/onground_any") {
+                            if let Some(b) = val.as_bool() {
+                                m.is_on_ground = if b { 1.0 } else { 0.0 };
+                                updated = true;
+                            } else if let Some(f) = val.as_f64() {
+                                m.is_on_ground = if f > 0.5 { 1.0 } else { 0.0 };
+                                updated = true;
+                            }
+                        }
+                        
+                        if let Some(v) = get_path_val("sim/flightmodel/position/y_agl").and_then(|v| v.as_f64()) { m.altitude_agl = v * 3.28084; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/position/mag_psi").and_then(|v| v.as_f64()) { m.heading = v; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/weight/m_fuel1").and_then(|v| v.as_f64()) { m.fuel_quantity_left = v * 0.1498; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/weight/m_fuel2").and_then(|v| v.as_f64()) { m.fuel_quantity_right = v * 0.1498; updated = true; }
+                        if let Some(v) = get_path_val("sim/flightmodel/forces/g_nrm").and_then(|v| v.as_f64()) { m.normal_acceleration = v; updated = true; }
+
+                        if !updated { continue; }
+
+                        if last_debug_log.elapsed().as_secs() >= 10 {
+                            crate::append_log(&app, format!("[X-Plane] Debug: GS={:.1}, OnGround={}, Lat={:.4}, Lon={:.4}", 
+                                m.ground_speed, m.is_on_ground > 0.5, m.latitude, m.longitude));
+                            last_debug_log = std::time::Instant::now();
+                        }
+
+                        { let mut metrics_lock = metrics_mutex.lock().unwrap(); *metrics_lock = m; }
+
+                        if !flight_ongoing && (m.is_on_ground < 0.5 || m.ground_speed > 10.0) {
                             if m.is_on_ground > 0.5 {
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                    if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
-                                        crate::append_log(&app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                crate::append_log(&app, "[X-Plane] Aircraft movement detected on ground (GS > 10.0). Starting fallback flight log.".to_string());
+                            }
+                            flight_ongoing = true;
+                            { let mut mon = monitoring.lock().unwrap(); *mon = true; }
+                            db_conn = None;
+                            analyzer.reset();
+                            webhook_manager.reset();
+                            max_metrics = None;
+                            start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+
+                            // Fetch aircraft title once via REST (strings often not subscribable)
+                            let title_resp = match client.get(&rest_url).query(&[("filter[name]", "sim/aircraft/view/acf_ui_name")]).send().await {
+                                Ok(r) => r.json::<Value>().await.ok(),
+                                Err(_) => None,
+                            };
+                            
+                            if let Some(tr) = title_resp {
+                                // Note: API might return 'value' field for specific GET on dataref
+                                if let Some(actual_title) = tr["data"].as_array().and_then(|a| a.first()).and_then(|i| i["value"].as_str()) {
+                                    if !actual_title.is_empty() {
+                                        let title_str = actual_title.to_string();
+                                        
+                                        // Reset if aircraft name changes mid-flight
+                                        if !last_known_title.is_empty() && last_known_title != title_str {
+                                            crate::append_log(&app, format!("[X-Plane] Aircraft changed ({} -> {}). Resetting flight.", last_known_title, title_str));
+                                            ws_stream.close(None).await.ok();
+                                            return Ok(());
+                                        }
+                                        
+                                        last_known_title = title_str.clone();
+                                        aircraft_info.title = title_str;
+                                        crate::append_log(&app, format!("[X-Plane] Identified aircraft: {}", last_known_title));
                                     }
                                 }
                             }
 
-                            db_conn = Some(conn);
-                            let _ = app.emit("flight-logs-updated", ());
-                        }
+                            // Resumption check
+                            let mut resumed_path = None;
+                            if !aircraft_info.title.is_empty() {
+                                resumed_path = crate::flight_log_manager::try_find_resume_flight(&app, &m, &aircraft_info.title);
+                            }
 
-                        if let Some(title) = data["sim/aircraft/view/acf_title"].as_str() {
-                            if !title.is_empty() {
-                                let title_str = title.to_string();
-                                aircraft_info.title = title_str.clone();
-                                
-                                if let Some(ref conn) = db_conn {
-                                    crate::append_log(&app, format!("[X-Plane] Set aircraft title: {}", title_str));
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                            let app_data_dir = app.path().app_data_dir().unwrap();
+                            let internal_log_dir = app_data_dir.join("flightlogs");
+                            let _ = create_dir_all(&internal_log_dir);
+                            
+                            let (path, filename) = if let Some(ref p) = resumed_path {
+                                let f = p.file_name().unwrap().to_string_lossy().to_string();
+                                crate::append_log(&app, format!("[X-Plane] Resuming existing flight log: {}", f));
+                                (p.clone(), f)
+                            } else {
+                                let f = format!("butterlog_xp_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
+                                let p = internal_log_dir.join(&f);
+                                (p, f)
+                            };
+
+                            current_log_path = Some(path.clone());
+                            { let mut fid = current_flight_id_mutex.lock().unwrap(); *fid = filename.replace(".db", ""); }
+
+                            if let Ok(conn) = Connection::open(&path) {
+                                if let Err(e) = init_sqlite_db(&conn) {
+                                    crate::append_log(&app, format!("[X-Plane] Error initializing DB: {}", e));
                                 }
 
+                                // Restore analyzer state if resuming
+                                if resumed_path.is_some() {
+                                    if let Err(e) = analyzer.restore(&conn) {
+                                        crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e));
+                                    } else {
+                                        start_time = analyzer.first_timestamp.clone();
+                                        takeoff_time = analyzer.takeoff_timestamp.clone();
+                                    }
+                                }
+
+                                // Set initial departure if on ground
+                                if m.is_on_ground > 0.5 {
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                            crate::append_log(&app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                        }
+                                    }
+                                }
+
+                                db_conn = Some(conn);
+                                let _ = app.emit("flight-logs-updated", ());
+                            }
+
+                            if !aircraft_info.title.is_empty() {
+                                let title_str = aircraft_info.title.clone();
+                                if let Some(ref conn) = db_conn {
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                }
                                 let mut info = aircraft_info_mutex.lock().unwrap();
                                 info.title = title_str;
                             }
-                        }
-                        
-                        // Process first point immediately
-                        let _ = analyzer.update(&m, start_time.as_ref().unwrap());
-                    }
-
-                    if flight_ongoing {
-                        // Update max metrics
-                        match max_metrics {
-                            Some(ref mut max_m) => max_m.update_max(&m),
-                            None => max_metrics = Some(m),
+                            
+                            // Process first point immediately
+                            let _ = analyzer.update(&m, start_time.as_ref().unwrap());
                         }
 
-                        let now = Utc::now();
-                        let now_instant = std::time::Instant::now();
-
-                        let mut force_update = false;
-                        if (last_agl < 100.0 && m.altitude_agl >= 100.0) || (last_agl > 100.0 && m.altitude_agl <= 100.0) {
-                            force_update = true;
-                        }
-                        last_agl = m.altitude_agl;
-
-                        if m.is_on_ground > 0.5 && analyzer.current_phase == crate::models::FlightPhase::Landing {
-                            if touchdown_time.is_none() {
-                                touchdown_time = Some(now_instant);
-                            } else if touchdown_time.unwrap().elapsed().as_secs() >= 5 && !touchdown_update_done {
-                                force_update = true;
-                                touchdown_update_done = true;
+                        if flight_ongoing {
+                            // Update max metrics
+                            match max_metrics {
+                                Some(ref mut max_m) => max_m.update_max(&m),
+                                None => max_metrics = Some(m),
                             }
-                        } else {
-                            touchdown_time = None;
-                            touchdown_update_done = false;
-                        }
 
-                        if force_update || now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
-                            last_log_time = now;
-                            let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+                            let now = Utc::now();
+                            let now_instant = std::time::Instant::now();
 
-                            let mut force_sync = false;
-                            if force_update || m.ground_speed.abs() > 0.1 || m.vertical_speed.abs() > 10.0 {
-                                if let Some(new_phase) = analyzer.update(&m, &now_str) {
-                                    let _ = app.emit("flight-phase-change", new_phase);
-                                    if new_phase == crate::models::FlightPhase::Takeoff {
-                                        takeoff_snapshot = Some(m);
-                                        takeoff_time = Some(now_str.clone());
-                                        force_sync = true;
-                                        auto_finalized = false;
+                            let mut force_update = false;
+                            if (last_agl < 100.0 && m.altitude_agl >= 100.0) || (last_agl > 100.0 && m.altitude_agl <= 100.0) {
+                                force_update = true;
+                            }
+                            last_agl = m.altitude_agl;
 
-                                        // Immediate takeoff event in summary
-                                        if let Some(ref conn) = db_conn {
-                                            let takeoff_event = crate::models::FlightEvent {
-                                                timestamp: now_str.clone(),
-                                                event_type: "takeoff".to_string(),
-                                                latitude: m.latitude,
-                                                longitude: m.longitude,
-                                                touchdown_fpm: None,
-                                                landing_g: None,
-                                                offset_percent: None,
-                                                threshold_dist_ft: None,
-                                            };
-                                            if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
-                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
+                            if m.is_on_ground > 0.5 && analyzer.current_phase == crate::models::FlightPhase::Landing {
+                                if touchdown_time.is_none() {
+                                    touchdown_time = Some(now_instant);
+                                } else if touchdown_time.unwrap().elapsed().as_secs() >= 5 && !touchdown_update_done {
+                                    force_update = true;
+                                    touchdown_update_done = true;
+                                }
+                            } else {
+                                touchdown_time = None;
+                                touchdown_update_done = false;
+                            }
+
+                            if force_update || now.signed_duration_since(last_log_time) >= chrono::Duration::seconds(1) {
+                                last_log_time = now;
+                                let now_str = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+
+                                let mut force_sync = false;
+                                if force_update || m.ground_speed.abs() > 0.1 || m.vertical_speed.abs() > 10.0 {
+                                    if let Some(new_phase) = analyzer.update(&m, &now_str) {
+                                        let _ = app.emit("flight-phase-change", new_phase);
+                                        if new_phase == crate::models::FlightPhase::Takeoff {
+                                            takeoff_snapshot = Some(m);
+                                            takeoff_time = Some(now_str.clone());
+                                            force_sync = true;
+                                            auto_finalized = false;
+
+                                            // Immediate takeoff event in summary
+                                            if let Some(ref conn) = db_conn {
+                                                let takeoff_event = crate::models::FlightEvent {
+                                                    timestamp: now_str.clone(),
+                                                    event_type: "takeoff".to_string(),
+                                                    latitude: m.latitude,
+                                                    longitude: m.longitude,
+                                                    touchdown_fpm: None,
+                                                    landing_g: None,
+                                                    offset_percent: None,
+                                                    threshold_dist_ft: None,
+                                                };
+                                                if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
+                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
+                                                }
+                                            }
+                                            let _ = app.emit("flight-logs-updated", ());
+                                        } else if new_phase == crate::models::FlightPhase::Landing {
+                                            landing_snapshot = Some(m);
+                                            landing_time = Some(now_str.clone());
+                                            force_sync = true;
+                                            let _ = app.emit("flight-logs-updated", ());
+                                        }
+                                    }
+                                    if let Some(ref conn) = db_conn { 
+                                        if let Err(e) = insert_sqlite_row(conn, &now_str, &m) {
+                                            crate::append_log(&app, format!("[X-Plane] Error writing to DB: {}", e));
+                                        }
+
+                                        // Update summary with live metrics
+                                        let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_altitude', ?1)", params![analyzer.max_alt.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_ground_speed', ?1)", params![analyzer.max_gs.to_string()]);
+                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('fuel_consumed', ?1)", params![fuel_consumed.to_string()]);
+
+                                        if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('flight_events', ?1)", params![events_json]);
+                                        }
+
+                                        if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                            let arrival_icao = analyzer.find_end_icao(&db);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![arrival_icao]);
+                                            if let Some(airport) = db.get_by_ident(&arrival_icao) {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![airport.name]);
                                             }
                                         }
-                                        let _ = app.emit("flight-logs-updated", ());
-                                    } else if new_phase == crate::models::FlightPhase::Landing {
-                                        landing_snapshot = Some(m);
-                                        landing_time = Some(now_str.clone());
-                                        force_sync = true;
-                                        let _ = app.emit("flight-logs-updated", ());
                                     }
                                 }
-                                if let Some(ref conn) = db_conn { 
-                                    if let Err(e) = insert_sqlite_row(conn, &now_str, &m) {
-                                        crate::append_log(&app, format!("[X-Plane] Error writing to DB: {}", e));
-                                    }
 
-                                    // Update summary with live metrics
-                                    let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_altitude', ?1)", params![analyzer.max_alt.to_string()]);
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('max_ground_speed', ?1)", params![analyzer.max_gs.to_string()]);
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('fuel_consumed', ?1)", params![fuel_consumed.to_string()]);
-
-                                    if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('flight_events', ?1)", params![events_json]);
-                                    }
-
+                                if takeoff_time.is_some() {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                        let arrival_icao = analyzer.find_end_icao(&db);
-                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_icao', ?1)", params![arrival_icao]);
-                                        if let Some(airport) = db.get_by_ident(&arrival_icao) {
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('arrival_name', ?1)", params![airport.name]);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if takeoff_time.is_some() {
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                    let summary = WebhookFlightSummary {
-                                        log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                        airframe_name: aircraft_info.title.clone(),
-                                        simulator: "X-Plane".to_string(),
-                                        simulator_version: "12".to_string(),
-                                        departure: AirportInfo { 
-                                            icao: analyzer.find_start_icao(&db), 
-                                            name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                        },
-                                        arrival: AirportInfo { 
-                                            icao: analyzer.find_end_icao(&db), 
-                                            name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                        },
-                                        takeoff_time: takeoff_time.clone(),
-                                        landing_time: landing_time.clone(),
-                                        start_time: start_time.clone(),
-                                        end_time: Some(now_str.clone()),
-
-                                        takeoff_snapshot,
-                                        landing_snapshot,
-                                        current_snapshot: Some(m),
-                                        max_entries: max_metrics,
-                                    };
-                                    webhook_manager.sync_flight(&app, &summary, db_conn.as_ref(), force_sync);
-                                }
-                            }
-
-                            // Auto-close logic: on ground > 30s or stationary > 10s
-                            let now_instant = std::time::Instant::now();
-                            if m.is_on_ground > 0.5 {
-                                if on_ground_since.is_none() { on_ground_since = Some(now_instant); }
-                            } else {
-                                on_ground_since = None;
-                            }
-
-                            if m.ground_speed.abs() < 10.0 {
-                                if stationary_since.is_none() { stationary_since = Some(now_instant); }
-                            } else {
-                                stationary_since = None;
-                            }
-
-                            let should_close = if takeoff_time.is_some() && landing_time.is_some() {
-                                (if let Some(t) = on_ground_since {
-                                    t.elapsed().as_secs() > 30
-                                } else { false }) || (if let Some(t) = stationary_since {
-                                    t.elapsed().as_secs() > 10
-                                } else { false })
-                            } else { false };
-
-                            if should_close && !auto_finalized {
-                                crate::append_log(&app, "[X-Plane] Aircraft stationary. Updating flight summary and stats.".to_string());
-                                auto_finalized = true;
-
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                    if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
-                                        analyzer.finalize_landing_performance(&db, &r_db);
-                                    }
-
-                                    let start_icao = analyzer.find_start_icao(&db);
-                                    let end_icao = analyzer.find_end_icao(&db);
-                                    
-                                    if takeoff_time.is_some() {
                                         let summary = WebhookFlightSummary {
                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                             airframe_name: aircraft_info.title.clone(),
                                             simulator: "X-Plane".to_string(),
                                             simulator_version: "12".to_string(),
-                                            departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
-                                            arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                            departure: AirportInfo { 
+                                                icao: analyzer.find_start_icao(&db), 
+                                                name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                            },
+                                            arrival: AirportInfo { 
+                                                icao: analyzer.find_end_icao(&db), 
+                                                name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                            },
                                             takeoff_time: takeoff_time.clone(),
                                             landing_time: landing_time.clone(),
                                             start_time: start_time.clone(),
                                             end_time: Some(now_str.clone()),
-                                            takeoff_snapshot: takeoff_snapshot.clone(),
-                                            landing_snapshot: landing_snapshot.clone(),
+
+                                            takeoff_snapshot,
+                                            landing_snapshot,
                                             current_snapshot: Some(m),
-                                            max_entries: max_metrics.clone(),
+                                            max_entries: max_metrics,
                                         };
-                                        webhook_manager.sync_flight(&app, &summary, db_conn.as_ref(), true);
+                                        let app_c = app.clone();
+                                        let sum_c = summary.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, force_sync).await;
+                                        });
                                     }
-
-                                    if let Some(ref conn) = db_conn {
-                                        let mut summary_data = vec![
-                                            ("departure_icao", start_icao.clone()),
-                                            ("arrival_icao", end_icao.clone()),
-                                            ("aircraft_title", aircraft_info.title.clone()),
-                                            ("max_altitude", analyzer.max_alt.to_string()),
-                                            ("max_ground_speed", analyzer.max_gs.to_string()),
-                                            ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
-                                        ];
-
-                                        if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
-                                            if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
-                                            if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
-                                            if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
-                                            if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
-                                        }
-
-                                        for (k, v) in summary_data {
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
-                                        }
-
-                                        if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
-                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
-                                        }
-
-                                        let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
-                                        let duration_mins = analyzer.get_duration_minutes();
-                                        let _ = crate::flight_log_manager::update_aircraft_stats(&app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
-                                    }
-
-                                    let _ = app.emit("flight-logs-updated", ());
                                 }
 
-                                on_ground_since = None;
-                                stationary_since = None;
+                                // Auto-close logic: on ground > 30s or stationary > 10s
+                                let now_instant = std::time::Instant::now();
+                                if m.is_on_ground > 0.5 {
+                                    if on_ground_since.is_none() { on_ground_since = Some(now_instant); }
+                                } else {
+                                    on_ground_since = None;
+                                }
+
+                                if m.ground_speed.abs() < 10.0 {
+                                    if stationary_since.is_none() { stationary_since = Some(now_instant); }
+                                } else {
+                                    stationary_since = None;
+                                }
+
+                                let should_close = if takeoff_time.is_some() && landing_time.is_some() {
+                                    (if let Some(t) = on_ground_since {
+                                        t.elapsed().as_secs() > 30
+                                    } else { false }) || (if let Some(t) = stationary_since {
+                                        t.elapsed().as_secs() > 10
+                                    } else { false })
+                                } else { false };
+
+                                if should_close && !auto_finalized {
+                                    crate::append_log(&app, "[X-Plane] Aircraft stationary. Updating flight summary and stats.".to_string());
+                                    auto_finalized = true;
+
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
+                                            analyzer.finalize_landing_performance(&db, &r_db);
+                                        }
+
+                                        let start_icao = analyzer.find_start_icao(&db);
+                                        let end_icao = analyzer.find_end_icao(&db);
+                                        
+                                        if takeoff_time.is_some() {
+                                            let summary = WebhookFlightSummary {
+                                                log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                                airframe_name: aircraft_info.title.clone(),
+                                                simulator: "X-Plane".to_string(),
+                                                simulator_version: "12".to_string(),
+                                                departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
+                                                arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
+                                                takeoff_time: takeoff_time.clone(),
+                                                landing_time: landing_time.clone(),
+                                                start_time: start_time.clone(),
+                                                end_time: Some(now_str.clone()),
+                                                takeoff_snapshot: takeoff_snapshot.clone(),
+                                                landing_snapshot: landing_snapshot.clone(),
+                                                current_snapshot: Some(m),
+                                                max_entries: max_metrics.clone(),
+                                            };
+                                            let app_c = app.clone();
+                                            let sum_c = summary.clone();
+                                            tauri::async_runtime::spawn(async move {
+                                                app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
+                                            });
+                                        }
+
+                                        if let Some(ref conn) = db_conn {
+                                            let mut summary_data = vec![
+                                                ("departure_icao", start_icao.clone()),
+                                                ("arrival_icao", end_icao.clone()),
+                                                ("aircraft_title", aircraft_info.title.clone()),
+                                                ("max_altitude", analyzer.max_alt.to_string()),
+                                                ("max_ground_speed", analyzer.max_gs.to_string()),
+                                                ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
+                                            ];
+
+                                            if let Some(landing) = analyzer.events.iter().find(|e| e.event_type == "landing") {
+                                                if let Some(v) = landing.touchdown_fpm { summary_data.push(("touchdown_fpm", v.to_string())); }
+                                                if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
+                                                if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
+                                                if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+                                            }
+
+                                            for (k, v) in summary_data {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v]);
+                                            }
+
+                                            if let Ok(events_json) = serde_json::to_string(&analyzer.events) {
+                                                let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params!["flight_events", events_json]);
+                                            }
+
+                                            let fuel_consumed = analyzer.initial_fuel - analyzer.final_fuel;
+                                            let duration_mins = analyzer.get_duration_minutes();
+                                            let _ = crate::flight_log_manager::update_aircraft_stats(&app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
+                                        }
+
+                                        let _ = app.emit("flight-logs-updated", ());
+                                    }
+
+                                    on_ground_since = None;
+                                    stationary_since = None;
+                                }
                             }
                         }
+                    } else if let Err(e) = serde_json::from_str::<Value>(&text) {
+                        if last_debug_log.elapsed().as_secs() >= 10 {
+                            crate::append_log(&app, format!("[X-Plane] JSON Parse Error: {}. Text sample: {}", e, text.chars().take(50).collect::<String>()));
+                            last_debug_log = std::time::Instant::now();
+                        }
                     }
+                }
+                Ok(other) => {
+                    if last_debug_log.elapsed().as_secs() >= 10 {
+                        crate::append_log(&app, format!("[X-Plane] Received non-text message: {:?}", other));
+                        last_debug_log = std::time::Instant::now();
+                    }
+                }
+                Err(e) => {
+                    crate::append_log(&app, format!("[X-Plane] WebSocket Error: {}", e));
+                    break;
                 }
             }
         }
@@ -440,21 +605,23 @@ impl XPlaneMonitor {
                     start_time: start_time.clone(),
                     end_time: Some(now_str.clone()),
 
-                    takeoff_snapshot,
-                    landing_snapshot,
-                    current_snapshot: metrics.lock().map(|m| *m).ok(),
-                    max_entries: max_metrics,
+                    takeoff_snapshot: takeoff_snapshot.clone(),
+                    landing_snapshot: landing_snapshot.clone(),
+                    current_snapshot: Some(m),
+                    max_entries: max_metrics.clone(),
                 };
                 if takeoff_time.is_some() {
-                    webhook_manager.sync_flight(&app, &summary, db_conn.as_ref(), true);
+                    let app_c = app.clone();
+                    let sum_c = summary.clone();
+                    tauri::async_runtime::spawn(async move {
+                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
+                    });
                 }
                 crate::append_log(&app, "[X-Plane] Finalized flight sync.".to_string());
 
                 // Final update to analyzer
                 let final_ts = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
-                let m = metrics.lock().unwrap();
                 analyzer.update(&m, &final_ts);
-                drop(m);
 
                 drop(db_conn.take());
 
@@ -517,4 +684,3 @@ impl SimMonitor for XPlaneMonitor {
     fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
 }
-
