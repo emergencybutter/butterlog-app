@@ -254,7 +254,7 @@ impl SimConnectMonitor {
                             if m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0 {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
-                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
+                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({}) ({},{})", nearest.ident, nearest.name, m_lock.latitude, m_lock.longitude));
                                         if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
                                             crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                         }
@@ -572,6 +572,8 @@ impl SimConnectMonitor {
                                                     landing_g: None,
                                                     offset_percent: None,
                                                     threshold_dist_ft: None,
+                                                    vs_variance: None,
+                                                    ias_variance: None,
                                                 };
                                                 if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
@@ -656,6 +658,11 @@ impl SimConnectMonitor {
                                             landing_snapshot,
                                             current_snapshot: Some(*data),
                                             max_entries: max_metrics,
+                                            vs_variance: None,
+                                            ias_variance: None,
+                                            landing_score: None,
+                                            landing_offset_percent: None,
+                                            landing_threshold_dist_ft: None,
                                         };
                                         let app_c = app.clone();
                                         let sum_c = summary.clone();

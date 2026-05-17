@@ -388,6 +388,8 @@ impl XPlaneMonitor {
                                                     landing_g: None,
                                                     offset_percent: None,
                                                     threshold_dist_ft: None,
+                                                    vs_variance: None,
+                                                    ias_variance: None,
                                                 };
                                                 if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
@@ -450,6 +452,11 @@ impl XPlaneMonitor {
                                             landing_snapshot,
                                             current_snapshot: Some(m),
                                             max_entries: max_metrics,
+                                            vs_variance: None,
+                                            ias_variance: None,
+                                            landing_score: None,
+                                            landing_offset_percent: None,
+                                            landing_threshold_dist_ft: None,
                                         };
                                         let app_c = app.clone();
                                         let sum_c = summary.clone();
