@@ -252,6 +252,11 @@ pub struct WebhookFlightSummary {
     pub landing_snapshot: Option<FlightMetrics>,
     pub current_snapshot: Option<FlightMetrics>,
     pub max_entries: Option<FlightMetrics>,
+    pub vs_variance: Option<f64>,
+    pub ias_variance: Option<f64>,
+    pub landing_score: Option<f64>,
+    pub landing_offset_percent: Option<f64>,
+    pub landing_threshold_dist_ft: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,4 +271,26 @@ pub struct FlightEvent {
     pub landing_g: Option<f64>,
     pub offset_percent: Option<f64>,
     pub threshold_dist_ft: Option<f64>,
+    pub vs_variance: Option<f64>,
+    pub ias_variance: Option<f64>,
+}
+
+impl FlightEvent {
+    pub fn calculate_landing_score(&self) -> Option<f64> {
+        if self.event_type != "landing" { return None; }
+        
+        let mut score = 0.0;
+        
+        // Deduct 1 point per percentage point of offset
+        if let Some(offset) = self.offset_percent {
+            score -= offset.abs();
+        }
+        
+        // Deduct 1 point for each 10ft away from the 300ft mark
+        if let Some(dist) = self.threshold_dist_ft {
+            score -= (dist - 300.0).abs() / 10.0;
+        }
+        
+        Some(score)
+    }
 }

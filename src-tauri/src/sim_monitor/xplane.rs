@@ -487,13 +487,14 @@ impl XPlaneMonitor {
 
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
-                                            analyzer.finalize_landing_performance(&db, &r_db);
+                                            analyzer.finalize_landing_performance(&db, &r_db, db_conn.as_ref());
                                         }
 
                                         let start_icao = analyzer.find_start_icao(&db);
                                         let end_icao = analyzer.find_end_icao(&db);
                                         
                                         if takeoff_time.is_some() {
+                                            let landing_event = analyzer.events.iter().find(|e| e.event_type == "landing");
                                             let summary = WebhookFlightSummary {
                                                 log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                 airframe_name: aircraft_info.title.clone(),
@@ -509,6 +510,11 @@ impl XPlaneMonitor {
                                                 landing_snapshot: landing_snapshot.clone(),
                                                 current_snapshot: Some(m),
                                                 max_entries: max_metrics.clone(),
+                                                vs_variance: landing_event.and_then(|e| e.vs_variance),
+                                                ias_variance: landing_event.and_then(|e| e.ias_variance),
+                                                landing_score: landing_event.and_then(|e| e.calculate_landing_score()),
+                                                landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
+                                                landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                                             };
                                             let app_c = app.clone();
                                             let sum_c = summary.clone();
@@ -532,6 +538,9 @@ impl XPlaneMonitor {
                                                 if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
                                                 if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
                                                 if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+                                                if let Some(v) = landing.vs_variance { summary_data.push(("vs_variance", v.to_string())); }
+                                                if let Some(v) = landing.ias_variance { summary_data.push(("ias_variance", v.to_string())); }
+                                                if let Some(v) = landing.calculate_landing_score() { summary_data.push(("landing_score", v.to_string())); }
                                             }
 
                                             for (k, v) in summary_data {
@@ -583,10 +592,11 @@ impl XPlaneMonitor {
             if let Some(db) = app.try_state::<AirportsDatabase>() {
                 // Advanced Landing Analysis
                 if let Some(r_db) = app.try_state::<RunwaysDatabase>() {
-                    analyzer.finalize_landing_performance(&db, &r_db);
+                    analyzer.finalize_landing_performance(&db, &r_db, db_conn.as_ref());
                 }
 
                 let now_str = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+                let landing_event = analyzer.events.iter().find(|e| e.event_type == "landing");
                 let summary = WebhookFlightSummary {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                     airframe_name: aircraft_info.title.clone(),
@@ -609,6 +619,11 @@ impl XPlaneMonitor {
                     landing_snapshot: landing_snapshot.clone(),
                     current_snapshot: Some(m),
                     max_entries: max_metrics.clone(),
+                    vs_variance: landing_event.and_then(|e| e.vs_variance),
+                    ias_variance: landing_event.and_then(|e| e.ias_variance),
+                    landing_score: landing_event.and_then(|e| e.calculate_landing_score()),
+                    landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
+                    landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                 };
                 if takeoff_time.is_some() {
                     let app_c = app.clone();

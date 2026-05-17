@@ -80,6 +80,8 @@ export interface FlightEvent {
   landingG?: number;
   offsetPercent?: number;
   thresholdDistFt?: number;
+  vsVariance?: number;
+  iasVariance?: number;
 }
 
 export interface FlightLogRow {

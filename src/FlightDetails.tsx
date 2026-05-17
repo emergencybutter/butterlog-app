@@ -725,7 +725,7 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
             {landingEvent && (
                 <div style={{ marginBottom: "2rem", background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
                     <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888", fontSize: "1.1rem" }}>Landing Performance</h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "20px" }}>
                         <div>
                             <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>TOUCHDOWN VS</div>
                             <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{Math.round(landingEvent.touchdownFpm || 0)} fpm</div>
@@ -733,6 +733,14 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
                         <div>
                             <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>LANDING G</div>
                             <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{(landingEvent.landingG || 1.0).toFixed(2)} G</div>
+                        </div>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>VS VAR (1m)</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{landingEvent.vsVariance !== undefined && landingEvent.vsVariance !== null ? Math.round(landingEvent.vsVariance).toLocaleString() : "N/A"}</div>
+                        </div>
+                        <div>
+                            <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>IAS VAR (1m)</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#eee" }}>{landingEvent.iasVariance !== undefined && landingEvent.iasVariance !== null ? landingEvent.iasVariance.toFixed(1) : "N/A"}</div>
                         </div>
                         <div>
                             <div style={{ color: "#aaa", fontSize: "0.8rem", fontWeight: "bold", marginBottom: "0.5rem" }}>OFFSET</div>
@@ -821,6 +829,62 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
                     screenshots={screenshots}
                 />
             </div>
+
+            {landingEvent && (
+                <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", marginBottom: "2rem" }}>
+                    <h3 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#888" }}>Landing Scorecard</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+                        <div style={{ textAlign: "center", minWidth: "120px" }}>
+                            <div style={{ 
+                                fontSize: "3.5rem", 
+                                fontWeight: "bold", 
+                                color: (Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))) >= -10 ? "#4caf50" : 
+                                       (Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))) >= -30 ? "#ff9800" : "#f44336" 
+                            }}>
+                                {Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))}
+                            </div>
+                            <div style={{ color: "#888", fontSize: "0.8rem", marginTop: "5px", letterSpacing: "1px" }}>TOTAL SCORE</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: "300px" }}>
+                            <div style={{ marginBottom: "20px" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                                    <span style={{ color: "#aaa", fontSize: "0.9rem" }}>Centerline Alignment</span>
+                                    <span style={{ fontWeight: "bold", color: (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) === 0 ? "#4caf50" : "#eee" }}>
+                                        {landingEvent.offsetPercent !== undefined ? `-${Math.abs(landingEvent.offsetPercent).toFixed(1)}` : "0.0"}
+                                    </span>
+                                </div>
+                                <div style={{ width: "100%", height: "6px", background: "#333", borderRadius: "3px" }}>
+                                    <div style={{ 
+                                        width: `${Math.max(0, 100 - Math.abs(landingEvent.offsetPercent || 0) * 2)}%`, 
+                                        height: "100%", 
+                                        background: (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) >= -5 ? "#4caf50" : (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) >= -15 ? "#ff9800" : "#f44336", 
+                                        borderRadius: "3px",
+                                        transition: "width 0.5s ease-out"
+                                    }}></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                                    <span style={{ color: "#aaa", fontSize: "0.9rem" }}>Touchdown Zone (Target: 300ft)</span>
+                                    <span style={{ fontWeight: "bold", color: (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) === 0 ? "#4caf50" : "#eee" }}>
+                                        {landingEvent.thresholdDistFt !== undefined ? `-${(Math.abs(landingEvent.thresholdDistFt - 300) / 10).toFixed(1)}` : "0.0"}
+                                    </span>
+                                </div>
+                                <div style={{ width: "100%", height: "6px", background: "#333", borderRadius: "3px" }}>
+                                    <div style={{ 
+                                        width: `${Math.max(0, 100 - (Math.abs((landingEvent.thresholdDistFt || 300) - 300) / 10) * 2)}%`, 
+                                        height: "100%", 
+                                        background: (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) >= -5 ? "#4caf50" : (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) >= -15 ? "#ff9800" : "#f44336", 
+                                        borderRadius: "3px",
+                                        transition: "width 0.5s ease-out"
+                                    }}></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
                 <div style={{ background: "#1a1a1a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333", minWidth: 0 }}>

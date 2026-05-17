@@ -1,7 +1,7 @@
 use crate::airports::AirportsDatabase;
 use crate::models::{FlightEvent, FlightMetrics, FlightPhase};
 use crate::runways::{Runway, RunwaysDatabase};
-use rusqlite::{Connection, Row};
+use rusqlite::{Connection, Row, params};
 use std::collections::{HashMap, VecDeque};
 
 pub struct FlightAnalyzer {
@@ -401,13 +401,14 @@ impl FlightAnalyzer {
     }
 
     // Refactored to be called by the monitor which has all DBs
-    pub fn finalize_landing_performance(&mut self, airports_db: &AirportsDatabase, runways_db: &RunwaysDatabase) {
+    pub fn finalize_landing_performance(&mut self, airports_db: &AirportsDatabase, runways_db: &RunwaysDatabase, conn: Option<&Connection>) {
         let end_icao = self.find_end_icao(airports_db);
         if end_icao == "XXXX" || end_icao == "Airborne" { return; }
 
         if let Some(idx) = self.events.iter().position(|e| e.event_type == "landing") {
             let lat = self.events[idx].latitude;
             let lon = self.events[idx].longitude;
+            let ts = self.events[idx].timestamp.clone();
             
             let runways = runways_db.find_for_ident(&end_icao);
             if let Some((_runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, &runways) {
@@ -415,7 +416,57 @@ impl FlightAnalyzer {
                 landing.threshold_dist_ft = Some(dist_to_threshold);
                 landing.offset_percent = Some(offset_pct);
             }
+
+            if let Some(conn) = conn {
+                if let Some((vs_var, ias_var)) = self.calculate_variances(conn, &ts) {
+                    let landing = &mut self.events[idx];
+                    landing.vs_variance = Some(vs_var);
+                    landing.ias_variance = Some(ias_var);
+                }
+            }
         }
+    }
+
+    fn calculate_variances(&self, conn: &Connection, landing_ts: &str) -> Option<(f64, f64)> {
+        // Parse the landing timestamp
+        let landing_dt = chrono::NaiveDateTime::parse_from_str(
+            landing_ts.split('.').next().unwrap_or(landing_ts),
+            "%Y-%m-%d %H:%M:%S",
+        ).ok()?;
+        
+        // Calculate the window (60 seconds before)
+        let start_dt = landing_dt - chrono::Duration::seconds(60);
+        let start_ts = start_dt.format("%Y-%m-%d %H:%M:%S").to_string();
+        
+        // Query the metrics for that window
+        let mut stmt = conn.prepare(
+            "SELECT vertical_speed, indicated_airspeed FROM metrics 
+             WHERE timestamp >= ?1 AND timestamp <= ?2"
+        ).ok()?;
+        
+        let rows = stmt.query_map(params![start_ts, landing_ts], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?))
+        }).ok()?;
+        
+        let mut vs_data = Vec::new();
+        let mut ias_data = Vec::new();
+        
+        for row in rows {
+            if let Ok((vs, ias)) = row {
+                vs_data.push(vs);
+                ias_data.push(ias);
+            }
+        }
+        
+        if vs_data.len() < 5 { return None; }
+        
+        let vs_mean = vs_data.iter().sum::<f64>() / vs_data.len() as f64;
+        let vs_var = vs_data.iter().map(|v| (v - vs_mean).powi(2)).sum::<f64>() / vs_data.len() as f64;
+        
+        let ias_mean = ias_data.iter().sum::<f64>() / ias_data.len() as f64;
+        let ias_var = ias_data.iter().map(|v| (v - ias_mean).powi(2)).sum::<f64>() / ias_data.len() as f64;
+        
+        Some((vs_var, ias_var))
     }
 }
 

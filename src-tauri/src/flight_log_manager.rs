@@ -333,7 +333,7 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
     let (start_icao, start_name, end_icao, end_name) =
         if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
             if let Some(r_db) = app.try_state::<crate::runways::RunwaysDatabase>() {
-                analyzer.finalize_landing_performance(&db, &r_db);
+                analyzer.finalize_landing_performance(&db, &r_db, Some(&conn));
             }
 
             let s_icao = analyzer.find_start_icao(&db);
@@ -366,8 +366,10 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
         if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
         if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
         if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+        if let Some(v) = landing.vs_variance { summary_data.push(("vs_variance", v.to_string())); }
+        if let Some(v) = landing.ias_variance { summary_data.push(("ias_variance", v.to_string())); }
+        if let Some(v) = landing.calculate_landing_score() { summary_data.push(("landing_score", v.to_string())); }
     }
-
     for (k, v) in summary_data {
         conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v])?;
     }
@@ -1062,7 +1064,7 @@ fn save_imported_flight(
         if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
             // Advanced Landing Analysis for Imports
             if let Some(r_db) = app.try_state::<crate::runways::RunwaysDatabase>() {
-                analyzer.finalize_landing_performance(&db, &r_db);
+                analyzer.finalize_landing_performance(&db, &r_db, Some(&conn));
             }
 
             let s_icao = analyzer.find_start_icao(&db);
@@ -1118,8 +1120,10 @@ fn save_imported_flight(
         if let Some(v) = landing.landing_g { summary_data.push(("landing_g", v.to_string())); }
         if let Some(v) = landing.offset_percent { summary_data.push(("landing_offset_pct", v.to_string())); }
         if let Some(v) = landing.threshold_dist_ft { summary_data.push(("landing_dist_ft", v.to_string())); }
+        if let Some(v) = landing.vs_variance { summary_data.push(("vs_variance", v.to_string())); }
+        if let Some(v) = landing.ias_variance { summary_data.push(("ias_variance", v.to_string())); }
+        if let Some(v) = landing.calculate_landing_score() { summary_data.push(("landing_score", v.to_string())); }
     }
-
     for (k, v) in summary_data {
         conn.execute(
             "INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)",
