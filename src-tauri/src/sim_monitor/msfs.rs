@@ -432,6 +432,11 @@ impl SimConnectMonitor {
                             *m = *data;
                         }
 
+                        if data.latitude == 0.0 && data.longitude == 0.0 {
+                            // Invalid GPS data, skip processing
+                            continue;
+                        }
+
                         if !flight_ongoing && data.ground_speed > 10.0 {
                             flight_ongoing = true;
                             
