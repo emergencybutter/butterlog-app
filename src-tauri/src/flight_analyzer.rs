@@ -115,9 +115,9 @@ impl FlightAnalyzer {
     }
 
     pub fn update(&mut self, metrics: &FlightMetrics, timestamp: &str) -> Option<FlightPhase> {
-        // if metrics.latitude == 0.0 && metrics.longitude == 0.0 {
-        //     return None;
-        // }
+        if metrics.latitude == 0.0 && metrics.longitude == 0.0 {
+            return None;
+        }
         if self.first_timestamp.is_none() {
             self.first_timestamp = Some(timestamp.to_string());
         }
