@@ -390,6 +390,7 @@ impl XPlaneMonitor {
                                                     threshold_dist_ft: None,
                                                     vs_variance: None,
                                                     ias_variance: None,
+                                                    heading: None,
                                                 };
                                                 if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
                                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);

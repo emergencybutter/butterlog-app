@@ -152,9 +152,9 @@ impl FlightAnalyzer {
         let ap_active = metrics.autopilot_active > 0.5;
         if ap_active != self.last_autopilot_active {
             if ap_active {
-                self.add_event("autopilot_on", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                self.add_event("autopilot_on", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
             } else {
-                self.add_event("autopilot_off", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                self.add_event("autopilot_off", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
             }
             self.last_autopilot_active = ap_active;
         }
@@ -185,7 +185,7 @@ impl FlightAnalyzer {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
                     self.takeoff_timestamp = Some(timestamp.to_string());
-                    self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                    self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
                 }
             }
             FlightPhase::Climb => {
@@ -206,14 +206,14 @@ impl FlightAnalyzer {
 
                         if let Some(start_ts) = trigger_toc {
                             self.current_phase = FlightPhase::Cruise;
-                            self.add_event("top_of_climb", self.pending_toc_coords.0, self.pending_toc_coords.1, &start_ts, None, None, None, None);
+                            self.add_event("top_of_climb", self.pending_toc_coords.0, self.pending_toc_coords.1, &start_ts, None, None, None, None, None);
                             self.pending_toc_ts = None;
                         }
                     } else if v_spd < -400.0 {
                         // Direct Climb -> Descent (skip Cruise)
                         self.current_phase = FlightPhase::Descent;
-                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
-                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None);
+                        self.add_event("top_of_climb", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
+                        self.add_event("top_of_descent", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
                         self.pending_toc_ts = None;
                     } else {
                         self.pending_toc_ts = None;
@@ -224,7 +224,7 @@ impl FlightAnalyzer {
                     self.max_landing_g = metrics.normal_acceleration;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Cruise => {
@@ -245,7 +245,7 @@ impl FlightAnalyzer {
 
                         if let Some(start_ts) = trigger_tod {
                             self.current_phase = FlightPhase::Descent;
-                            self.add_event("top_of_descent", self.pending_tod_coords.0, self.pending_tod_coords.1, &start_ts, None, None, None, None);
+                            self.add_event("top_of_descent", self.pending_tod_coords.0, self.pending_tod_coords.1, &start_ts, None, None, None, None, None);
                             self.pending_tod_ts = None;
                         }
                     } else if v_spd > 500.0 {
@@ -260,7 +260,7 @@ impl FlightAnalyzer {
                     self.max_landing_g = metrics.normal_acceleration;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Descent => {
@@ -280,7 +280,7 @@ impl FlightAnalyzer {
                     self.max_landing_g = metrics.normal_acceleration;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Approach => {
@@ -290,7 +290,7 @@ impl FlightAnalyzer {
                     self.max_landing_g = metrics.normal_acceleration;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None);
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                     self.pending_toc_ts = None;
@@ -325,7 +325,7 @@ impl FlightAnalyzer {
         }
     }
 
-    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64, timestamp: &str, fpm: Option<f64>, g: Option<f64>, offset: Option<f64>, dist: Option<f64>) {
+    fn add_event(&mut self, event_type: &str, lat: f64, lon: f64, timestamp: &str, fpm: Option<f64>, g: Option<f64>, offset: Option<f64>, dist: Option<f64>, hdg: Option<f64>) {
         self.events.push(FlightEvent {
             timestamp: timestamp.to_string(),
             event_type: event_type.to_string(),
@@ -337,6 +337,7 @@ impl FlightAnalyzer {
             threshold_dist_ft: dist,
             vs_variance: None,
             ias_variance: None,
+            heading: hdg,
         });
     }
 
@@ -416,7 +417,8 @@ impl FlightAnalyzer {
             let ts = self.events[idx].timestamp.clone();
             
             let runways = runways_db.find_for_ident(&end_icao);
-            if let Some((_runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, &runways) {
+            let heading = self.events[idx].heading;
+            if let Some((_runway, dist_to_threshold, offset_pct)) = find_best_runway_match(lat, lon, heading, &runways) {
                 let landing = &mut self.events[idx];
                 landing.threshold_dist_ft = Some(dist_to_threshold);
                 landing.offset_percent = Some(offset_pct);
@@ -475,9 +477,9 @@ impl FlightAnalyzer {
     }
 }
 
-fn find_best_runway_match(lat: f64, lon: f64, runways: &[Runway]) -> Option<(Runway, f64, f64)> {
+fn find_best_runway_match(lat: f64, lon: f64, ac_hdg: Option<f64>, runways: &[Runway]) -> Option<(Runway, f64, f64)> {
     let mut best_match = None;
-    let mut min_dist = f64::MAX;
+    let mut min_score = f64::MAX;
 
     for rw in runways {
         // Low end threshold
@@ -486,8 +488,20 @@ fn find_best_runway_match(lat: f64, lon: f64, runways: &[Runway]) -> Option<(Run
             if dist.abs() < 200.0 && total_dist > -500.0 && total_dist < (rw.length_ft.unwrap_or(0) as f64 + 500.0) {
                 let width = rw.width_ft.unwrap_or(150) as f64;
                 let offset_pct = (offset / (width / 2.0)) * 100.0;
-                if dist.abs() < min_dist {
-                    min_dist = dist.abs();
+                
+                let hdg_diff = if let Some(ac) = ac_hdg {
+                    let d = (ac - le_hdg).abs() % 360.0;
+                    if d > 180.0 { 360.0 - d } else { d }
+                } else {
+                    0.0
+                };
+
+                // Score is primarily lateral distance, but heavily penalized by heading mismatch (> 30 degrees)
+                let heading_penalty = if hdg_diff > 30.0 { 10000.0 } else { 0.0 };
+                let score = dist.abs() + heading_penalty;
+
+                if score < min_score {
+                    min_score = score;
                     best_match = Some((rw.clone(), total_dist, offset_pct));
                 }
             }
@@ -498,8 +512,19 @@ fn find_best_runway_match(lat: f64, lon: f64, runways: &[Runway]) -> Option<(Run
             if dist.abs() < 200.0 && total_dist > -500.0 && total_dist < (rw.length_ft.unwrap_or(0) as f64 + 500.0) {
                 let width = rw.width_ft.unwrap_or(150) as f64;
                 let offset_pct = (offset / (width / 2.0)) * 100.0;
-                if dist.abs() < min_dist {
-                    min_dist = dist.abs();
+
+                let hdg_diff = if let Some(ac) = ac_hdg {
+                    let d = (ac - he_hdg).abs() % 360.0;
+                    if d > 180.0 { 360.0 - d } else { d }
+                } else {
+                    0.0
+                };
+
+                let heading_penalty = if hdg_diff > 30.0 { 10000.0 } else { 0.0 };
+                let score = dist.abs() + heading_penalty;
+
+                if score < min_score {
+                    min_score = score;
                     best_match = Some((rw.clone(), total_dist, offset_pct));
                 }
             }

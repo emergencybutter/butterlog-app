@@ -273,6 +273,7 @@ pub struct FlightEvent {
     pub threshold_dist_ft: Option<f64>,
     pub vs_variance: Option<f64>,
     pub ias_variance: Option<f64>,
+    pub heading: Option<f64>,
 }
 
 impl FlightEvent {
