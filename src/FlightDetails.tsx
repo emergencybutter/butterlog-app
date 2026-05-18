@@ -679,7 +679,20 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
         }
     };
 
-    const landingEvent = useMemo(() => [...flight.events].reverse().find(e => e.eventType === 'landing'), [flight.events]);
+    const landingEvent = useMemo(() => {
+        const landingEvents = flight.events.filter(e => e.eventType === 'landing');
+        if (landingEvents.length === 0) return undefined;
+        
+        // Pick the last landing event
+        const lastLanding = landingEvents[landingEvents.length - 1];
+        const lastTime = new Date(lastLanding.timestamp.split('.')[0]).getTime();
+        
+        // Find the first landing event that is no more than 30 seconds before the last one
+        return landingEvents.find(e => {
+            const time = new Date(e.timestamp.split('.')[0]).getTime();
+            return (lastTime - time) <= 30000;
+        });
+    }, [flight.events]);
 
     if (loading) return <div>Loading flight data...</div>;
 
