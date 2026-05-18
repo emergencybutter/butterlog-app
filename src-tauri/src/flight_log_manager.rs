@@ -611,6 +611,12 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         e
     }).ok()?;
 
+    // Check if the metrics table has any data
+    let count: i64 = conn.query_row("SELECT count(*) FROM metrics", [], |r| r.get(0)).unwrap_or(0);
+    if count == 0 {
+        return None;
+    }
+
     let get_summary = |key: &str| -> String {
         conn.query_row(
             "SELECT value FROM summary WHERE key = ?1",
