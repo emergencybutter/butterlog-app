@@ -92,7 +92,8 @@ impl XPlaneMonitor {
         }
 
         if path_to_id.is_empty() {
-            crate::append_log(&app, "[X-Plane] ERROR: No dataref IDs discovered. Connection aborted.".to_string());
+            // This floods the logs when xplane is not running.
+            // crate::append_log(&app, "[X-Plane] ERROR: No dataref IDs discovered. Connection aborted.".to_string());
             return Err(anyhow::anyhow!("No datarefs discovered. Is X-Plane running?"));
         }
 
