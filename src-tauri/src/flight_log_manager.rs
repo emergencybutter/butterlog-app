@@ -781,7 +781,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
         writeln!(file, "{}, {}, {}, {}, {:.6}, {:.6}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.3}, {:.3}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.2}, {:.2}, {:.1}, {:.1}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {}, {:.0}, {:.3}, {:.3}, {:.3}, {:.3}, {:.2}, {:.2}, {:.1}, {:.1}, {:.2}, {:.1}, {:.2}, {}, {}, {}, {:.1}, {:.1}, {:.1}, {}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}",
             date, time, utc_offset, "", m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
-            m.indicated_airspeed, m.ground_speed, m.vertical_speed, m.pitch_angle, m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
+            m.indicated_airspeed, m.ground_speed, m.vertical_speed, -m.pitch_angle, -m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
             m.heading, m.track, m.volts_1, m.volts_2, m.amps_1, m.fuel_quantity_left, m.fuel_quantity_right,
             m.engine_1_fuel_flow, m.engine_1_oil_temp, m.engine_1_oil_pressure, m.engine_1_manifold_pressure, m.engine_1_rpm, m.engine_1_percent_power,
             m.engine_1_cht_1, m.engine_1_cht_2, m.engine_1_cht_3, m.engine_1_cht_4, m.engine_1_cht_5, m.engine_1_cht_6,
@@ -789,7 +789,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
             m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, "GPS", m.selected_course,
             m.nav_1_frequency, m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, if m.autopilot_active > 0.5 { "1" } else { "0" },
-            "NONE", "NONE", m.roll_command, m.pitch_command, m.vertical_speed_target, "3DDiff",
+            "NONE", "NONE", -m.roll_command, -m.pitch_command, m.vertical_speed_target, "3DDiff",
             "", "", "", "", ""
         ).map_err(|e| e.to_string())?;
     }
@@ -955,8 +955,8 @@ fn parse_csv_line_to_row(
         indicated_airspeed: cols[10].parse().unwrap_or(0.0),
         ground_speed: cols[11].parse().unwrap_or(0.0),
         vertical_speed: cols[12].parse().unwrap_or(0.0),
-        pitch_angle: cols[13].parse().unwrap_or(0.0),
-        roll_angle: cols[14].parse().unwrap_or(0.0),
+        pitch_angle: -cols[13].parse::<f64>().unwrap_or(0.0),
+        roll_angle: -cols[14].parse::<f64>().unwrap_or(0.0),
         lateral_acceleration: cols[15].parse().unwrap_or(0.0),
         normal_acceleration: cols[16].parse().unwrap_or(0.0),
         heading: cols[17].parse().unwrap_or(0.0),
@@ -1008,8 +1008,8 @@ fn parse_csv_line_to_row(
         },
         roll_mode: 0.0,
         pitch_mode: 0.0,
-        roll_command: cols[62].parse().unwrap_or(0.0),
-        pitch_command: cols[63].parse().unwrap_or(0.0),
+        roll_command: -cols[62].parse::<f64>().unwrap_or(0.0),
+        pitch_command: -cols[63].parse::<f64>().unwrap_or(0.0),
         vertical_speed_target: cols[64].parse().unwrap_or(0.0),
         is_on_ground: sim_on_ground,
         altitude_agl: 0.0,
