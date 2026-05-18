@@ -314,6 +314,14 @@ pub async fn get_flight_data(
 
 fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<()> {
     let conn = Connection::open(path)?;
+    
+    // Preserve aircraft_title if it exists
+    let aircraft_title: String = conn.query_row(
+        "SELECT value FROM summary WHERE key = 'aircraft_title'",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_else(|_| "Unknown Aircraft".to_string());
+
     let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")?;
     let rows = stmt.query_map([], |row| {
         Ok(FlightLogRow {
@@ -331,10 +339,9 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
 
     // Determine ICAOs and Names
     let (start_icao, start_name, end_icao, end_name) =
-        if let Some(db) = app.try_state::<crate::airports::AirportsDatabase>() {
-            if let Some(r_db) = app.try_state::<crate::runways::RunwaysDatabase>() {
-                analyzer.finalize_landing_performance(&db, &r_db, Some(&conn));
-            }
+        if let (Some(db), Some(r_db)) = (app.try_state::<crate::airports::AirportsDatabase>(), app.try_state::<crate::runways::RunwaysDatabase>()) {
+            // Recalculate landing performance
+            analyzer.finalize_landing_performance(&db, &r_db, Some(&conn));
 
             let s_icao = analyzer.find_start_icao(&db);
             let e_icao = analyzer.find_end_icao(&db);
@@ -355,6 +362,7 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
         ("departure_name", start_name),
         ("arrival_icao", end_icao),
         ("arrival_name", end_name),
+        ("aircraft_title", aircraft_title),
         ("max_altitude", analyzer.max_alt.to_string()),
         ("max_ground_speed", analyzer.max_gs.to_string()),
         ("fuel_consumed", fuel_consumed.to_string()),
@@ -369,7 +377,12 @@ fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<
         if let Some(v) = landing.vs_variance { summary_data.push(("vs_variance", v.to_string())); }
         if let Some(v) = landing.ias_variance { summary_data.push(("ias_variance", v.to_string())); }
         if let Some(v) = landing.calculate_landing_score() { summary_data.push(("landing_score", v.to_string())); }
+        
+        crate::append_log(app, format!("[Regen] Recalculated landing: {} fpm, score: {:?}", 
+            landing.touchdown_fpm.unwrap_or(0.0), 
+            landing.calculate_landing_score()));
     }
+
     for (k, v) in summary_data {
         conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES (?1, ?2)", params![k, v])?;
     }

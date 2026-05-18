@@ -75,7 +75,7 @@ impl XPlaneMonitor {
         for path in &paths {
             let resp = match client.get(&rest_url).query(&[("filter[name]", *path)]).send().await {
                 Ok(r) => r.json::<Value>().await?,
-                Err(e) => {
+                Err(_e) => {
                     // This floods the logs when xplane is not running.
                     // crate::append_log(&app, format!("[X-Plane] Discovery failed for {}: {}", path, e));
                     continue;
