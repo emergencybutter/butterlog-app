@@ -86,12 +86,14 @@ impl AirportsDatabase {
         for (index, result) in rdr.deserialize().enumerate() {
             let airport: Airport = result?;
 
-            // If the airport has valid coordinates, add it to the list for spatial indexing.
+            // If the airport has valid coordinates and is NOT closed, add it to the list for spatial indexing.
             if let (Some(lat), Some(lon)) = (airport.latitude_deg, airport.longitude_deg) {
-                airport_locations.push(AirportLocation {
-                    index,
-                    coords: lat_lon_to_cartesian(lat, lon),
-                });
+                if airport.airport_type != "closed" && airport.airport_type != "heliport" {
+                    airport_locations.push(AirportLocation {
+                        index,
+                        coords: lat_lon_to_cartesian(lat, lon),
+                    });
+                }
             }
 
             by_ident.insert(airport.ident.clone(), index);
