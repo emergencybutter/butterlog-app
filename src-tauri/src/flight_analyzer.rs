@@ -143,9 +143,11 @@ impl FlightAnalyzer {
 
         let on_ground = metrics.is_on_ground > 0.5;
 
+        let current_g = if metrics.gforce != 0.0 { metrics.gforce } else { metrics.normal_acceleration };
+
         // Peak G tracking during landing phase
         if self.current_phase == FlightPhase::Landing && on_ground {
-            self.max_landing_g = self.max_landing_g.max(metrics.normal_acceleration);
+            self.max_landing_g = self.max_landing_g.max(current_g);
         }
 
         // Track Autopilot
@@ -221,10 +223,10 @@ impl FlightAnalyzer {
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
-                    self.max_landing_g = metrics.normal_acceleration;
+                    self.max_landing_g = current_g;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(current_g), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Cruise => {
@@ -257,10 +259,10 @@ impl FlightAnalyzer {
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
-                    self.max_landing_g = metrics.normal_acceleration;
+                    self.max_landing_g = current_g;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(current_g), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Descent => {
@@ -277,20 +279,20 @@ impl FlightAnalyzer {
                 } else {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
-                    self.max_landing_g = metrics.normal_acceleration;
+                    self.max_landing_g = current_g;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(current_g), None, None, Some(metrics.heading));
                 }
             }
             FlightPhase::Approach => {
                 if on_ground {
                     self.current_phase = FlightPhase::Landing;
                     self.touchdown_fpm = self.last_v_spd;
-                    self.max_landing_g = metrics.normal_acceleration;
+                    self.max_landing_g = current_g;
                     self.pending_toc_ts = None;
                     self.pending_tod_ts = None;
-                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(metrics.normal_acceleration), None, None, Some(metrics.heading));
+                    self.add_event("landing", metrics.latitude, metrics.longitude, timestamp, Some(self.last_v_spd), Some(current_g), None, None, Some(metrics.heading));
                 } else if v_spd > 500.0 {
                     self.current_phase = FlightPhase::Climb;
                     self.pending_toc_ts = None;

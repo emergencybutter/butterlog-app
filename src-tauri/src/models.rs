@@ -292,6 +292,13 @@ impl FlightEvent {
             score -= (dist - 300.0).abs() / 10.0;
         }
         
+        // Deduct 50 points for each full G above 1.2G (e.g. 1.3G = -5 points)
+        if let Some(g) = self.landing_g {
+            if g > 1.2 {
+                score -= (g - 1.2) * 50.0;
+            }
+        }
+        
         Some(score)
     }
 }

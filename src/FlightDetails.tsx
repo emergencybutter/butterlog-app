@@ -851,10 +851,22 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
                             <div style={{ 
                                 fontSize: "3.5rem", 
                                 fontWeight: "bold", 
-                                color: (Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))) >= -10 ? "#4caf50" : 
-                                       (Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))) >= -30 ? "#ff9800" : "#f44336" 
+                                color: (Math.round(
+                                    (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + 
+                                    (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) +
+                                    (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0)
+                                )) >= -10 ? "#4caf50" : 
+                                       (Math.round(
+                                    (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + 
+                                    (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) +
+                                    (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0)
+                                )) >= -30 ? "#ff9800" : "#f44336" 
                             }}>
-                                {Math.round((landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0))}
+                                {Math.round(
+                                    (landingEvent.offsetPercent !== undefined ? -Math.abs(landingEvent.offsetPercent) : 0) + 
+                                    (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) +
+                                    (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0)
+                                )}
                             </div>
                             <div style={{ color: "#888", fontSize: "0.8rem", marginTop: "5px", letterSpacing: "1px" }}>TOTAL SCORE</div>
                         </div>
@@ -877,7 +889,7 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
                                 </div>
                             </div>
 
-                            <div>
+                            <div style={{ marginBottom: "20px" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                                     <span style={{ color: "#aaa", fontSize: "0.9rem" }}>Touchdown Zone (Target: 300ft)</span>
                                     <span style={{ fontWeight: "bold", color: (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) === 0 ? "#4caf50" : "#eee" }}>
@@ -889,6 +901,24 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
                                         width: `${Math.max(0, 100 - (Math.abs((landingEvent.thresholdDistFt || 300) - 300) / 10) * 2)}%`, 
                                         height: "100%", 
                                         background: (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) >= -5 ? "#4caf50" : (landingEvent.thresholdDistFt !== undefined ? -Math.abs(landingEvent.thresholdDistFt - 300) / 10 : 0) >= -15 ? "#ff9800" : "#f44336", 
+                                        borderRadius: "3px",
+                                        transition: "width 0.5s ease-out"
+                                    }}></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                                    <span style={{ color: "#aaa", fontSize: "0.9rem" }}>Landing Smoothness (Target: ≤ 1.2G)</span>
+                                    <span style={{ fontWeight: "bold", color: (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0) === 0 ? "#4caf50" : "#eee" }}>
+                                        {landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? `-${((landingEvent.landingG - 1.2) * 50).toFixed(1)}` : "0.0"}
+                                    </span>
+                                </div>
+                                <div style={{ width: "100%", height: "6px", background: "#333", borderRadius: "3px" }}>
+                                    <div style={{ 
+                                        width: `${Math.max(0, 100 - (Math.max(0, (landingEvent.landingG || 1.0) - 1.2) * 50) * 2)}%`, 
+                                        height: "100%", 
+                                        background: (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0) >= -5 ? "#4caf50" : (landingEvent.landingG !== undefined && landingEvent.landingG > 1.2 ? -(landingEvent.landingG - 1.2) * 50 : 0) >= -15 ? "#ff9800" : "#f44336", 
                                         borderRadius: "3px",
                                         transition: "width 0.5s ease-out"
                                     }}></div>

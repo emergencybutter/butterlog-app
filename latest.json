@@ -1,11 +1,11 @@
 {
-  "version": "0.3.0",
-  "notes": "Butterlog v0.3.0 Release\n\nInital release post rewrite.",
-  "pub_date": "2026-05-16T17:00:00Z",
+  "version": "0.3.3",
+  "notes": "Butterlog v0.3.3 Release\n\n- Fix: Negate pitch and roll on export/import\n- Feature: Use G-force for landing score calculation\n- Feature: Add G-force chart",
+  "pub_date": "2026-05-18T19:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHMzbnBWSEpvV0Njd0xuRXQ1ZHNBRHJMS1RZNU4rUzB1UlBYN0piMmZzN0RUVGs3cC9xbzlUT1dXdDY5YmxFdUliWFlnS0VqRFpiSUpZUzZabjZQN0E4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTUxMDEwCWZpbGU6YnV0dGVybG9nXzAuMy4wX3g2NC1zZXR1cC5leGUKU1RsdmZUTjN5bExkTVYrUFZIWGRRQUlHbFZPdHJ3QVArd09YZnU5WmJKbGJxVnRLNXl5aVVaRjF4c1FITWRSVm0xdEtNRERNYm1mcGdGWkVGNlhVQUE9PQo=",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGtnMmdEV1RjanB1dnhTeUJ2ayswSWNEeEJKYXBKV3g5TmZLQ0plMjYzYTljc2NGNmpsWldBN1A3M0h4VnVyaENIbUlRSUNEaThiUWpkTmQ2WGhKWUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MTIzMDE5CWZpbGU6YnV0dGVybG9nXzAuMy4yX3g2NC1zZXR1cC5leGUKWS9Oa05CNDdjWTc3dnFhTXd1dEQ0b24vVWZHb3o3d2tVbmdqZHBuL2FMbW5ha1o2UCs3K3llZTF1TXpqdFhBSUJuNUkvNlkzR2t4ejRMK3BVZFJWQmc9PQo=",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.2_x64-setup.exe"
     }
   }
 }
