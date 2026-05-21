@@ -70,20 +70,21 @@ impl MultiplayerManager {
             loop {
                 let config = app.state::<ConfigManager>().get_config();
                 if config.enable_multiplayer_hubs {
-                    let metrics = {
-                        let monitor = app.state::<UnifiedMonitor>();
-                        if let Some(m) = monitor.get_connected_monitor() {
-                            m.get_metrics()
-                        } else {
-                            FlightMetrics::default()
-                        }
-                    };
+                    let monitor = app.state::<UnifiedMonitor>();
+                    if let Some(m) = monitor.get_connected_monitor() {
+                        let metrics = m.get_metrics();
+                        let aircraft = m.get_aircraft_info();
 
-                    let data = serde_json::to_vec(&metrics).unwrap_or_default();
-                    if !data.is_empty() {
-                        let peers = multiplayer.peers.lock().unwrap();
-                        for peer in peers.iter() {
-                            let _ = socket.send_to(&data, peer);
+                        let payload = serde_json::json!({
+                            "aircraft": aircraft.title,
+                            "metrics": metrics
+                        });
+
+                        if let Ok(data) = serde_json::to_vec(&payload) {
+                            let peers = multiplayer.peers.lock().unwrap();
+                            for peer in peers.iter() {
+                                let _ = socket.send_to(&data, peer);
+                            }
                         }
                     }
                 }
