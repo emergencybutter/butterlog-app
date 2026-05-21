@@ -19,6 +19,7 @@ pub struct Config {
     pub webhook_url: String,
     pub open_at_login: bool,
     pub start_minimized: bool,
+    pub enable_multiplayer_hubs: bool,
 }
 
 impl Config {
@@ -55,6 +56,7 @@ impl Config {
             webhook_url: "".to_string(),
             open_at_login: false,
             start_minimized: false,
+            enable_multiplayer_hubs: false,
         }
     }
 }
@@ -73,6 +75,7 @@ impl Default for Config {
             webhook_url: "".to_string(),
             open_at_login: false,
             start_minimized: false,
+            enable_multiplayer_hubs: false,
         }
     }
 }

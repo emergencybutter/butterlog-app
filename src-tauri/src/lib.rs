@@ -3,6 +3,7 @@ mod config;
 mod flight_analyzer;
 mod flight_log_manager;
 mod models;
+mod multiplayer;
 mod runways;
 mod screenshot_manager;
 mod sim_monitor;
@@ -21,6 +22,7 @@ use flight_log_manager::{
     export_flight_to_csv, get_flight_data, import_flight_from_csv, scan_logs, FlightSummary,
 };
 use models::FlightMetrics;
+use multiplayer::MultiplayerManager;
 use rusqlite::OptionalExtension;
 use screenshot_manager::ScreenshotManager;
 use sim_monitor::msfs::SimConnectMonitor;
@@ -267,6 +269,11 @@ pub fn run() {
 
             // Initialize WebhookManager
             app.manage(webhook_manager::WebhookManager::new());
+
+            // Initialize MultiplayerManager
+            let multiplayer = Arc::new(MultiplayerManager::new());
+            app.manage(multiplayer.clone());
+            multiplayer.start(app.handle().clone());
 
             // Start screenshot watcher
             screenshot_manager::start_screenshot_watcher(app.handle().clone());

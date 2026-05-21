@@ -1,14 +1,14 @@
-use crate::config::ConfigManager;
 use crate::models::WebhookFlightSummary;
 use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookFlightResponse {
     pub id: i64,
+    pub peers: Option<Vec<String>>,
 }
 
 pub struct WebhookManager {
@@ -27,7 +27,7 @@ impl WebhookManager {
     }
 
     fn get_base_url(&self, app: &AppHandle) -> Option<String> {
-        let config = app.state::<ConfigManager>().get_config();
+        let config = app.state::<crate::config::ConfigManager>().get_config();
         if !config.enable_webhook || config.webhook_url.is_empty() {
             return None;
         }
@@ -81,7 +81,7 @@ impl WebhookManager {
         let now = std::time::Instant::now();
         if !force_update {
             if let Some(last) = last_time {
-                if now.duration_since(last).as_secs() < 300 {
+                if now.duration_since(last).as_secs() < 60 { // Reduced to 1m to get peer updates more often
                     return;
                 }
             }
@@ -100,6 +100,13 @@ impl WebhookManager {
                     Ok(res) => {
                         if res.status().is_success() {
                             *self.last_update_time.lock().unwrap() = Some(now);
+                            if let Ok(data) = res.json::<WebhookFlightResponse>().await {
+                                if let Some(peers) = data.peers {
+                                    if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
+                                        multiplayer.update_peers(peers);
+                                    }
+                                }
+                            }
                         } else {
                             crate::append_log(app, format!("[Webhook] Update failed (ID {}): {}", id, res.status()));
                         }
@@ -123,6 +130,12 @@ impl WebhookManager {
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
                                 *self.current_remote_id.lock().unwrap() = Some(data.id);
                                 *self.last_update_time.lock().unwrap() = Some(now);
+
+                                if let Some(peers) = data.peers {
+                                    if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
+                                        multiplayer.update_peers(peers);
+                                    }
+                                }
                                 
                                 // 2. Persist new ID to DB
                                 if !summary.log_path.is_empty() {

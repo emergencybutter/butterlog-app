@@ -13,6 +13,7 @@ interface Config {
     webhookUrl: string;
     openAtLogin: boolean;
     startMinimized: boolean;
+    enableMultiplayerHubs: boolean;
 }
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -185,6 +186,16 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                     onChange={(e) => handleChange("enableWebhook", e.target.checked)}
                                 /> 
                                 <span>Enable Webhook Service</span>
+                            </label>
+                        </div>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.enableMultiplayerHubs} 
+                                    onChange={(e) => handleChange("enableMultiplayerHubs", e.target.checked)}
+                                /> 
+                                <span>Enable Multiplayer Hubs (P2P Flight Data)</span>
                             </label>
                         </div>
                         <div className="setting-input-group">
