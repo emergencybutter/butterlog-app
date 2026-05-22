@@ -140,6 +140,8 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for gear ratio
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC MODEL")?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC ID")?;
 
         // Define data structure for remote aircraft
         #[repr(C)]
@@ -372,6 +374,12 @@ impl SimConnectMonitor {
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![aircraft_info.atc_id]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                             }
 
                             db_conn = Some(conn);
@@ -405,6 +413,8 @@ impl SimConnectMonitor {
                                     let summary = WebhookFlightSummary {
                                         log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                         airframe_name: aircraft_info.title.clone(),
+                                        atc_model: aircraft_info.atc_model.clone(),
+                                        atc_id: aircraft_info.atc_id.clone(),
                                         simulator: "MSFS".to_string(),
                                         simulator_version: "SimConnect".to_string(),
                                         departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
@@ -440,6 +450,8 @@ impl SimConnectMonitor {
                                     ("arrival_icao", end_icao.clone()),
                                     ("arrival_name", end_name),
                                     ("aircraft_title", aircraft_info.title.clone()),
+                                    ("atc_model", aircraft_info.atc_model.clone()),
+                                    ("atc_id", aircraft_info.atc_id.clone()),
                                     ("max_altitude", analyzer.max_alt.to_string()),
                                     ("max_ground_speed", analyzer.max_gs.to_string()),
                                     ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
@@ -503,21 +515,39 @@ impl SimConnectMonitor {
 
                 if msg.request_id() == Some(aircraft_request_id) {
                     //crate::append_log(app, format!("[MSFS] aircraft_request_id {}", aircraft_request_id));
-                    if let Some(data) = msg.as_sim_object_data::<[u8; 256]>() {
-                        let s = String::from_utf8_lossy(data);
-                        let title = s.split('\0').next().unwrap_or("").trim().to_string();
+                    #[repr(C)]
+                    #[derive(Debug, Clone, Copy)]
+                    struct SimConnectAircraftInfo {
+                        title: [u8; 256],
+                        atc_model: [u8; 256],
+                        atc_id: [u8; 256],
+                    }
+                    if let Some(data) = msg.as_sim_object_data::<SimConnectAircraftInfo>() {
+                        let title = String::from_utf8_lossy(&data.title).split('\0').next().unwrap_or("").trim().to_string();
+                        let atc_model = String::from_utf8_lossy(&data.atc_model).split('\0').next().unwrap_or("").trim().to_string();
+                        let atc_id = String::from_utf8_lossy(&data.atc_id).split('\0').next().unwrap_or("").trim().to_string();
                         if !title.is_empty() {
                             aircraft_info.title = title.clone();
+                            aircraft_info.atc_model = atc_model.clone();
+                            aircraft_info.atc_id = atc_id.clone();
                             
                             if let Some(ref conn) = db_conn {
-                                crate::append_log(app, format!("[MSFS] Set aircraft title: {}", title));
+                                crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Model: {}, ID: {}]", title, atc_model, atc_id));
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model.clone()]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
                             }
 
                             let mut info = aircraft_info_mutex.lock().unwrap();
                             info.title = title;
+                            info.atc_model = atc_model;
+                            info.atc_id = atc_id;
                         }
                     }
                 }
@@ -601,6 +631,12 @@ impl SimConnectMonitor {
                                 // Set aircraft title if already known
                                 if !aircraft_info.title.is_empty() {
                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![aircraft_info.atc_id]) {
                                         crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                     }
                                 }
@@ -747,6 +783,8 @@ impl SimConnectMonitor {
                                         let summary = WebhookFlightSummary {
                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                             airframe_name: aircraft_info.title.clone(),
+                                            atc_model: aircraft_info.atc_model.clone(),
+                                            atc_id: aircraft_info.atc_id.clone(),
                                             simulator: "MSFS".to_string(),
                                             simulator_version: "SimConnect".to_string(),
                                             departure: AirportInfo { 
@@ -820,6 +858,8 @@ impl SimConnectMonitor {
                                                 let summary = WebhookFlightSummary {
                                                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                     airframe_name: aircraft_info.title.clone(),
+                                                    atc_model: aircraft_info.atc_model.clone(),
+                                                    atc_id: aircraft_info.atc_id.clone(),
                                                     simulator: "MSFS".to_string(),
                                                     simulator_version: "SimConnect".to_string(),
                                                     departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
@@ -839,10 +879,10 @@ impl SimConnectMonitor {
                                                     landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                                                 };
                                                 let app_c = app.clone();
-                                    let sum_c = summary.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
-                                    });
+                                                let sum_c = summary.clone();
+                                                tauri::async_runtime::spawn(async move {
+                                                    app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
+                                                });
                                                 webhook_manager.reset();
                                             }
 
@@ -855,6 +895,8 @@ impl SimConnectMonitor {
                                                 ("arrival_icao", end_icao.clone()),
                                                 ("arrival_name", end_name),
                                                 ("aircraft_title", aircraft_info.title.clone()),
+                                                ("atc_model", aircraft_info.atc_model.clone()),
+                                                ("atc_id", aircraft_info.atc_id.clone()),
                                                 ("max_altitude", analyzer.max_alt.to_string()),
                                                 ("max_ground_speed", analyzer.max_gs.to_string()),
                                                 ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),

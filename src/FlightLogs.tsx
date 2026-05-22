@@ -220,7 +220,11 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                                         <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                                             <div>
                                                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
-                                                    <div style={{ fontSize: "0.7rem", color: isCurrent ? "#81c784" : "#888" }}>{s.aircraftTitle}</div>
+                                                    <div style={{ fontSize: "0.7rem", color: isCurrent ? "#81c784" : "#888" }}>
+                                                        {s.aircraftTitle}
+                                                        {s.atcModel && s.atcModel !== "Unknown" && s.atcModel.trim() !== "" ? ` [${s.atcModel}]` : ""}
+                                                        {s.atcId && s.atcId !== "Unknown" && s.atcId.trim() !== "" ? ` (${s.atcId})` : ""}
+                                                    </div>
                                                     {isCurrent && (
                                                         <div style={{ background: "#4caf50", color: "white", fontSize: "0.6rem", fontWeight: "bold", padding: "1px 6px", borderRadius: "10px", letterSpacing: "0.5px" }}>
                                                             LOGGING NOW
@@ -257,7 +261,11 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                                                 <div>
                                                     <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Departure:</span> {s.startTime}</p>
                                                     <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Arrival:</span> {isCurrent ? "Ongoing..." : s.endTime}</p>
-                                                    <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Aircraft:</span> {s.aircraftTitle}</p>
+                                                    <p>
+                                                        <span style={{ color: isCurrent ? "#81c784" : "#888" }}>Aircraft:</span> {s.aircraftTitle}
+                                                        {s.atcModel && s.atcModel !== "Unknown" && s.atcModel.trim() !== "" ? ` [${s.atcModel}]` : ""}
+                                                        {s.atcId && s.atcId !== "Unknown" && s.atcId.trim() !== "" ? ` (${s.atcId})` : ""}
+                                                    </p>
                                                 </div>
                                                 <div>
                                                     <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>

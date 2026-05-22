@@ -215,6 +215,8 @@ impl FlightMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AircraftInfo {
     pub title: String,
+    pub atc_model: String,
+    pub atc_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -240,6 +242,8 @@ pub struct AirportInfo {
 pub struct WebhookFlightSummary {
     pub log_path: String,
     pub airframe_name: String,
+    pub atc_model: String,
+    pub atc_id: String,
     pub simulator: String,
     pub simulator_version: String,
     pub departure: AirportInfo,

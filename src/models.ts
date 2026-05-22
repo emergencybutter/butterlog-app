@@ -100,6 +100,8 @@ export interface FlightSummary {
     durationMinutes: number;
     fileSizeBytes: number;
     aircraftTitle: string;
+    atcModel: string;
+    atcId: string;
     maxAltitude: number;
     maxGroundSpeed: number;
     fuelConsumed: number;

@@ -700,7 +700,11 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
         <div className="flight-details-view" style={{ textAlign: "left", padding: "1rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
                 <div>
-                    <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: "5px" }}>{flight.aircraftTitle}</div>
+                    <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: "5px" }}>
+                        {flight.aircraftTitle}
+                        {flight.atcModel && flight.atcModel !== "Unknown" && flight.atcModel.trim() !== "" ? ` [${flight.atcModel}]` : ""}
+                        {flight.atcId && flight.atcId !== "Unknown" && flight.atcId.trim() !== "" ? ` (${flight.atcId})` : ""}
+                    </div>
                     <h2 style={{ margin: 0 }}>{flight.startIcao} → {flight.endIcao}</h2>
                     <p style={{ color: "#888", margin: "5px 0" }}>{flight.startTime} ({flight.durationMinutes} min)</p>
                 </div>

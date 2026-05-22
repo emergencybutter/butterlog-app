@@ -564,8 +564,8 @@ mod tests {
 
     fn mock_metrics() -> FlightMetrics {
         FlightMetrics {
-            latitude: 0.0,
-            longitude: 0.0,
+            latitude: 45.0,
+            longitude: 45.0,
             indicated_altitude: 1000.0,
             altimeter_setting: 29.92,
             gps_altitude_msl: 1000.0,

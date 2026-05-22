@@ -15,6 +15,55 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+fn decode_base64(s: &str) -> Option<Vec<u8>> {
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buffer = Vec::new();
+    let mut temp = 0u32;
+    let mut bits = 0;
+    for &byte in s.as_bytes() {
+        if byte == b'=' {
+            break;
+        }
+        if let Some(pos) = CHARSET.iter().position(|&c| c == byte) {
+            temp = (temp << 6) | (pos as u32);
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                buffer.push((temp >> bits) as u8);
+            }
+        }
+    }
+    if buffer.is_empty() { None } else { Some(buffer) }
+}
+
+fn extract_xplane_string(value: &Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        let decoded = decode_base64(s)
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_else(|| s.to_string());
+        Some(decoded.split('\0').next().unwrap_or("").trim().to_string())
+    } else if let Some(arr) = value.as_array() {
+        let bytes: Vec<u8> = arr.iter()
+            .filter_map(|v| v.as_u64().map(|n| n as u8))
+            .collect();
+        if bytes.is_empty() {
+            None
+        } else {
+            let s = String::from_utf8_lossy(&bytes);
+            Some(s.split('\0').next().unwrap_or("").trim().to_string())
+        }
+    } else {
+        None
+    }
+}
+
+async fn fetch_xplane_dataref_string(client: &reqwest::Client, rest_url: &str, name: &str) -> Option<String> {
+    let resp = client.get(rest_url).query(&[("filter[name]", name)]).send().await.ok()?;
+    let json = resp.json::<Value>().await.ok()?;
+    let val_ref = json["data"].as_array()?.first()?.get("value")?;
+    extract_xplane_string(val_ref)
+}
+
 pub struct XPlaneMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
     aircraft_info: Arc<Mutex<AircraftInfo>>,
@@ -246,29 +295,23 @@ impl XPlaneMonitor {
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
 
                             // Fetch aircraft title once via REST (strings often not subscribable)
-                            let title_resp = match client.get(&rest_url).query(&[("filter[name]", "sim/aircraft/view/acf_ui_name")]).send().await {
-                                Ok(r) => r.json::<Value>().await.ok(),
-                                Err(_) => None,
-                            };
-                            
-                            if let Some(tr) = title_resp {
-                                // Note: API might return 'value' field for specific GET on dataref
-                                if let Some(actual_title) = tr["data"].as_array().and_then(|a| a.first()).and_then(|i| i["value"].as_str()) {
-                                    if !actual_title.is_empty() {
-                                        let title_str = actual_title.to_string();
-                                        
-                                        // Reset if aircraft name changes mid-flight
-                                        if !last_known_title.is_empty() && last_known_title != title_str {
-                                            crate::append_log(&app, format!("[X-Plane] Aircraft changed ({} -> {}). Resetting flight.", last_known_title, title_str));
-                                            ws_stream.close(None).await.ok();
-                                            return Ok(());
-                                        }
-                                        
-                                        last_known_title = title_str.clone();
-                                        aircraft_info.title = title_str;
-                                        crate::append_log(&app, format!("[X-Plane] Identified aircraft: {}", last_known_title));
-                                    }
+                            let actual_title = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ui_name").await.unwrap_or_default();
+                            let actual_atc_model = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ICAO").await.unwrap_or_default();
+                            let actual_atc_id = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_tailnum").await.unwrap_or_default();
+
+                            if !actual_title.is_empty() {
+                                // Reset if aircraft name changes mid-flight
+                                if !last_known_title.is_empty() && last_known_title != actual_title {
+                                    crate::append_log(&app, format!("[X-Plane] Aircraft changed ({} -> {}). Resetting flight.", last_known_title, actual_title));
+                                    ws_stream.close(None).await.ok();
+                                    return Ok(());
                                 }
+                                
+                                last_known_title = actual_title.clone();
+                                aircraft_info.title = actual_title;
+                                aircraft_info.atc_model = actual_atc_model;
+                                aircraft_info.atc_id = actual_atc_id;
+                                crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id));
                             }
 
                             // Resumption check
@@ -326,11 +369,17 @@ impl XPlaneMonitor {
 
                             if !aircraft_info.title.is_empty() {
                                 let title_str = aircraft_info.title.clone();
+                                let atc_model_str = aircraft_info.atc_model.clone();
+                                let atc_id_str = aircraft_info.atc_id.clone();
                                 if let Some(ref conn) = db_conn {
                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
+                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
                                 }
                                 let mut info = aircraft_info_mutex.lock().unwrap();
                                 info.title = title_str;
+                                info.atc_model = atc_model_str;
+                                info.atc_id = atc_id_str;
                             }
                             
                             // Process first point immediately
@@ -436,6 +485,8 @@ impl XPlaneMonitor {
                                         let summary = WebhookFlightSummary {
                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                             airframe_name: aircraft_info.title.clone(),
+                                            atc_model: aircraft_info.atc_model.clone(),
+                                            atc_id: aircraft_info.atc_id.clone(),
                                             simulator: "X-Plane".to_string(),
                                             simulator_version: "12".to_string(),
                                             departure: AirportInfo { 
@@ -508,6 +559,8 @@ impl XPlaneMonitor {
                                             let summary = WebhookFlightSummary {
                                                 log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                 airframe_name: aircraft_info.title.clone(),
+                                                atc_model: aircraft_info.atc_model.clone(),
+                                                atc_id: aircraft_info.atc_id.clone(),
                                                 simulator: "X-Plane".to_string(),
                                                 simulator_version: "12".to_string(),
                                                 departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
@@ -538,6 +591,8 @@ impl XPlaneMonitor {
                                                 ("departure_icao", start_icao.clone()),
                                                 ("arrival_icao", end_icao.clone()),
                                                 ("aircraft_title", aircraft_info.title.clone()),
+                                                ("atc_model", aircraft_info.atc_model.clone()),
+                                                ("atc_id", aircraft_info.atc_id.clone()),
                                                 ("max_altitude", analyzer.max_alt.to_string()),
                                                 ("max_ground_speed", analyzer.max_gs.to_string()),
                                                 ("fuel_consumed", (analyzer.initial_fuel - analyzer.final_fuel).to_string()),
@@ -610,6 +665,8 @@ impl XPlaneMonitor {
                 let summary = WebhookFlightSummary {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                     airframe_name: aircraft_info.title.clone(),
+                    atc_model: aircraft_info.atc_model.clone(),
+                    atc_id: aircraft_info.atc_id.clone(),
                     simulator: "X-Plane".to_string(),
                     simulator_version: "12".to_string(),
                     departure: AirportInfo { 

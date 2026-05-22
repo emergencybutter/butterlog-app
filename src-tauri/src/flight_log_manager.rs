@@ -243,6 +243,8 @@ pub struct FlightSummary {
     pub duration_minutes: i64,
     pub file_size_bytes: u64,
     pub aircraft_title: String,
+    pub atc_model: String,
+    pub atc_id: String,
     pub max_altitude: f64,
     pub max_ground_speed: f64,
     pub fuel_consumed: f64,
@@ -641,6 +643,8 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
     let end_icao = get_summary("arrival_icao");
     let end_airport_name = get_summary("arrival_name");
     let aircraft_title = get_summary("aircraft_title");
+    let atc_model = get_summary("atc_model");
+    let atc_id = get_summary("atc_id");
     let max_altitude = get_summary("max_altitude").parse().unwrap_or(0.0);
     let max_ground_speed = get_summary("max_ground_speed").parse().unwrap_or(0.0);
     let fuel_consumed = get_summary("fuel_consumed").parse().unwrap_or(0.0);
@@ -703,6 +707,8 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         duration_minutes,
         file_size_bytes: metadata.len(),
         aircraft_title,
+        atc_model,
+        atc_id,
         max_altitude,
         max_ground_speed,
         fuel_consumed,

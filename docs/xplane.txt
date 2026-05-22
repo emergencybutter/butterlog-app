@@ -1,0 +1,754 @@
+
+X-Plane local Web API
+Last updated January 29, 2026
+
+Starting with version 12.1.1, X-Plane includes a built-in web server that provides a way for applications to communicate with a simulator instance on your machine via the http protocol, using a REST and Websockets API.
+
+The REST and Websocket interfaces are NOT exclusive, they are complementary to each other and serve different purposes. Depending on your use cases, you might need to use both of them: the REST interface to read and write specific resources or trigger specific actions; the Websocket interface to “stream” information to/from the simulator.
+
+The actual simulator resources of course are shared: during a simulator session, a dataref ID is the same ID no matter if you reference it from the REST interface or from the Websocket interface.
+
+The supported operations are:
+
+Introduced in v1 (X-Plane 12.1.1 and up)
+
+    Getting the list of available Datarefs (REST)
+    Getting the count of available Datarefs (REST)
+    Read or write a particular Dataref (REST)
+    Subscribing/Unsubscribing to one or more Datarefs to get periodic updates (Websockets)
+    Streaming data to one or more Datarefs on the simulator (Websockets)
+
+Introduced in v2 (X-Plane 12.1.4 and up)
+
+    A root endpoint that returns the supported API versions (REST)
+    Getting the list of commands (REST)
+    Getting the count of available commands (REST)
+    Activate a command (REST)
+    Subscribing/Unsubscribing to one or more Commands to periodic updates about their activation status (Websockets)
+    Streaming one or more activations to the simulator (Websockets)
+
+Introduced in v3 (X-Plane 12.4.0 and up)
+
+    Initialize or update a flight (REST)
+
+We have plans to extend this further to handle more operations. See “Roadmap” at the end of this document.
+
+    💡 NOTE: This document assumes the reader is a programmer, knows what JSON is, and has experience consuming REST and Websocket API interfaces.
+
+The web server
+
+The X-Plane web server endpoints are available at:
+
+    http://localhost:8086/api/v3/... (for REST requests)
+    ws://localhost:8086/api/v3 (for Websocket requests)
+
+They share the same TCP port, because http and Websocket are application-level protocols, not server-level protocols.
+
+You can pick the port to connect by launching X-Plane from the command line with the --web_server_port= flag. Example: ./X-Plane --web_server_port=8088.
+
+If you wish to not expose your X-Plane instance to REST/Websocket traffic, effectively disabling the APIs entirely, you can set the network’s security policy in the ‘Network’ tab of the ‘Settings’ screen by selecting “Disable Incoming Traffic”.
+Request format
+For REST requests
+
+The following headers are needed:
+
+Accept: application/json
+
+Content-Type: application/json
+
+Body payload (if applicable) must be sent as a JSON formatted string (not FormData).
+
+Example requests:
+
+curl 'http://localhost:8086/api/v3/datarefs' \
+  -H 'Accept: application/json, text/plain, */*'
+
+curl 'http://localhost:8086/api/v3/datarefs/1253033683792/value' \
+  -X 'PATCH' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"data":3}'
+
+When a successful request happens, the server will return a HTTP 200 code and a payload. The payload is either null for an operation that doesn’t return a result or an Object with a data member, which will contain the requested object, observing the corresponding schema (see “Data schemas” below). If there’s a collection of objects, data will contain a array of them.
+
+Example “success” response:
+
+{ "data": <dataref> }
+
+// or
+
+{	"data": [<dataref>, <dataref>, <dataref>, ...] }
+
+In case of an error, the corresponding HTTP error code will be returned, along with a payload containing a machine readable error code and a human readable error message. The possible error codes for each API method are detailed under the corresponding documentation for that method.
+
+Note: If you have selected “Disable Incoming Traffic” on the ‘Settings’ screen, all methods will return a “403 Forbidden” HTTP error.
+
+Example “error” response:
+
+{
+    "error_code": "index_out_of_range",
+    "error_message": "Index is out of range"
+}
+
+For Websocket requests
+
+Websocket messages must be sent as JSON formatted plain strings, and have the following shape:
+
+{
+    "req_id": 123,
+    "type": "...",
+    "params": {...},
+}
+
+Where:
+
+    req_id (required) is a Numeric, unique, non-recyclable identifier of the request. The response to the request will contain the same id. Since requests (messages) sent from the client to the server and responses (messages) received from the server are completely asynchronous, this id will prove useful to determine which response belongs to which request.
+    type (required) is a String identifying the operation to perform on the server. If the operation type is not recognized by the server, you’ll get the unknown_type error code.
+    params (optional) is an Object containing the parameters of the operation.
+
+For each valid message you send to the server, the server will send back an object that represents a message of type ”result”, with the success/failure of the operation indicated on the success field, the req_id which will match the one previously sent by the client in the request, and any errors on the error_code and error_message fields.
+
+Example “success” result message:
+
+{
+    "req_id": 123, // id of the corresponding request
+    "type": "result",
+    "success": true,
+}
+
+Example “error” result message:
+
+{
+    "req_id": 123, // id of the corresponding request
+    "type": "result",
+    "success": false,
+    "error_code": "index_out_of_range",
+    "error_message": "Index is out of range"
+}
+
+For more information on how to handle Websocket requests, see this MDN article.
+Data schemas
+
+For now, the only schemas available are <dataref> and <command>. When you request one of these objects, you will get a JSON object with the following format:
+Dataref
+
+This represents a dataref on the simulator.
+
+{
+    "id": 9952311,
+    "name": "sim/cockpit2/gauges/actuators/radio_altimeter_bug_ft_pilot",
+    "value_type": "float", // float, double, int, int_array, float_array, data
+}
+
+    id is a numeric identifier of the dataref for the current session of the simulator. This id will be the way of referring to this dataref if you want to get its value or subscribe to updates. There’s no guarantee that this ID will be the same the next time you start X-Plane, so don’t rely on it across simulator sessions; but within an X-Plane session, even across aircraft loads and unloads it will be stable.
+    name the fully qualified name of the dataref, as used by the simulator and plugins.
+    value_type one of float, double , int, int_array, float_array or data (represented as base64 encoded strings. You must encode the data before sending it and decode it when receiving it).
+
+Note: We have plans to extend this schema to support more data we know about the dataref, such as a human readable description, the dimension (for arrays), read/write status, etc.
+Command
+
+This represents a command on the simulator.
+
+{
+    "id": 2991,
+    "name": "sim/developer/toggle_autopilot_constants",
+    "description": "Toggle the autopilot constants window."
+}
+
+    id is a numeric identifier of the command for the current session of the simulator. This id will be the way of referring to this command if you want to activate it or subscribe to its updates. There’s no guarantee that this id will be the same the next time you start X-Plane, so don’t rely on it across simulator sessions; but within an X-Plane session, even across aircraft loads and unloads it will be stable.
+    name the fully qualified name of the command, as used by the simulator and plugins.
+    description is the human readable description of what the command does.
+
+REST API
+Capabilities (v2+)
+
+GET /api/capabilities
+
+Returns the supported API versions and X-Plane version. Note that this endpoint is NOT versioned, so the request path starts with /api and not /api/v1 or /api/v2 , etc.
+
+Query params: (None)
+
+Success response:
+
+An object containing a api key with the supported versions and a x-plane key with the running X-Plane version.
+
+{
+    "api": {
+        "versions": ["v1","v2","v3"],
+    },
+    "x-plane": {
+        "version": "12.4.0"
+    }
+}
+
+Possible errors: (None)
+List datarefs
+
+GET /datarefs
+
+Returns all registered datarefs in X-Plane at the moment of the request (both built-in and created by third parties).
+
+Query params:
+
+    filter[{field}] (string, repeatable, optional) Specify to filter the dataref list by one or more fields using exact match. Currently the only supported field is name. You can repeat the filters as much times as you need — same filters will be joined by “or” logic, different filters will be joined by “and” logic. Example ?filter[name]=foo&filter[name]=bar&filter[name]=boo&filter[status]=CURRENT means ‘name is (“foo” OR “bar” OR “boo”) AND status is “current”’.
+    start (int, optional) Index from where to start, inclusive (for pagination).
+    limit (int, optional) How many results to return (for pagination).
+    fields (string, optional) Comma separated list of fields to return for each record. You can use this to reduce the data transferred down the wire if you don’t need everything about the dataref: all (default) or a comma separated list of field names as per the Dataref schema.
+
+Note: For now, the only available fields are id, name, value_type.
+
+Success response:
+
+An array of <dataref> (see schema above)
+
+{ "data": [<dataref>, <dataref>, <dataref>, ...] }
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	start_out_of_range 	Start out of range
+400 	limit_out_of_range 	Limit out of range
+400 	invalid_field 	Field {field} does not exist
+404 	invalid_dataref_name 	Dataref {name} doesn’t exist
+Get dataref count
+
+GET /datarefs/count
+
+Returns the amount of registered datarefs in X-Plane at the moment (both built-in and created by third parties).
+
+Query params: (None)
+
+Success response:
+
+An object containing a data member with the dataref count.
+
+{ "data": 9554 }
+
+Possible errors: (None)
+Get Dataref value
+
+GET /datarefs/{id}/value
+
+Returns the current value of a dataref or the value of a member of an array dataref.
+
+Url params:
+
+id (int, required) Id of the dataref to get
+
+Query params:
+
+index (int, optional) index to get on array datarefs.
+
+Success response:
+
+An array of <dataref>
+
+{ "data": [<dataref>, <dataref>, <dataref>, ...] }
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	start_out_of_range 	Start out of range
+400 	limit_out_of_range 	Limit out of range
+400 	invalid_field 	Field {field} does not exist
+404 	invalid_dataref_name 	Dataref {name} doesn’t exist
+Set dataref value
+
+PATCH /datarefs/{id}/value
+
+Set a dataref value. In case of arrays, you can set a specific index of the array at a time, or you can set the whole array at once, but all values must be provided.
+
+Url params:
+
+id (int, required) Id of the dataref to update
+
+Query params:
+
+index (int, optional) index to set on array datarefs.
+
+Body:
+
+data A single item or an array of: <Number>; or a base64 encoded <String>
+
+{ "data": 210 }
+// or
+{	"data": [210, 220, 240] }
+
+Success response:
+
+Just the HTTP code 200 OK. (Empty response)
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	index_out_of_range 	Dataref array index out of range
+400 	not_an_array 	An index was provided but the dataref is not an array
+400 	incompatible_data 	Provided data is too much or not enough to set all elements of the dataref array, or sent an array to write to a non-array dataref.
+400 	invalid_body 	The request body is not valid JSON
+403 	dataref_is_readonly 	Attempted to write to a read-only dataref
+404 	invalid_dataref_id 	Dataref {id} doesn’t exist
+List commands (v2+)
+
+GET /commands
+
+Returns all registered commands in X-Plane at the moment (built-in and third parties).
+
+Query params:
+
+    filter[{field}] (string, repeatable, optional) Specify to filter the command list by one or more fields using exact match. Currently the only supported field is name. You can repeat the filters as much times as you need — same filters will be joined by “or” logic, different filters will be joined by “and” logic. Example ?filter[name]=foo&filter[name]=bar&filter[name]=boo&filter[status]=CURRENT means ‘name is (“foo” OR “bar” OR “boo”) AND status is “current”’.
+    start (int, optional) Index from where to start, inclusive (for pagination).
+    limit (int, optional) How many results to return (for pagination).
+    fields (string, optional) Comma separated list of fields to return for each record. You can use this to reduce the data transferred down the wire if you don’t need everything about the command: all (default) or a comma separated list of field names as per the Command schema (see above)
+
+Success response:
+
+An array of <command> (see schema)
+
+{ "data": [<command>, <command>, <command>, ...] }
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	start_out_of_range 	Start out of range
+400 	limit_out_of_range 	Limit out of range
+400 	invalid_field 	Field {field} does not exist
+404 	invalid_command_name 	Command {name} doesn’t exist
+Activate a command (v2+)
+
+POST /command/{id}/activate
+
+Runs a command for a fixed duration. Commands are invoked by sending a payload to this endpoint with a duration; commands stop after the duration. A zero duration will cause the command to be triggered on and off immediately but not be held down.
+
+The intention of this end-point is to allow applications to send fire-n-forget commands to the simulator, particularly for commands where no duration is needed, e.g. sim/operation/pause . This end-point is not intended to send command up/down sequences, e.g. it is not appropriate for connecting hardware to X-Plane; for more advanced functionality, use the websocket interface.
+
+Url params:
+
+id (int, required) Id of the command to update
+
+Body:
+
+duration A required float time in seconds after which the command will be deactivated.
+
+    If you send a duration greater than zero, the command will be set to active for the specified duration, then it will be deactivated.
+    If you send a duration of 0, the command will be set and immediately unset. Is the equivalent of a press and immediate release of a button, for example.
+    The maximum legal duration is 10 seconds.
+
+     ⚠️ Note: Remember that there might be other clients/connections/plugins/hardware operating on the command at the same time as you, so there are no guarantees about the state a command will be at any particular moment.
+
+    ⚠️ Note: Since X-Plane cannot distinguish between clients of the REST interface, each request has its own duration. So if you POST a 5563/activate with { duration: 10 } then immediately a 5563/activate with { duration: 5} then the command will receive a “release” at 5 seconds from the second call, but it will still be holding for 5 more seconds until the second “release” of the first call. How that affects the results of the command depends on the internal X-Plane command handler, so don’t rely on any particular behavior. TL;DR: don’t send overlapping command invocations.
+
+{ "duration": 0.5 } // press for half a sec
+// or
+{ "duration": 0 } // press & release
+
+Success response:
+
+Just the HTTP code 200 OK. (Empty response)
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	invalid_body 	The request body is not valid JSON
+400 	duration_out_of_range 	Duration is out of valid range.
+400 	duration_missing 	Missing duration parameter
+404 	invalid_command_id 	Command {id} doesn’t exist
+Get command count (v2+)
+
+GET /commands/count
+
+Returns the amount of registered commands in X-Plane at the moment (built-in and third parties).
+
+Query params:
+
+(None)
+
+Success response:
+
+An object containing a data member with the command count.
+
+{ "data": 9554 }
+
+Start a flight (v3+)
+
+POST /flight
+
+Starts a new flight
+
+Query params:
+
+(none)
+
+Body:
+
+data A complete JSON init structure as detailed on the Flight Initialization API documentation.
+
+{	"data": {
+    "ramp_start": {
+        "airport_id": "KPDX",
+        "ramp": "A1"
+    },
+    "aircraft": {
+        "path": "Aircraft/Laminar Research/Boeing 737-800/b738.acf"
+    }
+    }
+}
+
+Success response:
+
+Just the HTTP code 200 OK. (Empty response)
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	invalid_body 	The request body is not valid JSON
+400 	invalid_value 	The value provided for {field_name} is not valid.
+400 	missing_aircraft 	Aircraft {path} doesn’t exist
+400 	missing_livery 	Livery {name} doesn’t exist
+400 	missing_scenery 	All or some scenery for the requested conditions is missing
+Update flight (v3+)
+
+PATCH /flight
+
+Updates the current flight configuration.
+
+Query params:
+
+(none)
+
+Body:
+
+data A complete or partial JSON init structure as detailed on the Flight Initialization API documentation. Note that you cannot change the start location or aircraft during an update.
+
+{	"data": {
+        "local_time": {
+            "day_of_year": 100,
+            "time_in_24_hours": 15.9
+        }
+    }
+}
+
+Success response:
+
+Just the HTTP code 200 OK. (Empty response)
+
+Possible errors:
+HTTP code 	error_code 	error_message
+400 	invalid_body 	The request body is not valid JSON
+400 	invalid_value 	The value provided for {field_name} is not valid.
+400 	missing_aircraft 	Aircraft {path} doesn’t exist
+400 	missing_livery 	Livery {name} doesn’t exist
+400 	missing_scenery 	All or some scenery for the requested conditions is missing
+Websockets API
+Subscribe to dataref value updates
+
+Receives an array of dataref ids to subscribe to. It adds to the list of already subscribed datarefs. The operation is idempotent. A failed subscription event fails all datarefs sent.
+
+Request message:
+
+Send a dataref_subscribe_values message with the list of datarefs you wish to subscribe as an array of objects containing id with the dataref id and optionally index with a index or array of indices you’re interested in getting back.
+
+{
+    "req_id": 9998, // Unique key to know the result later
+    "type": "dataref_subscribe_values",
+    "params": {
+        "datarefs": [ 
+            // only interested in idx 2 of an array dataref
+            { "id": 1223, "index": 2 }, 
+
+            // only interested in idx 0 to 3 of an array dataref
+            { "id": 1224, "index": [0,1,2,3] }, 
+
+            // single value dataref, or return all elements of an array dataref
+            { "id": 1225 }
+        ]
+    }
+}
+
+Note: If you subscribed to certain indexes of the dataref, they’ll be sent in the index order, but no sparse arrays will be sent. For example if you subscribed to indexes [1, 5, 7] you’ll get a 3 item array like [200, 200, 200], meaning you need to remember that the first item of that response corresponds to index 1, the second to index 5 and the third to index 7 of the dataref. This also means that if you subscribe to index 2 and later to index 0 you’ll get them as [0,2]. So bottom line is — keep it simple: either ask for a single index, or a range, or all; and if later your requirements change, unsubscribe, then subscribe again.
+
+Success message:
+
+If the operation succeeded, the server will send a result message indicating so.
+
+{
+    "req_id": 9998, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Update messages:
+
+After a successful subscription, the server will start to push periodically (currently at 10Hz) to the client the following message of type dataref_update_values, containing an object with the dataref id as key and the dataref value as value:
+
+{
+    "type": "dataref_update_values",
+    "data": {
+        "88491": 0,
+        "3994": 5,
+        "199 ": [0, 0, 0, 4],
+        ...
+    }
+}
+
+Note: The message will contain only the datarefs whose values have changed since the last time they were sent. This means the first dataref_update_values message after a subscription will contain the values of all subscribed datarefs, but subsequent messages will only contain the updates.
+
+Possible errors:
+error_code 	error_message
+index_out_of_range 	Dataref {id} array index out of range
+not_an_array 	An index was provided for dataref {id} but the dataref is not an array
+invalid_dataref_id 	Dataref {id} doesn’t exist
+Unsubscribe to dataref value updates
+
+Receives an array of datarefs to stop listening to. It removes them from the list of already subscribed datarefs. The operation is idempotent. If the dataref was not on the list, it’s ignored.
+
+Request message:
+
+Send a dataref_unsubscribe_values message with the list of datarefs you wish to unsubscribe as an array of objects containing id with the dataref id and optionally index with a index or array of indices you’re interested in unsubscribing to.
+
+Instead of an array of datarefs, you could also send the special string "all" if you want to unsubscribe from every dataref you have subscribed.
+
+{
+    "req_id": 1234, // Unique key to know the result later
+    "type": "dataref_unsubscribe_values",
+    "params": {
+        "datarefs": [ 
+            // only unsubscribe to idx 2 of the array dataref
+            { id: 1223, index: 2 }, 
+
+            // only unsubscribe to idx 0 to 3 of the array dataref
+            { id: 1224, index: [0,1,2,3] }, 
+
+            // unsubscribe from a single value dataref, 
+            // or from all indices of an array dataref
+            { id: 1225 }
+        ]
+    }
+    // or
+    "params": { 
+        "datarefs": "all"
+    }
+}
+
+Success message:
+
+The server will return the status of the operation. No further update messages will be received on the client.
+
+{
+    "req_id": 1234, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Possible errors:
+error_code 	error_message
+index_out_of_range 	Dataref {id} array index out of range
+not_an_array 	An index was provided for dataref {id} but the dataref is not an array
+invalid_dataref_id 	Dataref {id} doesn’t exist
+Set dataref values
+
+Set one or more dataref values. In case of array datarefs, you can set a specific index of the array at a time, or you can set the whole array at once, but all values must be provided.
+
+Request message:
+
+Send a dataref_set_values message with the list of the dataref ids to update. The list must contain objects with id for the dataref id, value for the value to set (according to the dataref type) and optionally index to set a single index on an array dataref.
+
+{
+    "req_id": 1234, // Unique key to know the result later
+    "type": "dataref_set_values",
+    "params": {
+        "datarefs": [
+            { "id": 88491, "value": 6 },
+            { "id": 39222, "value": [2, 2, 1, 0] },
+            { "id": 37555, "value": 2, "index": 1 },
+            ...
+        ]
+    }
+}
+
+Success message:
+
+The server will return the status of the operation.
+
+{
+    "req_id": 1234, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Possible errors:
+
+If one or more update operations failed on the server, you’ll receive as many error messages as failed operations.
+error_code 	error_message
+index_out_of_range 	Dataref {id} array index out of range
+not_an_array 	An index was provided for dataref {id} but the dataref is not an array
+insufficient_data 	Provided data for dataref {id} is not enough to set all elements of the dataref array
+invalid_dataref_id 	Dataref {id} doesn’t exist
+Subscribe to command activation updates (v2+)
+
+Receives an array of command ids to subscribe to. It adds to the list of already subscribed commands. The operation is idempotent. A failed subscription event fails all commands sent.
+
+Request:
+
+Send a command_subscribe_is_active message with the list of commands you wish to subscribe as an array of objects containing id with the command ids you’re interested in getting back.
+
+{
+    "req_id": 9998, // Unique key to know the result later
+    "type": "command_subscribe_is_active",
+    "params": {
+    "commands": [
+            { id: 1223 },
+            { id: 1224 },
+            { id: 1225 }
+        ]
+    }
+}
+
+Success response:
+
+If the operation succeeded, the server will send a result message indicating so.
+
+{
+    "req_id": 9998, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Possible errors:
+
+If the operation failed, the server will return a result message with the error codes.
+error_code 	error_message
+invalid_command_id 	Command {id} doesn’t exist
+
+Update messages:
+
+After a successful subscription, the server will push a message any time commands change their status with the following message of type command_update_is_active, containing an object with the command id as key and whether the command is active as a value:
+
+{
+    "type": "command_update_is_active",
+    "data": {
+        "88491": false,
+        "3994": false,
+        "199 ": true,
+        ...
+        }
+}
+
+Unsubscribe to command activation updates (v2+)
+
+Receives an array of commands to stop listening to. It removes them from the list of already subscribed commands. The operation is idempotent. If the commands was not on the list, it’s ignored.
+
+Request:
+
+Send a command_unsubscribe_is_active message with the list of commands you wish to unsubscribe as an array of objects containing id with the command ids you’re interested in unsubscribing to.
+
+Instead of an array of commands, you could also send the string all if you want to unsubscribe from every command you have subscribed.
+
+{
+    "req_id": 1234, // Unique key to know the result later
+    "type": "command_unsubscribe_is_active",
+    "params": {
+        "commands": [
+            { id: 1223 },
+            { id: 1224 },
+            { id: 1225 }
+        ]
+    }
+// or
+"params": {
+        "commands": "all"
+    }
+}
+
+Success response:
+
+The server will return the status of the operation. No further update messages will be received on the client.
+
+{
+    "req_id": 1234, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Possible errors:
+
+{
+    "req_id": 1234, // id of the request operation
+    "type": "result",
+    "success": false,
+    "error_code": "invalid_command_id",
+    "error_message": "command id 88491 doesn't exist"
+}
+
+error_code 	error_message
+invalid_command_id 	Command {id} doesn’t exist
+Set command active (v2+)
+
+Activate or deactivate one or more commands.
+Request:
+
+Send a command_set_is_active message with the list of commands to update.
+
+The list must contain objects with id (int, required) for the command id, is_active (bool, required) for whether the command should be activated and optionally a duration (float, optional) for the time in seconds after which the command will be deactivated. This parameter is only allowed when is_active is true (sets).
+
+    If the command is set to active and you send a duration greater than zero, the command will be set to active for the specified duration, then it will be deactivated.
+    If the command is set to active and you send a duration of 0, the command will be set and immediately unset. Is the equivalent of a press and immediate release of a button, for example.
+    If the command is set to active and no duration is sent, the command will be set to active until is unset again. Internal note: the maximum legal duration is 24 hours.
+
+     ⚠️ Note: Duration has no particular meaning to X-Plane. It’s merely a convenience that’s equivalent of sending a is_active: false after a certain time.
+
+    ⚠️ Note: Remember that there might be other clients/connections/plugins/hardware operating on the command at the same time as you, so there are no guarantees about the state a command will be at any particular moment.
+
+{
+    "req_id": 1234, // Unique key to know the result later
+    "type": "command_set_is_active",
+    "params": {
+    "commands": [
+            {
+                "id": 88491,
+                "is_active": true,
+                "duration": 0.5 // press for half a sec
+            },
+            {
+                "id": 37555,
+                "is_active": true,
+                "duration": 0 // press & release
+            },
+            {
+                "id": 37555,
+                "is_active": true // press & hold forever
+            },
+            {
+                "id": 39222,
+                "is_active": false, // release
+            },
+            ...
+        ]
+    }
+}
+
+Keep in mind:
+
+    Setting active a command that’s already active does nothing. Correspondingly, trying to deactivate a command that’s already inactive will do nothing as well.
+    Setting the duration multiple times for a command changes the duration that is set for that command. So if you first set is_active: true, duration: 10, then you issue a is_active: true, duration: 5 the command will deactivate in 5 seconds. Similarly, setting a longer duration will extend its duration.
+    Deactivating a command with is_active: false will cancel previous durations.
+    Each websocket connection has it’s own book-keeping regarding durations. If your websocket is disconnected, all durations to all commands are erased and the commands will be automatically released.
+
+Success response:
+
+The server will return the status of the operation.
+
+{
+    "req_id": 1234, // id of the corresponding request operation
+    "type": "result",
+    "success": true
+}
+
+Possible errors:
+
+If one or more update operations failed on the server, you’ll receive as many error responses as failed operations.
+
+{
+    "req_id": 1234, // id of the request operation
+    "type": "result",
+    "success": false,
+    "error_code": "invalid_command_id",
+    "error_message": "command id 88491 doesn't exist"
+}
+
+error_code 	error_message
+invalid_command_id 	Command {id} doesn’t exist
+duration_out_of_range 	Duration is out of range
