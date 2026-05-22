@@ -20,6 +20,7 @@ pub struct Config {
     pub open_at_login: bool,
     pub start_minimized: bool,
     pub enable_multiplayer_hubs: bool,
+    pub enable_vatsim_traffic: bool,
 }
 
 impl Config {
@@ -57,6 +58,7 @@ impl Config {
             open_at_login: false,
             start_minimized: false,
             enable_multiplayer_hubs: false,
+            enable_vatsim_traffic: false,
         }
     }
 }
@@ -76,6 +78,7 @@ impl Default for Config {
             open_at_login: false,
             start_minimized: false,
             enable_multiplayer_hubs: false,
+            enable_vatsim_traffic: false,
         }
     }
 }

@@ -7,6 +7,7 @@ mod multiplayer;
 mod runways;
 mod screenshot_manager;
 mod sim_monitor;
+mod vatsim;
 mod webhook_manager;
 
 use std::sync::Arc;
@@ -274,6 +275,11 @@ pub fn run() {
             let multiplayer = Arc::new(MultiplayerManager::new());
             app.manage(multiplayer.clone());
             multiplayer.start(app.handle().clone());
+
+            // Initialize VATSIM Manager
+            let vatsim_manager = Arc::new(vatsim::VatsimManager::new());
+            app.manage(vatsim_manager.clone());
+            vatsim_manager.start(app.handle().clone());
 
             // Start screenshot watcher
             screenshot_manager::start_screenshot_watcher(app.handle().clone());

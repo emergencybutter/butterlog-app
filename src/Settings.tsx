@@ -14,6 +14,7 @@ interface Config {
     openAtLogin: boolean;
     startMinimized: boolean;
     enableMultiplayerHubs: boolean;
+    enableVatsimTraffic: boolean;
 }
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -172,6 +173,16 @@ export function Settings({ onBack }: { onBack: () => void }) {
                         <p style={{ fontSize: "0.85rem", color: "#888", margin: "0 0 0.5rem 0" }}>
                             The app automatically detects and connects to Microsoft Flight Simulator and X-Plane.
                         </p>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.enableVatsimTraffic} 
+                                    onChange={(e) => handleChange("enableVatsimTraffic", e.target.checked)}
+                                /> 
+                                <span>Enable VATSIM Traffic</span>
+                            </label>
+                        </div>
                     </div>
                 </section>
 

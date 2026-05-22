@@ -198,6 +198,7 @@ impl SimConnectMonitor {
         let mut auto_finalized = false;
 
         let mut remote_aircraft: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut last_update_times: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
 
@@ -216,6 +217,7 @@ impl SimConnectMonitor {
 
             // Handle remote aircraft updates
             while let Ok(update) = remote_receiver.try_recv() {
+                last_update_times.insert(update.id.clone(), std::time::Instant::now());
                 if let Some(object_id) = remote_aircraft.get(&update.id) {
                     if *object_id != 0 {
                         let data = RemoteAircraftData {
@@ -998,6 +1000,26 @@ impl SimConnectMonitor {
                     }
                 }
             }
+
+            // Check for timeout of remote aircraft (45 seconds)
+            let now_instant = std::time::Instant::now();
+            let mut to_remove = Vec::new();
+            for (id, last_time) in &last_update_times {
+                if now_instant.duration_since(*last_time) > std::time::Duration::from_secs(45) {
+                    to_remove.push(id.clone());
+                }
+            }
+
+            for id in to_remove {
+                if let Some(object_id) = remote_aircraft.remove(&id) {
+                    if object_id != 0 {
+                        crate::append_log(app, format!("[MSFS] Removing remote aircraft '{}' due to timeout", id));
+                        let _ = sc.ai_remove_object(object_id, 0);
+                    }
+                }
+                last_update_times.remove(&id);
+            }
+
             thread::sleep(Duration::from_millis(50));
         }
         Ok(())
