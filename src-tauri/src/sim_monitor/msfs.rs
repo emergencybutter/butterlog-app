@@ -23,6 +23,8 @@ pub struct SimConnectMonitor {
     connected: Arc<Mutex<bool>>,
     monitoring: Arc<Mutex<bool>>,
     remote_aircraft_sender: Arc<Mutex<Option<std::sync::mpsc::Sender<RemoteAircraftUpdate>>>>,
+    available_aircraft: Arc<Mutex<Vec<String>>>,
+    available_helicopters: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Clone)]
@@ -42,6 +44,8 @@ impl SimConnectMonitor {
             connected: Arc::new(Mutex::new(false)),
             monitoring: Arc::new(Mutex::new(false)),
             remote_aircraft_sender: Arc::new(Mutex::new(None)),
+            available_aircraft: Arc::new(Mutex::new(Vec::new())),
+            available_helicopters: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -55,6 +59,8 @@ impl SimConnectMonitor {
         monitoring: &Arc<Mutex<bool>>,
         remote_receiver: std::sync::mpsc::Receiver<RemoteAircraftUpdate>,
         _requested_log_path: Option<&PathBuf>,
+        available_aircraft: &Arc<Mutex<Vec<String>>>,
+        available_helicopters: &Arc<Mutex<Vec<String>>>,
     ) -> anyhow::Result<()> {
         let define_id = 1;
         let aircraft_define_id = 2;
@@ -66,6 +72,10 @@ impl SimConnectMonitor {
 
         sc.subscribe_to_system_event(event_sim_start, "SimStart")?;
         sc.subscribe_to_system_event(event_sim_stop, "SimStop")?;
+
+        // Enumerate local aircraft and liveries for multiplayer mapping
+        let _ = sc.enumerate_sim_objects_and_liveries(9001, SIMCONNECT_SIMOBJECT_TYPE_SIMCONNECT_SIMOBJECT_TYPE_AIRCRAFT);
+        let _ = sc.enumerate_sim_objects_and_liveries(9002, SIMCONNECT_SIMOBJECT_TYPE_SIMCONNECT_SIMOBJECT_TYPE_HELICOPTER);
 
         // Register all fields for user aircraft
         sc.add_to_data_definition::<f64>(define_id, "PLANE LATITUDE", "degrees")?;
@@ -237,7 +247,16 @@ impl SimConnectMonitor {
                     next_request_id += 1;
                     pending_requests.insert(request_id, update.id.clone());
 
-                    let title = if update.title.is_empty() { "Cessna Skyhawk G1000".to_string() } else { update.title };
+                    let raw_title = if update.title.is_empty() { "Cessna Skyhawk G1000".to_string() } else { update.title };
+                    let title = {
+                        let ac_list = available_aircraft.lock().unwrap();
+                        let hc_list = available_helicopters.lock().unwrap();
+                        let mapped = find_best_multiplayer_model(&raw_title, &ac_list, &hc_list);
+                        if mapped != raw_title {
+                            crate::append_log(app, format!("[MSFS] Mapping remote aircraft '{}' to local model '{}'", raw_title, mapped));
+                        }
+                        mapped
+                    };
                     
                     let init_pos = InitPosition {
                         latitude: update.metrics.latitude,
@@ -262,6 +281,45 @@ impl SimConnectMonitor {
                 if let Some(assigned) = msg.as_assigned_object_id() {
                     if let Some(peer_id) = pending_requests.remove(&assigned.request_id) {
                         remote_aircraft.insert(peer_id, assigned.object_id);
+                    }
+                }
+
+                // Parse available aircraft / helicopter lists from SimConnect
+                if let Some(list) = msg.as_enumerate_simobject_and_livery_list() {
+                    let request_id = list._base.dwRequestID;
+                    let array_size = list._base.dwArraySize as usize;
+                    let entry_number = list._base.dwEntryNumber;
+                    let is_first = entry_number == 0;
+
+                    let entries = unsafe {
+                        std::slice::from_raw_parts(
+                            list.rgData.as_ptr(),
+                            array_size,
+                        )
+                    };
+
+                    if request_id == 9001 {
+                        let mut ac = available_aircraft.lock().unwrap();
+                        if is_first {
+                            ac.clear();
+                        }
+                        for entry in entries {
+                            let title = c_char_array_to_string(&entry.AircraftTitle);
+                            if !title.is_empty() && !ac.contains(&title) {
+                                ac.push(title);
+                            }
+                        }
+                    } else if request_id == 9002 {
+                        let mut hc = available_helicopters.lock().unwrap();
+                        if is_first {
+                            hc.clear();
+                        }
+                        for entry in entries {
+                            let title = c_char_array_to_string(&entry.AircraftTitle);
+                            if !title.is_empty() && !hc.contains(&title) {
+                                hc.push(title);
+                            }
+                        }
                     }
                 }
 
@@ -946,6 +1004,123 @@ impl SimConnectMonitor {
     }
 }
 
+fn c_char_array_to_string(arr: &[std::os::raw::c_char; 256]) -> String {
+    let bytes: Vec<u8> = arr.iter().map(|&c| c as u8).collect();
+    String::from_utf8_lossy(&bytes)
+        .split('\0')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+fn is_helicopter_title(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    lower.contains("helicopter")
+        || lower.contains("heli")
+        || lower.contains("rotor")
+        || lower.contains("bell")
+        || lower.contains("cabri")
+        || lower.contains("robinson")
+        || lower.contains("h125")
+        || lower.contains("h135")
+        || lower.contains("h145")
+        || lower.contains("chinook")
+        || lower.contains("sikorsky")
+        || lower.contains("g2 cabri")
+        || lower.contains("coptr")
+}
+
+fn share_significant_keyword(a: &str, b: &str) -> bool {
+    let a_words: Vec<String> = a.split(|c: char| !c.is_alphanumeric())
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() > 2 && w != "helicopter" && w != "heli" && w != "aircraft" && w != "plane")
+        .collect();
+
+    for w in b.split(|c: char| !c.is_alphanumeric()) {
+        let wl = w.to_lowercase();
+        if a_words.contains(&wl) {
+            return true;
+        }
+    }
+    false
+}
+
+fn find_best_multiplayer_model(
+    remote_title: &str,
+    available_aircraft: &[String],
+    available_helicopters: &[String],
+) -> String {
+    let remote_lower = remote_title.to_lowercase();
+
+    // 1. Check for case-insensitive exact match in aircraft
+    for ac in available_aircraft {
+        if ac.to_lowercase() == remote_lower {
+            return ac.clone();
+        }
+    }
+
+    // 2. Check for case-insensitive exact match in helicopters
+    for hc in available_helicopters {
+        if hc.to_lowercase() == remote_lower {
+            return hc.clone();
+        }
+    }
+
+    // 3. If it looks like a helicopter, try matching or falling back to a helicopter first
+    let is_hc = is_helicopter_title(remote_title);
+    if is_hc && !available_helicopters.is_empty() {
+        // Try substring match in helicopters
+        for hc in available_helicopters {
+            let hc_lower = hc.to_lowercase();
+            if hc_lower.contains(&remote_lower) || remote_lower.contains(&hc_lower) {
+                return hc.clone();
+            }
+        }
+        // Try keyword match in helicopters
+        for hc in available_helicopters {
+            if share_significant_keyword(remote_title, hc) {
+                return hc.clone();
+            }
+        }
+        // If no match, fall back to the first available helicopter
+        return available_helicopters[0].clone();
+    }
+
+    // 4. Try keyword substring matches against available aircraft
+    if !available_aircraft.is_empty() {
+        for ac in available_aircraft {
+            let ac_lower = ac.to_lowercase();
+            if ac_lower.contains(&remote_lower) || remote_lower.contains(&ac_lower) {
+                return ac.clone();
+            }
+        }
+        // Try keyword match in aircraft
+        for ac in available_aircraft {
+            if share_significant_keyword(remote_title, ac) {
+                return ac.clone();
+            }
+        }
+    }
+
+    // 5. Fallback cascade
+    if !available_aircraft.is_empty() {
+        for ac in available_aircraft {
+            let ac_low = ac.to_lowercase();
+            if ac_low.contains("cessna skyhawk") || ac_low.contains("172") {
+                return ac.clone();
+            }
+        }
+        return available_aircraft[0].clone();
+    }
+
+    if !available_helicopters.is_empty() {
+        return available_helicopters[0].clone();
+    }
+
+    "Cessna Skyhawk G1000".to_string()
+}
+
 impl SimMonitor for SimConnectMonitor {
     fn id(&self) -> &'static str { "msfs" }
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -960,9 +1135,13 @@ impl SimMonitor for SimConnectMonitor {
         let connected_clone = self.connected.clone();
         let monitoring_clone = self.monitoring.clone();
         let remote_aircraft_sender = self.remote_aircraft_sender.clone();
+        let available_aircraft = self.available_aircraft.clone();
+        let available_helicopters = self.available_helicopters.clone();
         
         thread::spawn({
             let app = app.clone();
+            let available_aircraft = available_aircraft.clone();
+            let available_helicopters = available_helicopters.clone();
             move || loop {
                 if !*running_clone.lock().unwrap() { break; }
                 match SimConnect::open("ButterLogV2") {
@@ -976,7 +1155,19 @@ impl SimMonitor for SimConnectMonitor {
                              *sender = Some(tx);
                         }
 
-                        let _ = Self::run_monitor(&app, sc, &metrics, &aircraft_info, &current_flight_id, &running_clone, &monitoring_clone, rx, log_path.as_ref());
+                        let _ = Self::run_monitor(
+                            &app, 
+                            sc, 
+                            &metrics, 
+                            &aircraft_info, 
+                            &current_flight_id, 
+                            &running_clone, 
+                            &monitoring_clone, 
+                            rx, 
+                            log_path.as_ref(),
+                            &available_aircraft,
+                            &available_helicopters,
+                        );
                         { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
                         { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
                     }
@@ -1004,3 +1195,72 @@ impl SimMonitor for SimConnectMonitor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_best_multiplayer_model() {
+        let available_aircraft = vec![
+            "Cessna Skyhawk G1000".to_string(),
+            "Boeing 737-800".to_string(),
+            "Airbus A320neo".to_string(),
+        ];
+        let available_helicopters = vec![
+            "Cabri G2".to_string(),
+            "Bell 407".to_string(),
+        ];
+
+        // Exact match
+        assert_eq!(
+            find_best_multiplayer_model("Boeing 737-800", &available_aircraft, &available_helicopters),
+            "Boeing 737-800"
+        );
+
+        // Case-insensitive match
+        assert_eq!(
+            find_best_multiplayer_model("boeing 737-800", &available_aircraft, &available_helicopters),
+            "Boeing 737-800"
+        );
+
+        // Helicopter exact match
+        assert_eq!(
+            find_best_multiplayer_model("Bell 407", &available_aircraft, &available_helicopters),
+            "Bell 407"
+        );
+
+        // Helicopter keyword fallback
+        assert_eq!(
+            find_best_multiplayer_model("Bell 206 Helicopter", &available_aircraft, &available_helicopters),
+            "Bell 407"
+        );
+
+        // Helicopter generic fallback
+        assert_eq!(
+            find_best_multiplayer_model("Rotorway Heli", &available_aircraft, &available_helicopters),
+            "Cabri G2"
+        );
+
+        // Substring aircraft match
+        assert_eq!(
+            find_best_multiplayer_model("A320", &available_aircraft, &available_helicopters),
+            "Airbus A320neo"
+        );
+
+        // Sensible aircraft default fallback
+        assert_eq!(
+            find_best_multiplayer_model("F-18 Hornet", &available_aircraft, &available_helicopters),
+            "Cessna Skyhawk G1000"
+        );
+
+        // Ultimate fallback
+        let empty_ac = vec![];
+        let empty_hc = vec![];
+        assert_eq!(
+            find_best_multiplayer_model("F-18 Hornet", &empty_ac, &empty_hc),
+            "Cessna Skyhawk G1000"
+        );
+    }
+}
+
