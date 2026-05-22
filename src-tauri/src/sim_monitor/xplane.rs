@@ -708,4 +708,5 @@ impl SimMonitor for XPlaneMonitor {
     fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
     fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
+    fn update_remote_aircraft(&self, _id: &str, _title: &str, _metrics: &FlightMetrics) {}
 }

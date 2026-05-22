@@ -50,11 +50,18 @@ impl MultiplayerManager {
                 let mut buf = [0u8; 4096];
                 loop {
                     match recv_socket.recv_from(&mut buf) {
-                        Ok((size, _addr)) => {
-                            // For now we just log that we received something
-                            // In a real scenario we'd parse the FlightMetrics
-                            let _data = &buf[..size];
-                            // crate::append_log(&recv_app, format!("[Multiplayer] Received {} bytes from {}", size, addr));
+                        Ok((size, addr)) => {
+                            let data = &buf[..size];
+                            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(data) {
+                                if let (Some(aircraft), Some(metrics_val)) = (payload["aircraft"].as_str(), payload.get("metrics")) {
+                                    if let Ok(metrics) = serde_json::from_value::<FlightMetrics>(metrics_val.clone()) {
+                                        let monitor = recv_app.state::<UnifiedMonitor>();
+                                        if let Some(m) = monitor.get_connected_monitor() {
+                                            m.update_remote_aircraft(&addr.to_string(), aircraft, &metrics);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             std::thread::sleep(Duration::from_millis(10));

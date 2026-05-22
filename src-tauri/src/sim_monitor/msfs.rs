@@ -22,6 +22,14 @@ pub struct SimConnectMonitor {
     running: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
     monitoring: Arc<Mutex<bool>>,
+    remote_aircraft_sender: Arc<Mutex<Option<std::sync::mpsc::Sender<RemoteAircraftUpdate>>>>,
+}
+
+#[derive(Clone)]
+pub struct RemoteAircraftUpdate {
+    pub id: String,
+    pub title: String,
+    pub metrics: FlightMetrics,
 }
 
 impl SimConnectMonitor {
@@ -33,6 +41,7 @@ impl SimConnectMonitor {
             running: Arc::new(Mutex::new(false)),
             connected: Arc::new(Mutex::new(false)),
             monitoring: Arc::new(Mutex::new(false)),
+            remote_aircraft_sender: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -44,10 +53,12 @@ impl SimConnectMonitor {
         current_flight_id_mutex: &Arc<Mutex<String>>,
         running: &Arc<Mutex<bool>>,
         monitoring: &Arc<Mutex<bool>>,
+        remote_receiver: std::sync::mpsc::Receiver<RemoteAircraftUpdate>,
         _requested_log_path: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
         let define_id = 1;
         let aircraft_define_id = 2;
+        let remote_define_id = 3;
         let request_id = 1;
         let aircraft_request_id = 2;
         let event_sim_start = 1;
@@ -56,7 +67,7 @@ impl SimConnectMonitor {
         sc.subscribe_to_system_event(event_sim_start, "SimStart")?;
         sc.subscribe_to_system_event(event_sim_stop, "SimStop")?;
 
-        // Register all fields
+        // Register all fields for user aircraft
         sc.add_to_data_definition::<f64>(define_id, "PLANE LATITUDE", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "PLANE LONGITUDE", "degrees")?;
         sc.add_to_data_definition::<f64>(define_id, "INDICATED ALTITUDE", "feet")?;
@@ -129,6 +140,26 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for gear ratio
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
+
+        // Define data structure for remote aircraft
+        #[repr(C)]
+        #[derive(Debug, Clone, Copy)]
+        struct RemoteAircraftData {
+            latitude: f64,
+            longitude: f64,
+            altitude: f64,
+            pitch: f64,
+            bank: f64,
+            heading: f64,
+        }
+
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LONGITUDE", "degrees")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE ALTITUDE", "feet")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE PITCH DEGREES", "degrees")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE BANK DEGREES", "degrees")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
+
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
         sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND)?;
@@ -154,6 +185,10 @@ impl SimConnectMonitor {
         let mut touchdown_update_done = false;
         let mut auto_finalized = false;
 
+        let mut remote_aircraft: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut next_request_id: u32 = 1000;
+
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
 
@@ -167,7 +202,73 @@ impl SimConnectMonitor {
                 break;
             }
 
+            // Handle remote aircraft updates
+            while let Ok(update) = remote_receiver.try_recv() {
+                if let Some(object_id) = remote_aircraft.get(&update.id) {
+                    if *object_id != 0 {
+                        let data = RemoteAircraftData {
+                            latitude: update.metrics.latitude,
+                            longitude: update.metrics.longitude,
+                            altitude: update.metrics.gps_altitude_msl,
+                            pitch: update.metrics.pitch_angle,
+                            bank: update.metrics.roll_angle,
+                            heading: update.metrics.heading,
+                        };
+                        
+                        unsafe {
+                            let handle: HANDLE = std::mem::transmute_copy(&sc);
+                            let _ = SimConnect_SetDataOnSimObject(
+                                handle,
+                                remote_define_id,
+                                *object_id,
+                                0,
+                                0,
+                                std::mem::size_of::<RemoteAircraftData>() as DWORD,
+                                std::mem::transmute(&data),
+                            );
+                        }
+                    }
+                } else {
+                    // Create new AI aircraft
+                    remote_aircraft.insert(update.id.clone(), 0); // Mark as pending
+                    let request_id = next_request_id;
+                    next_request_id += 1;
+                    pending_requests.insert(request_id, update.id.clone());
+
+                    let title = if update.title.is_empty() { "Cessna Skyhawk G1000".to_string() } else { update.title };
+                    
+                    let init_pos = InitPosition {
+                        latitude: update.metrics.latitude,
+                        longitude: update.metrics.longitude,
+                        altitude: update.metrics.gps_altitude_msl,
+                        pitch: update.metrics.pitch_angle,
+                        bank: update.metrics.roll_angle,
+                        heading: update.metrics.heading,
+                        on_ground: if update.metrics.is_on_ground > 0.5 { 1 } else { 0 },
+                        airspeed: update.metrics.indicated_airspeed as i32,
+                    };
+                    let _ = sc.ai_create_non_atc_aircraft(&title, "N-BUTTER", init_pos, request_id);
+                }
+            }
+
             while let Some(msg) = sc.get_next_dispatch()? {
+                if msg.is_quit() {
+                    return Ok(());
+                }
+                
+                // Track assigned object IDs
+                if let Some(assigned) = msg.as_assigned_object_id() {
+                    if let Some(peer_id) = pending_requests.remove(&assigned.request_id) {
+                        remote_aircraft.insert(peer_id, assigned.object_id);
+                    }
+                }
+
+                if msg.is_quit() {
+                    return Ok(());
+                }
+                
+                // ... (rest of the handle loop)
+
                 if msg.is_quit() {
                     return Ok(());
                 }
@@ -809,25 +910,38 @@ impl SimMonitor for SimConnectMonitor {
         let mut running = self.running.lock().unwrap();
         if *running { return Ok(()); }
         *running = true;
+        
         let metrics = self.metrics.clone();
         let aircraft_info = self.aircraft_info.clone();
         let current_flight_id = self.current_flight_id.clone();
         let running_clone = self.running.clone();
         let connected_clone = self.connected.clone();
         let monitoring_clone = self.monitoring.clone();
-        thread::spawn(move || loop {
-            if !*running_clone.lock().unwrap() { break; }
-            match SimConnect::open("ButterLogV2") {
-                Ok(sc) => {
-                    crate::append_log(&app, format!("[{}] Successfully connected to MSFS.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
-                    { let mut connected = connected_clone.lock().unwrap(); *connected = true; }
-                    let _ = Self::run_monitor(&app, sc, &metrics, &aircraft_info, &current_flight_id, &running_clone, &monitoring_clone, log_path.as_ref());
-                    { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
-                    { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
+        let remote_aircraft_sender = self.remote_aircraft_sender.clone();
+        
+        thread::spawn({
+            let app = app.clone();
+            move || loop {
+                if !*running_clone.lock().unwrap() { break; }
+                match SimConnect::open("ButterLogV2") {
+                    Ok(sc) => {
+                        crate::append_log(&app, format!("[{}] Successfully connected to MSFS.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
+                        { let mut connected = connected_clone.lock().unwrap(); *connected = true; }
+                        
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        {
+                             let mut sender = remote_aircraft_sender.lock().unwrap();
+                             *sender = Some(tx);
+                        }
+
+                        let _ = Self::run_monitor(&app, sc, &metrics, &aircraft_info, &current_flight_id, &running_clone, &monitoring_clone, rx, log_path.as_ref());
+                        { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
+                        { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
+                    }
+                    Err(_) => {}
                 }
-                Err(_) => {}
+                thread::sleep(Duration::from_secs(1));
             }
-            thread::sleep(Duration::from_secs(1));
         });
         Ok(())
     }
@@ -837,4 +951,14 @@ impl SimMonitor for SimConnectMonitor {
     fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
     fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
+    fn update_remote_aircraft(&self, id: &str, title: &str, metrics: &FlightMetrics) {
+        let sender = self.remote_aircraft_sender.lock().unwrap();
+        if let Some(tx) = sender.as_ref() {
+            let _ = tx.send(RemoteAircraftUpdate {
+                id: id.to_string(),
+                title: title.to_string(),
+                metrics: *metrics,
+            });
+        }
+    }
 }

@@ -57,6 +57,9 @@ impl WebhookManager {
             None => return,
         };
 
+        let config = app.state::<crate::config::ConfigManager>().get_config();
+        let multiplayer_enabled = config.enable_multiplayer_hubs;
+
         let mut current_id = self.current_remote_id.lock().unwrap().clone();
         let last_time = self.last_update_time.lock().unwrap().clone();
 
@@ -93,7 +96,8 @@ impl WebhookManager {
                 let url = format!("{}/flights/{}", base_url, id);
                 let body = serde_json::json!({
                     "arrival": summary.arrival.icao,
-                    "statistics": summary
+                    "statistics": summary,
+                    "multiplayer_enabled": multiplayer_enabled
                 });
 
                 match self.client.put(&url).json(&body).send().await {
@@ -121,7 +125,8 @@ impl WebhookManager {
                 let url = format!("{}/flights", base_url);
                 let body = serde_json::json!({
                     "departure": summary.departure.icao,
-                    "statistics": summary
+                    "statistics": summary,
+                    "multiplayer_enabled": multiplayer_enabled
                 });
 
                 match self.client.post(&url).json(&body).send().await {
