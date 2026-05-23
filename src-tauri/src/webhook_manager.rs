@@ -59,6 +59,13 @@ impl WebhookManager {
 
         let config = app.state::<crate::config::ConfigManager>().get_config();
         let multiplayer_enabled = config.enable_multiplayer_hubs;
+        let inject_traffic = config.inject_butterlog_traffic;
+
+        let udp_address = if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
+            multiplayer.get_public_address().map(|addr| addr.to_string())
+        } else {
+            None
+        };
 
         let mut current_id = self.current_remote_id.lock().unwrap().clone();
         let last_time = self.last_update_time.lock().unwrap().clone();
@@ -97,7 +104,8 @@ impl WebhookManager {
                 let body = serde_json::json!({
                     "arrival": summary.arrival.icao,
                     "statistics": summary,
-                    "multiplayer_enabled": multiplayer_enabled
+                    "multiplayer_enabled": multiplayer_enabled || inject_traffic,
+                    "udp_address": udp_address
                 });
 
                 match self.client.put(&url).json(&body).send().await {
@@ -126,7 +134,8 @@ impl WebhookManager {
                 let body = serde_json::json!({
                     "departure": summary.departure.icao,
                     "statistics": summary,
-                    "multiplayer_enabled": multiplayer_enabled
+                    "multiplayer_enabled": multiplayer_enabled || inject_traffic,
+                    "udp_address": udp_address
                 });
 
                 match self.client.post(&url).json(&body).send().await {

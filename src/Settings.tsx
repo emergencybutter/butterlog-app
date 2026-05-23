@@ -15,6 +15,7 @@ interface Config {
     startMinimized: boolean;
     enableMultiplayerHubs: boolean;
     enableVatsimTraffic: boolean;
+    injectButterlogTraffic: boolean;
 }
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -181,6 +182,16 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                     onChange={(e) => handleChange("enableVatsimTraffic", e.target.checked)}
                                 /> 
                                 <span>Enable VATSIM Traffic</span>
+                            </label>
+                        </div>
+                        <div className="setting-control">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.injectButterlogTraffic} 
+                                    onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
+                                /> 
+                                <span>Inject traffic from other butterlog users</span>
                             </label>
                         </div>
                     </div>
