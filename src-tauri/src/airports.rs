@@ -88,7 +88,7 @@ impl AirportsDatabase {
 
             // If the airport has valid coordinates and is NOT closed, add it to the list for spatial indexing.
             if let (Some(lat), Some(lon)) = (airport.latitude_deg, airport.longitude_deg) {
-                if airport.airport_type != "closed" && airport.airport_type != "heliport" {
+                if airport.airport_type != "closed" && airport.airport_type != "heliport" && airport.airport_type != "seaplane_base" {
                     airport_locations.push(AirportLocation {
                         index,
                         coords: lat_lon_to_cartesian(lat, lon),
