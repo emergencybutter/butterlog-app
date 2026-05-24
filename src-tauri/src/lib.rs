@@ -7,7 +7,6 @@ mod multiplayer;
 mod runways;
 mod screenshot_manager;
 mod sim_monitor;
-mod vatsim;
 mod webhook_manager;
 
 use std::sync::Arc;
@@ -213,6 +212,105 @@ async fn upload_screenshot(
     screenshot_manager::perform_screenshot_upload(app, screenshot_id, flight_id).await
 }
 
+#[tauri::command]
+async fn start_discord_login(app: AppHandle) -> Result<String, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // 1. Bind to localhost on random free port
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind to local port: {}", e))?;
+    let port = listener.local_addr().map_err(|e| format!("Failed to get local port: {}", e))?.port();
+    
+    // 2. Open default browser
+    let login_url = format!("https://butterlog.flyvoyager.net/login?port={}", port);
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_path(&login_url, None::<String>).map_err(|e| format!("Failed to open browser: {}", e))?;
+    
+    // 3. Await one connection with timeout of 120s
+    let listen_future = async move {
+        let (mut stream, _) = listener.accept().await?;
+        
+        let mut buffer = [0; 2048];
+        let n = stream.read(&mut buffer).await?;
+        let request_str = String::from_utf8_lossy(&buffer[..n]);
+        
+        // Parse GET /?token=XYZ HTTP/1.1
+        let mut token = None;
+        if let Some(first_line) = request_str.lines().next() {
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let path = parts[1];
+                if let Some(pos) = path.find("token=") {
+                    let t = &path[pos + 6..];
+                    let end_pos = t.find('&').unwrap_or(t.len());
+                    token = Some(t[..end_pos].to_string());
+                }
+            }
+        }
+        
+        if let Some(t) = token {
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
+                <!DOCTYPE html>\
+                <html>\
+                <head>\
+                    <title>Logged In</title>\
+                    <style>\
+                        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1e1e2e; color: #cdd6f4; text-align: center; padding-top: 100px; margin: 0; }\
+                        .card { display: inline-block; background: #313244; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }\
+                        h1 { color: #a6e3a1; margin-top: 0; }\
+                        p { color: #a6adc8; }\
+                    </style>\
+                </head>\
+                <body>\
+                    <div class='card'>\
+                        <h1>Login Successful!</h1>\
+                        <p>You can close this tab and return to the ButterLog app.</p>\
+                    </div>\
+                </body>\
+                </html>";
+            stream.write_all(response.as_bytes()).await?;
+            Ok(t)
+        } else {
+            let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
+                <!DOCTYPE html>\
+                <html>\
+                <head>\
+                    <title>Login Failed</title>\
+                    <style>\
+                        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1e1e2e; color: #f38ba8; text-align: center; padding-top: 100px; margin: 0; }\
+                        .card { display: inline-block; background: #313244; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }\
+                        h1 { color: #f38ba8; margin-top: 0; }\
+                        p { color: #a6adc8; }\
+                    </style>\
+                </head>\
+                <body>\
+                    <div class='card'>\
+                        <h1>Login Failed</h1>\
+                        <p>No token could be extracted from the login redirect.</p>\
+                    </div>\
+                </body>\
+                </html>";
+            stream.write_all(response.as_bytes()).await?;
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "No token found"))
+        }
+    };
+    
+    match tokio::time::timeout(std::time::Duration::from_secs(120), listen_future).await {
+        Ok(Ok(token)) => {
+            // Save to configuration
+            let state = app.state::<ConfigManager>();
+            let mut current_config = state.get_config();
+            current_config.webhook_url = format!("https://butterlog.flyvoyager.net/api/v0/users/{}", token);
+            current_config.enable_webhook = true;
+            state.update_config(current_config).map_err(|e| format!("Failed to save config: {}", e))?;
+            Ok(token)
+        }
+        Ok(Err(e)) => Err(format!("Login failed: {}", e)),
+        Err(_) => Err("Login timed out after 2 minutes. Please try again.".to_string()),
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(app: AppHandle, name: &str) -> String {
@@ -276,10 +374,7 @@ pub fn run() {
             app.manage(multiplayer.clone());
             multiplayer.start(app.handle().clone());
 
-            // Initialize VATSIM Manager
-            let vatsim_manager = Arc::new(vatsim::VatsimManager::new());
-            app.manage(vatsim_manager.clone());
-            vatsim_manager.start(app.handle().clone());
+
 
             // Start screenshot watcher
             screenshot_manager::start_screenshot_watcher(app.handle().clone());
@@ -429,6 +524,7 @@ pub fn run() {
             get_current_flight_id,
             get_remote_id,
             upload_screenshot,
+            start_discord_login,
             get_config,
             set_config,
             get_config_async,
