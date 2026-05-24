@@ -5,7 +5,6 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 interface Config {
     logDirectory: string | null;
     screenshotDirectory: string | null;
-    geotagScreenshots: boolean;
     screenshotRegexEnabled: boolean;
     screenshotRegex: string;
     autoUploadScreenshots: boolean;
@@ -183,16 +182,6 @@ export function Settings({ onBack }: { onBack: () => void }) {
                 <section>
                     <h4>Screenshots</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <div className="setting-control">
-                            <label>
-                                <input 
-                                    type="checkbox" 
-                                    checked={config.geotagScreenshots} 
-                                    onChange={(e) => handleChange("geotagScreenshots", e.target.checked)}
-                                /> 
-                                <span>Geotag Screenshots</span>
-                            </label>
-                        </div>
                         <div className="setting-control">
                             <label>
                                 <input 

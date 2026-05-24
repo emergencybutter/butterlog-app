@@ -11,7 +11,6 @@ use tauri::Manager;
 pub struct Config {
     pub log_directory: Option<PathBuf>,
     pub screenshot_directory: Option<PathBuf>,
-    pub geotag_screenshots: bool,
     pub screenshot_regex_enabled: bool,
     pub screenshot_regex: String,
     pub auto_upload_screenshots: bool,
@@ -49,7 +48,6 @@ impl Config {
         Self {
             log_directory: Some(log_dir),
             screenshot_directory: screenshot_dir,
-            geotag_screenshots: false,
             screenshot_regex_enabled: true,
             screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
@@ -69,7 +67,6 @@ impl Default for Config {
         Self {
             log_directory: None,
             screenshot_directory: None,
-            geotag_screenshots: false,
             screenshot_regex_enabled: true,
             screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
