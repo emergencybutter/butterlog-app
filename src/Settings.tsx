@@ -223,31 +223,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
                     </div>
                 </section>
 
-                <section>
-                    <h4>Simulator</h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <p style={{ fontSize: "0.85rem", color: "#888", margin: "0 0 0.5rem 0" }}>
-                            The app automatically detects and connects to Microsoft Flight Simulator and X-Plane.
-                        </p>
 
-                        <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
-                            <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
-                                <input 
-                                    type="checkbox" 
-                                    checked={config.injectButterlogTraffic} 
-                                    onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
-                                    disabled={!isLoggedIn}
-                                /> 
-                                <span>Inject traffic from other butterlog users</span>
-                            </label>
-                            {!isLoggedIn && (
-                                <span style={{ fontSize: "0.75rem", color: "#f38ba8", marginLeft: "28px", display: "block", marginTop: "2px" }}>
-                                    Requires connection to ButterLog service.
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </section>
 
                 <section>
                     <h4>ButterLog Service Authentication</h4>
@@ -379,6 +355,22 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                         "Connect with Discord"
                                     )}
                                 </button>
+                            )}
+                        </div>
+                        <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                            <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={config.injectButterlogTraffic} 
+                                    onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
+                                    disabled={!isLoggedIn}
+                                /> 
+                                <span>Inject traffic from other butterlog users</span>
+                            </label>
+                            {!isLoggedIn && (
+                                <span style={{ fontSize: "0.75rem", color: "#f38ba8", marginLeft: "28px", display: "block", marginTop: "2px" }}>
+                                    Requires connection to ButterLog service.
+                                </span>
                             )}
                         </div>
                         <p style={{ fontSize: "0.8rem", color: "#888", margin: "0", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.5rem" }}>
