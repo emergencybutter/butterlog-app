@@ -790,6 +790,11 @@ impl SimMonitor for XPlaneMonitor {
                     connected_clone.clone(),
                     monitoring_clone.clone(),
                 ).await;
+                { let mut m = metrics.lock().unwrap(); *m = FlightMetrics::default(); }
+                { let mut info = aircraft_info.lock().unwrap(); *info = crate::models::AircraftInfo::default(); }
+                { let mut fid = current_flight_id.lock().unwrap(); *fid = "".to_string(); }
+                { let mut c = connected_clone.lock().unwrap(); *c = false; }
+                { let mut m = monitoring_clone.lock().unwrap(); *m = false; }
                 // Retry after 5 seconds if disconnected
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }

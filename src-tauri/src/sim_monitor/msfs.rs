@@ -1397,6 +1397,9 @@ impl SimMonitor for SimConnectMonitor {
                         );
                         { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
                         { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
+                        { let mut m = metrics.lock().unwrap(); *m = FlightMetrics::default(); }
+                        { let mut info = aircraft_info.lock().unwrap(); *info = AircraftInfo::default(); }
+                        { let mut fid = current_flight_id.lock().unwrap(); *fid = "".to_string(); }
                     }
                     Err(_) => {}
                 }
