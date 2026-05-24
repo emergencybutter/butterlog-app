@@ -12,6 +12,11 @@ const STUN_TX_ID: [u8; 12] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78, 0x
 struct TrackedAircraft {
     last_seen: std::time::Instant,
     aircraft: String,
+    atc_model: String,
+    object_class: String,
+    category: String,
+    num_engines: i32,
+    engine_type: String,
     metrics: FlightMetrics,
 }
 
@@ -130,6 +135,12 @@ impl MultiplayerManager {
                                 if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(data) {
                                     if let (Some(aircraft), Some(metrics_val)) = (payload["aircraft"].as_str(), payload.get("metrics")) {
                                         if let Ok(metrics) = serde_json::from_value::<FlightMetrics>(metrics_val.clone()) {
+                                            let atc_model = payload.get("atc_model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            let object_class = payload.get("object_class").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            let category = payload.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            let num_engines = payload.get("num_engines").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                                            let engine_type = payload.get("engine_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
                                             let config = recv_app.state::<ConfigManager>().get_config();
                                             let monitor = recv_app.state::<UnifiedMonitor>();
                                             
@@ -152,18 +163,41 @@ impl MultiplayerManager {
                                                                 tracked.insert(addr.to_string(), TrackedAircraft {
                                                                     last_seen: std::time::Instant::now(),
                                                                     aircraft: aircraft.to_string(),
+                                                                    atc_model: atc_model.clone(),
+                                                                    object_class: object_class.clone(),
+                                                                    category: category.clone(),
+                                                                    num_engines,
+                                                                    engine_type: engine_type.clone(),
                                                                     metrics,
                                                                 });
                                                                 
                                                                 // Instantly feed update to simulator
-                                                                m.update_remote_aircraft(&addr.to_string(), aircraft, &metrics);
+                                                                m.update_remote_aircraft(
+                                                                    &addr.to_string(),
+                                                                    aircraft,
+                                                                    &atc_model,
+                                                                    &object_class,
+                                                                    &category,
+                                                                    num_engines,
+                                                                    &engine_type,
+                                                                    &metrics,
+                                                                );
                                                             }
                                                         }
                                                     }
                                                 }
                                             } else if config.enable_multiplayer_hubs {
                                                 if let Some(m) = monitor.get_connected_monitor() {
-                                                    m.update_remote_aircraft(&addr.to_string(), aircraft, &metrics);
+                                                    m.update_remote_aircraft(
+                                                        &addr.to_string(),
+                                                        aircraft,
+                                                        &atc_model,
+                                                        &object_class,
+                                                        &category,
+                                                        num_engines,
+                                                        &engine_type,
+                                                        &metrics,
+                                                    );
                                                 }
                                             }
                                         }
@@ -269,6 +303,11 @@ impl MultiplayerManager {
 
                         let payload = serde_json::json!({
                             "aircraft": aircraft.title,
+                            "atc_model": aircraft.atc_model,
+                            "object_class": aircraft.object_class,
+                            "category": aircraft.category,
+                            "num_engines": aircraft.num_engines,
+                            "engine_type": aircraft.engine_type,
                             "metrics": metrics
                         });
 
@@ -315,8 +354,8 @@ mod tests {
         buf[25] = 0x01;
         // Port = 4902 (0x1326) XOR 0x2112 = 0x3234
         buf[26..28].copy_from_slice(&0x3234u16.to_be_bytes());
-        // IP = 192.168.1.100 (0xC0A80164) XOR 0x2112A442 = 0xE1BAB526
-        buf[28..32].copy_from_slice(&0xE1BAB526u32.to_be_bytes());
+        // IP = 192.168.1.100 (0xC0A80164) XOR 0x2112A442 = 0xE1BAA526
+        buf[28..32].copy_from_slice(&0xE1BAA526u32.to_be_bytes());
 
         // Parse attributes manually like in the receiver loop
         let size = buf.len();

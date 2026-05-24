@@ -4,6 +4,7 @@ use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportIn
 use crate::sim_monitor::{calculate_distance, SimMonitor};
 use crate::webhook_manager::WebhookManager;
 use crate::runways::RunwaysDatabase;
+use crate::aircraft_characteristics::{AircraftCharacteristic, CharacteristicsDatabase};
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use simplesimconnect::*;
@@ -31,6 +32,11 @@ pub struct SimConnectMonitor {
 pub struct RemoteAircraftUpdate {
     pub id: String,
     pub title: String,
+    pub atc_model: String,
+    pub object_class: String,
+    pub category: String,
+    pub num_engines: i32,
+    pub engine_type: String,
     pub metrics: FlightMetrics,
 }
 
@@ -152,6 +158,10 @@ impl SimConnectMonitor {
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC MODEL")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC ID")?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "AIRCRAFT OBJECT CLASS")?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "CATEGORY")?;
+        sc.add_to_data_definition::<f64>(aircraft_define_id, "NUMBER OF ENGINES", "Number")?;
+        sc.add_to_data_definition::<f64>(aircraft_define_id, "ENGINE TYPE", "Enum")?;
 
         // Define data structure for remote aircraft
         #[repr(C)]
@@ -253,9 +263,22 @@ impl SimConnectMonitor {
                     let title = {
                         let ac_list = available_aircraft.lock().unwrap();
                         let hc_list = available_helicopters.lock().unwrap();
-                        let mapped = find_best_multiplayer_model(&raw_title, &ac_list, &hc_list);
+                        let empty_db = CharacteristicsDatabase { characteristics: std::collections::HashMap::new() };
+                        let db_ref = app.try_state::<CharacteristicsDatabase>();
+                        let db = db_ref.as_deref().unwrap_or(&empty_db);
+                        let mapped = find_best_multiplayer_model(
+                            &raw_title,
+                            &update.atc_model,
+                            &update.object_class,
+                            &update.category,
+                            update.num_engines,
+                            &update.engine_type,
+                            &ac_list,
+                            &hc_list,
+                            db,
+                        );
                         if mapped != raw_title {
-                            crate::append_log(app, format!("[MSFS] Mapping remote aircraft '{}' to local model '{}'", raw_title, mapped));
+                            crate::append_log(app, format!("[MSFS] Mapping remote aircraft '{}' (ICAO: {}) to local model '{}'", raw_title, update.atc_model, mapped));
                         }
                         mapped
                     };
@@ -581,15 +604,34 @@ impl SimConnectMonitor {
                         title: [u8; 256],
                         atc_model: [u8; 256],
                         atc_id: [u8; 256],
+                        object_class: [u8; 256],
+                        category: [u8; 256],
+                        number_of_engines: f64,
+                        engine_type: f64,
                     }
                     if let Some(data) = msg.as_sim_object_data::<SimConnectAircraftInfo>() {
                         let title = String::from_utf8_lossy(&data.title).split('\0').next().unwrap_or("").trim().to_string();
                         let atc_model = String::from_utf8_lossy(&data.atc_model).split('\0').next().unwrap_or("").trim().to_string();
                         let atc_id = String::from_utf8_lossy(&data.atc_id).split('\0').next().unwrap_or("").trim().to_string();
+                        let object_class = String::from_utf8_lossy(&data.object_class).split('\0').next().unwrap_or("").trim().to_string();
+                        let category = String::from_utf8_lossy(&data.category).split('\0').next().unwrap_or("").trim().to_string();
+                        let num_engines = data.number_of_engines as i32;
+                        let engine_type = match data.engine_type as i32 {
+                            0 => "piston".to_string(),
+                            1 => "jet".to_string(),
+                            5 => "turboprop".to_string(),
+                            3 => "jet".to_string(), // Helo turbine
+                            _ => "unknown".to_string(),
+                        };
+
                         if !title.is_empty() {
                             aircraft_info.title = title.clone();
                             aircraft_info.atc_model = atc_model.clone();
                             aircraft_info.atc_id = atc_id.clone();
+                            aircraft_info.object_class = object_class.clone();
+                            aircraft_info.category = category.clone();
+                            aircraft_info.num_engines = num_engines;
+                            aircraft_info.engine_type = engine_type.clone();
                             
                             if let Some(ref conn) = db_conn {
                                 crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Model: {}, ID: {}]", title, atc_model, atc_id));
@@ -608,6 +650,10 @@ impl SimConnectMonitor {
                             info.title = title;
                             info.atc_model = atc_model;
                             info.atc_id = atc_id;
+                            info.object_class = object_class;
+                            info.category = category;
+                            info.num_engines = num_engines;
+                            info.engine_type = engine_type;
                         }
                     }
                 }
@@ -1068,10 +1114,104 @@ fn share_significant_keyword(a: &str, b: &str) -> bool {
     false
 }
 
+fn matches_generic_profile(
+    title: &str,
+    engine_type: &str,
+    num_engines: i32,
+) -> bool {
+    let lower = title.to_lowercase();
+    match engine_type {
+        "jet" => {
+            if num_engines >= 2 {
+                lower.contains("boeing")
+                    || lower.contains("airbus")
+                    || lower.contains("737")
+                    || lower.contains("747")
+                    || lower.contains("777")
+                    || lower.contains("787")
+                    || lower.contains("a32")
+                    || lower.contains("a33")
+                    || lower.contains("a35")
+                    || lower.contains("a38")
+                    || lower.contains("crj")
+                    || lower.contains("erj")
+                    || lower.contains("md8")
+                    || lower.contains("md9")
+                    || lower.contains("embraer")
+                    || lower.contains("citation")
+                    || lower.contains("learjet")
+            } else {
+                lower.contains("f-16")
+                    || lower.contains("f16")
+                    || lower.contains("f-18")
+                    || lower.contains("f18")
+                    || lower.contains("hornet")
+                    || lower.contains("vision")
+                    || lower.contains("sf50")
+                    || lower.contains("l39")
+            }
+        }
+        "turboprop" => {
+            if num_engines >= 2 {
+                lower.contains("king air")
+                    || lower.contains("kingair")
+                    || lower.contains("beechcraft")
+                    || lower.contains("atr")
+                    || lower.contains("dhc-8")
+                    || lower.contains("q400")
+                    || lower.contains("dash 8")
+                    || lower.contains("casa")
+                    || lower.contains("twin otter")
+                    || lower.contains("twinotter")
+            } else {
+                lower.contains("caravan")
+                    || lower.contains("c208")
+                    || lower.contains("tbm")
+                    || lower.contains("pilatus")
+                    || lower.contains("pc12")
+                    || lower.contains("pc-12")
+            }
+        }
+        "piston" => {
+            if num_engines >= 2 {
+                lower.contains("baron")
+                    || lower.contains("seneca")
+                    || lower.contains("seminole")
+                    || lower.contains("duchess")
+                    || lower.contains("beech 58")
+                    || lower.contains("cessna 310")
+            } else {
+                lower.contains("cessna")
+                    || lower.contains("172")
+                    || lower.contains("152")
+                    || lower.contains("piper")
+                    || lower.contains("pa28")
+                    || lower.contains("pa-28")
+                    || lower.contains("archer")
+                    || lower.contains("warrior")
+                    || lower.contains("cub")
+                    || lower.contains("bonanza")
+                    || lower.contains("cirrus")
+                    || lower.contains("sr22")
+                    || lower.contains("sr20")
+                    || lower.contains("mooney")
+            }
+        }
+        _ => false,
+    }
+}
+
+
 fn find_best_multiplayer_model(
     remote_title: &str,
+    remote_atc_model: &str,
+    remote_object_class: &str,
+    remote_category: &str,
+    remote_num_engines: i32,
+    remote_engine_type: &str,
     available_aircraft: &[String],
     available_helicopters: &[String],
+    db: &CharacteristicsDatabase,
 ) -> String {
     let remote_lower = remote_title.to_lowercase();
 
@@ -1089,27 +1229,84 @@ fn find_best_multiplayer_model(
         }
     }
 
-    // 3. If it looks like a helicopter, try matching or falling back to a helicopter first
-    let is_hc = is_helicopter_title(remote_title);
+    // 3. Try to match by ICAO (atc_model) as a substring in aircraft/helicopter titles
+    if !remote_atc_model.is_empty() {
+        let atc_lower = remote_atc_model.to_lowercase();
+        for ac in available_aircraft {
+            if ac.to_lowercase().contains(&atc_lower) {
+                return ac.clone();
+            }
+        }
+        for hc in available_helicopters {
+            if hc.to_lowercase().contains(&atc_lower) {
+                return hc.clone();
+            }
+        }
+    }
+
+    // 4. Helicopter matching heuristics (Category/ObjectClass or Title keywords)
+    let is_hc = remote_object_class.to_lowercase() == "helicopter"
+        || remote_category.to_lowercase() == "helicopter"
+        || is_helicopter_title(remote_title);
+
     if is_hc && !available_helicopters.is_empty() {
-        // Try substring match in helicopters
         for hc in available_helicopters {
             let hc_lower = hc.to_lowercase();
             if hc_lower.contains(&remote_lower) || remote_lower.contains(&hc_lower) {
                 return hc.clone();
             }
         }
-        // Try keyword match in helicopters
         for hc in available_helicopters {
             if share_significant_keyword(remote_title, hc) {
                 return hc.clone();
             }
         }
-        // If no match, fall back to the first available helicopter
         return available_helicopters[0].clone();
     }
 
-    // 4. Try keyword substring matches against available aircraft
+    // 5. Try to match using database characteristics (WTC, engine type, etc.)
+    let remote_char = if !remote_atc_model.is_empty() {
+        db.characteristics.get(&remote_atc_model.to_uppercase()).cloned()
+    } else {
+        if !remote_engine_type.is_empty() {
+            Some(AircraftCharacteristic {
+                icao_code: "".to_string(),
+                manufacturer: "".to_string(),
+                model_faa: "".to_string(),
+                model_bada: "".to_string(),
+                engine_type: remote_engine_type.to_lowercase(),
+                num_engines: remote_num_engines,
+                wtc: if remote_num_engines >= 2 && remote_engine_type.to_lowercase() == "jet" { "Medium".to_string() } else { "Light".to_string() },
+                class: "Fixed-wing".to_string(),
+            })
+        } else {
+            None
+        }
+    };
+
+    if let Some(r_char) = remote_char {
+        let list_to_search = if is_hc { available_helicopters } else { available_aircraft };
+        let mut best_score = -1;
+        let mut best_match = None;
+        
+        for ac in list_to_search {
+            if let Some(l_char) = db.resolve_title_characteristics(ac) {
+                let score = db.calculate_similarity_score(&r_char, &l_char);
+                if score > best_score {
+                    best_score = score;
+                    best_match = Some(ac.clone());
+                }
+            }
+        }
+        
+        if let Some(m) = best_match {
+            if best_score >= 100 {
+                return m;
+            }
+        }
+    }
+
+    // 6. Try keyword substring matches against available aircraft
     if !available_aircraft.is_empty() {
         for ac in available_aircraft {
             let ac_lower = ac.to_lowercase();
@@ -1117,7 +1314,6 @@ fn find_best_multiplayer_model(
                 return ac.clone();
             }
         }
-        // Try keyword match in aircraft
         for ac in available_aircraft {
             if share_significant_keyword(remote_title, ac) {
                 return ac.clone();
@@ -1125,7 +1321,16 @@ fn find_best_multiplayer_model(
         }
     }
 
-    // 5. Fallback cascade
+    // 7. Generic profile matching (engine type and count fallback)
+    if !available_aircraft.is_empty() && !remote_engine_type.is_empty() {
+        for ac in available_aircraft {
+            if matches_generic_profile(ac, remote_engine_type, remote_num_engines) {
+                return ac.clone();
+            }
+        }
+    }
+
+    // 7. Fallback cascade
     if !available_aircraft.is_empty() {
         for ac in available_aircraft {
             let ac_low = ac.to_lowercase();
@@ -1206,12 +1411,27 @@ impl SimMonitor for SimConnectMonitor {
     fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
     fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
-    fn update_remote_aircraft(&self, id: &str, title: &str, metrics: &FlightMetrics) {
+    fn update_remote_aircraft(
+        &self,
+        id: &str,
+        title: &str,
+        atc_model: &str,
+        object_class: &str,
+        category: &str,
+        num_engines: i32,
+        engine_type: &str,
+        metrics: &FlightMetrics,
+    ) {
         let sender = self.remote_aircraft_sender.lock().unwrap();
         if let Some(tx) = sender.as_ref() {
             let _ = tx.send(RemoteAircraftUpdate {
                 id: id.to_string(),
                 title: title.to_string(),
+                atc_model: atc_model.to_string(),
+                object_class: object_class.to_string(),
+                category: category.to_string(),
+                num_engines,
+                engine_type: engine_type.to_string(),
                 metrics: *metrics,
             });
         }
@@ -1224,6 +1444,9 @@ mod tests {
 
     #[test]
     fn test_find_best_multiplayer_model() {
+        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+            .expect("Failed to load characteristics DB for tests");
+
         let available_aircraft = vec![
             "Cessna Skyhawk G1000".to_string(),
             "Boeing 737-800".to_string(),
@@ -1236,43 +1459,73 @@ mod tests {
 
         // Exact match
         assert_eq!(
-            find_best_multiplayer_model("Boeing 737-800", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("Boeing 737-800", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Boeing 737-800"
         );
 
         // Case-insensitive match
         assert_eq!(
-            find_best_multiplayer_model("boeing 737-800", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("boeing 737-800", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Boeing 737-800"
         );
 
         // Helicopter exact match
         assert_eq!(
-            find_best_multiplayer_model("Bell 407", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("Bell 407", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Bell 407"
         );
 
         // Helicopter keyword fallback
         assert_eq!(
-            find_best_multiplayer_model("Bell 206 Helicopter", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("Bell 206 Helicopter", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Bell 407"
+        );
+
+        // Helicopter category fallback (forces helicopter matching even with a non-helo title)
+        assert_eq!(
+            find_best_multiplayer_model("MyCrazyRotorcraft", "", "helicopter", "", 0, "", &available_aircraft, &available_helicopters, &db),
+            "Cabri G2"
         );
 
         // Helicopter generic fallback
         assert_eq!(
-            find_best_multiplayer_model("Rotorway Heli", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("Rotorway Heli", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Cabri G2"
         );
 
         // Substring aircraft match
         assert_eq!(
-            find_best_multiplayer_model("A320", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("A320", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
+            "Airbus A320neo"
+        );
+
+        // ICAO (atc_model) match
+        assert_eq!(
+            find_best_multiplayer_model("Some Weird Livery Name", "A320", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
+            "Airbus A320neo"
+        );
+
+        // Generic profile matching (twin jet -> Boeing 737-800 because it is the first matching jet in the list)
+        assert_eq!(
+            find_best_multiplayer_model("Weird Twin Jet 5000", "", "", "", 2, "jet", &available_aircraft, &available_helicopters, &db),
+            "Boeing 737-800"
+        );
+
+        // Generic profile matching (single piston -> Cessna Skyhawk G1000)
+        assert_eq!(
+            find_best_multiplayer_model("Heavy Single Piston 3000", "", "", "", 1, "piston", &available_aircraft, &available_helicopters, &db),
+            "Cessna Skyhawk G1000"
+        );
+
+        // CSV database similarity match (remote ICAO A19N matches Airbus A320neo because both are twin jets in same wake class)
+        assert_eq!(
+            find_best_multiplayer_model("Airbus A319 Neo", "A19N", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Airbus A320neo"
         );
 
         // Sensible aircraft default fallback
         assert_eq!(
-            find_best_multiplayer_model("F-18 Hornet", &available_aircraft, &available_helicopters),
+            find_best_multiplayer_model("F-18 Hornet", "", "", "", 0, "", &available_aircraft, &available_helicopters, &db),
             "Cessna Skyhawk G1000"
         );
 
@@ -1280,7 +1533,7 @@ mod tests {
         let empty_ac = vec![];
         let empty_hc = vec![];
         assert_eq!(
-            find_best_multiplayer_model("F-18 Hornet", &empty_ac, &empty_hc),
+            find_best_multiplayer_model("F-18 Hornet", "", "", "", 0, "", &empty_ac, &empty_hc, &db),
             "Cessna Skyhawk G1000"
         );
     }

@@ -217,6 +217,10 @@ pub struct AircraftInfo {
     pub title: String,
     pub atc_model: String,
     pub atc_id: String,
+    pub object_class: String,
+    pub category: String,
+    pub num_engines: i32,
+    pub engine_type: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

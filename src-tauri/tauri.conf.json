@@ -39,7 +39,8 @@
     "targets": "all",
     "resources": [
       "../public/airports.csv",
-      "../public/runways.csv"
+      "../public/runways.csv",
+      "../public/aircraft-characteristics.csv"
     ],
     "icon": [
       "icons/32x32.png",

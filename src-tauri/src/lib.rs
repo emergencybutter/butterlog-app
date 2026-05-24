@@ -1,3 +1,4 @@
+mod aircraft_characteristics;
 mod airports;
 mod config;
 mod flight_analyzer;
@@ -479,6 +480,34 @@ pub fn run() {
                         append_log(
                             &runways_app_handle,
                             format!("Failed to load runways.csv at {:?}: {}", runways_path, err),
+                        );
+                    }
+                }
+            });
+
+            let chars_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Load aircraft-characteristics.csv and register into Tauri managed state
+                let chars_path = chars_app_handle
+                    .path()
+                    .resolve("../public/aircraft-characteristics.csv", BaseDirectory::Resource)
+                    .expect("Failed to resolve aircraft-characteristics.csv resource");
+
+                match aircraft_characteristics::CharacteristicsDatabase::load_from_csv(&chars_path) {
+                    Ok(db) => {
+                        append_log(
+                            &chars_app_handle,
+                            format!(
+                                "Successfully loaded {} aircraft characteristics into backend memory.",
+                                db.characteristics.len()
+                            ),
+                        );
+                        chars_app_handle.manage(db);
+                    }
+                    Err(err) => {
+                        append_log(
+                            &chars_app_handle,
+                            format!("Failed to load aircraft-characteristics.csv at {:?}: {}", chars_path, err),
                         );
                     }
                 }

@@ -64,6 +64,18 @@ async fn fetch_xplane_dataref_string(client: &reqwest::Client, rest_url: &str, n
     extract_xplane_string(val_ref)
 }
 
+async fn fetch_xplane_dataref_double(client: &reqwest::Client, rest_url: &str, name: &str) -> Option<f64> {
+    let resp = client.get(rest_url).query(&[("filter[name]", name)]).send().await.ok()?;
+    let json = resp.json::<Value>().await.ok()?;
+    let val_ref = json["data"].as_array()?.first()?.get("value")?;
+    if let Some(arr) = val_ref.as_array() {
+        arr.first()?.as_f64()
+    } else {
+        val_ref.as_f64()
+    }
+}
+
+
 pub struct XPlaneMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
     aircraft_info: Arc<Mutex<AircraftInfo>>,
@@ -299,6 +311,23 @@ impl XPlaneMonitor {
                             let actual_atc_model = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ICAO").await.unwrap_or_default();
                             let actual_atc_id = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_tailnum").await.unwrap_or_default();
 
+                            let class_val = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/view/acf_class").await.unwrap_or(0.0) as i32;
+                            let (object_class, category) = match class_val {
+                                1 => ("helicopter".to_string(), "helicopter".to_string()),
+                                2 => ("glider".to_string(), "glider".to_string()),
+                                _ => ("airplane".to_string(), "airplane".to_string()),
+                            };
+
+                            let num_engines = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/engine/acf_num_engines").await.unwrap_or(1.0) as i32;
+
+                            let en_type_val = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/prop/acf_en_type").await.unwrap_or(0.0) as i32;
+                            let engine_type = match en_type_val {
+                                0 => "piston".to_string(),
+                                1 => "turboprop".to_string(),
+                                2 => "jet".to_string(),
+                                _ => "unknown".to_string(),
+                            };
+
                             if !actual_title.is_empty() {
                                 // Reset if aircraft name changes mid-flight
                                 if !last_known_title.is_empty() && last_known_title != actual_title {
@@ -311,7 +340,11 @@ impl XPlaneMonitor {
                                 aircraft_info.title = actual_title;
                                 aircraft_info.atc_model = actual_atc_model;
                                 aircraft_info.atc_id = actual_atc_id;
-                                crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id));
+                                aircraft_info.object_class = object_class;
+                                aircraft_info.category = category;
+                                aircraft_info.num_engines = num_engines;
+                                aircraft_info.engine_type = engine_type;
+                                crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.num_engines, aircraft_info.engine_type));
                             }
 
                             // Resumption check
@@ -368,18 +401,22 @@ impl XPlaneMonitor {
                             }
 
                             if !aircraft_info.title.is_empty() {
-                                let title_str = aircraft_info.title.clone();
-                                let atc_model_str = aircraft_info.atc_model.clone();
-                                let atc_id_str = aircraft_info.atc_id.clone();
-                                if let Some(ref conn) = db_conn {
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
-                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
-                                }
-                                let mut info = aircraft_info_mutex.lock().unwrap();
-                                info.title = title_str;
-                                info.atc_model = atc_model_str;
-                                info.atc_id = atc_id_str;
+                                 let title_str = aircraft_info.title.clone();
+                                 let atc_model_str = aircraft_info.atc_model.clone();
+                                 let atc_id_str = aircraft_info.atc_id.clone();
+                                 if let Some(ref conn) = db_conn {
+                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
+                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
+                                 }
+                                 let mut info = aircraft_info_mutex.lock().unwrap();
+                                 info.title = title_str;
+                                 info.atc_model = atc_model_str;
+                                 info.atc_id = atc_id_str;
+                                 info.object_class = aircraft_info.object_class.clone();
+                                 info.category = aircraft_info.category.clone();
+                                 info.num_engines = aircraft_info.num_engines;
+                                 info.engine_type = aircraft_info.engine_type.clone();
                             }
                             
                             // Process first point immediately
@@ -765,5 +802,15 @@ impl SimMonitor for XPlaneMonitor {
     fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
     fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
-    fn update_remote_aircraft(&self, _id: &str, _title: &str, _metrics: &FlightMetrics) {}
+    fn update_remote_aircraft(
+        &self,
+        _id: &str,
+        _title: &str,
+        _atc_model: &str,
+        _object_class: &str,
+        _category: &str,
+        _num_engines: i32,
+        _engine_type: &str,
+        _metrics: &FlightMetrics,
+    ) {}
 }
