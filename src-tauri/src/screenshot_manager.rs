@@ -520,14 +520,35 @@ pub async fn perform_screenshot_upload(
     }
 
     let file_bytes = std::fs::read(&path).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.png").to_string();
+
+    // Load and process image: resize if larger than 1600px width or height, keeping aspect ratio
+    let img = image::load_from_memory(&file_bytes).map_err(|e| format!("Failed to parse screenshot image: {}", e))?;
+    let (width, height) = (img.width(), img.height());
+    let resized_img = if width > 1600 || height > 1600 {
+        img.resize(1600, 1600, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    };
+
+    // Convert to WebP and compress (lossy encoding, quality 80.0)
+    let webp_vec = {
+        let webp_encoder = webp::Encoder::from_image(&resized_img)
+            .map_err(|e| format!("Failed to initialize WebP encoder: {:?}", e))?;
+        let webp_bytes = webp_encoder.encode(80.0);
+        webp_bytes.to_vec()
+    };
+
+    // Prepare filename with .webp extension
+    let mut path_webp = path.clone();
+    path_webp.set_extension("webp");
+    let file_name = path_webp.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.webp").to_string();
 
     let client = reqwest::Client::new();
     let url = format!("{}/flights/{}/screenshots", base_url, remote_id);
 
-    let part = reqwest::multipart::Part::bytes(file_bytes)
+    let part = reqwest::multipart::Part::bytes(webp_vec)
         .file_name(file_name)
-        .mime_str("image/png")
+        .mime_str("image/webp")
         .map_err(|e| e.to_string())?;
 
     let form = reqwest::multipart::Form::new().part("screenshot", part);
