@@ -211,6 +211,7 @@ impl SimConnectMonitor {
         let mut last_update_times: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
+        let mut last_msfs_update = std::time::Instant::now();
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -346,16 +347,6 @@ impl SimConnectMonitor {
                             }
                         }
                     }
-                }
-
-                if msg.is_quit() {
-                    return Ok(());
-                }
-                
-                // ... (rest of the handle loop)
-
-                if msg.is_quit() {
-                    return Ok(());
                 }
                 if let Some(exception) = msg.as_exception() {
                     crate::append_log(app, format!("[BUG] SimConnectException:: {} {} {}", exception.exception, exception.send_id, exception.index));
@@ -684,6 +675,7 @@ impl SimConnectMonitor {
                     let data = &data_val;
 
                     if msg.request_id() == Some(request_id) {
+                        last_msfs_update = std::time::Instant::now();
                         {
                             let mut m = metrics.lock().unwrap();
                             *m = *data;
@@ -1125,6 +1117,11 @@ impl SimConnectMonitor {
                 last_update_times.remove(&id);
             }
 
+            // Check if we haven't received telemetry updates from MSFS for 60 seconds
+            if last_msfs_update.elapsed() > std::time::Duration::from_secs(60) {
+                return Err(anyhow::anyhow!("No updates received from MSFS for 60 seconds. Assuming disconnected."));
+            }
+
             thread::sleep(Duration::from_millis(50));
         }
         Ok(())
@@ -1514,6 +1511,7 @@ fn get_next_dispatch_with_retry<'a>(
     let mut consecutive_errors = 0;
     loop {
         match sc.get_next_dispatch() {
+            Ok(None) => {thread::sleep(Duration::from_millis(200)); return Ok(None)},
             Ok(msg) => return Ok(msg),
             Err(e) => {
                 consecutive_errors += 1;
