@@ -297,7 +297,7 @@ impl SimConnectMonitor {
                 }
             }
 
-            while let Some(msg) = sc.get_next_dispatch()? {
+            while let Some(msg) = get_next_dispatch_with_retry(&sc, app)? {
                 if msg.is_quit() {
                     return Ok(());
                 }
@@ -1437,7 +1437,7 @@ impl SimMonitor for SimConnectMonitor {
                              *sender = Some(tx);
                         }
 
-                        let _ = Self::run_monitor(
+                        match Self::run_monitor(
                             &app, 
                             sc, 
                             &metrics, 
@@ -1449,7 +1449,14 @@ impl SimMonitor for SimConnectMonitor {
                             log_path.as_ref(),
                             &available_aircraft,
                             &available_helicopters,
-                        );
+                        ) {
+                            Ok(_) => {
+                                crate::append_log(&app, format!("[{}] MSFS monitor session closed normally.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
+                            }
+                            Err(e) => {
+                                crate::append_log(&app, format!("[{}] MSFS monitor disconnected with error: {}", Utc::now().format("%Y-%m-%d %H:%M:%S"), e));
+                            }
+                        }
                         { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
                         { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
                         { let mut m = metrics.lock().unwrap(); *m = FlightMetrics::default(); }
@@ -1495,6 +1502,35 @@ impl SimMonitor for SimConnectMonitor {
         }
     }
 }
+
+fn get_next_dispatch_with_retry<'a>(
+    sc: &'a SimConnect,
+    app: &AppHandle,
+) -> anyhow::Result<Option<DispatchMessage<'a>>> {
+    let mut consecutive_errors = 0;
+    loop {
+        match sc.get_next_dispatch() {
+            Ok(msg) => return Ok(msg),
+            Err(e) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= 5 {
+                    return Err(anyhow::anyhow!("SimConnect connection lost after 5 consecutive dispatch errors. Last error: {}", e));
+                }
+                crate::append_log(
+                    app,
+                    format!(
+                        "[{}] Warning: SimConnect dispatch error (attempt {}/5): {}. Retrying in 50ms...",
+                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                        consecutive_errors,
+                        e
+                    ),
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
