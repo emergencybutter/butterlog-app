@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
@@ -134,6 +134,15 @@ function App() {
   const [flightOngoing, setFlightOngoing] = useState(false);
   const [currentFlightId, setCurrentFlightId] = useState<string>("");
 
+  const handleBackToHistory = useCallback(() => {
+    setView("history");
+  }, []);
+
+  const handleViewDetails = useCallback((flight: FlightSummary) => {
+    setSelectedFlight(flight);
+    setView("details");
+  }, []);
+
   useEffect(() => {
     // Check for updates on startup
     const checkForUpdates = async () => {
@@ -216,22 +225,16 @@ function App() {
       case "history":
         return <FlightLogs 
           currentFlightId={currentFlightId}
-          onViewDetails={(flight) => {
-            setSelectedFlight(flight);
-            setView("details");
-          }}
+          onViewDetails={handleViewDetails}
         />;
       case "details":
         return selectedFlight ? (
-          <FlightDetails flight={selectedFlight} currentFlightId={currentFlightId} onBack={() => setView("history")} />
+          <FlightDetails flight={selectedFlight} currentFlightId={currentFlightId} onBack={handleBackToHistory} />
         ) : (
           <div>No flight selected</div>
         );
       case "aircraft":
-        return <AircraftStats onViewDetails={(flight) => {
-            setSelectedFlight(flight);
-            setView("details");
-        }} />;
+        return <AircraftStats onViewDetails={handleViewDetails} />;
       case "settings":
         return <Settings onBack={() => setView("status")} />;
       case "status":

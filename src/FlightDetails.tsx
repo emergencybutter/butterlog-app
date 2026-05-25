@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, memo } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -22,6 +22,58 @@ L.Icon.Default.mergeOptions({
     iconRetinaUrl: markerIcon2x,
     shadowUrl: markerShadow,
 });
+
+// Static Leaflet icons to prevent memory leaks from recreating icons on every render
+const screenshotIcon = L.divIcon({
+    className: 'custom-scr-marker',
+    html: `<div style="background-color: #e91e63; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+    </div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+});
+
+const eventIcons = {
+    takeoff: L.divIcon({
+        className: 'custom-event-marker',
+        html: `<div style="background-color: #f44336; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    }),
+    landing: L.divIcon({
+        className: 'custom-event-marker',
+        html: `<div style="background-color: #f44336; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    }),
+    autopilot_on: L.divIcon({
+        className: 'custom-event-marker',
+        html: `<div style="background-color: #2196f3; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    }),
+    autopilot_off: L.divIcon({
+        className: 'custom-event-marker',
+        html: `<div style="background-color: #ff9800; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    }),
+    default: L.divIcon({
+        className: 'custom-event-marker',
+        html: `<div style="background-color: #4caf50; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    })
+};
+
+const getEventIcon = (eventType?: string) => {
+    if (!eventType) return eventIcons.default;
+    if (eventType === 'takeoff' || eventType === 'landing') return eventIcons.takeoff;
+    if (eventType === 'autopilot_on') return eventIcons.autopilot_on;
+    if (eventType === 'autopilot_off') return eventIcons.autopilot_off;
+    return eventIcons.default;
+};
+
 
 interface TrajectoryPoint {
     lat: number;
@@ -110,12 +162,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, screensho
                         <Marker 
                             key={`event-${i}`} 
                             position={[p.lat, p.lon]}
-                            icon={L.divIcon({
-                                className: 'custom-event-marker',
-                                html: `<div style="background-color: ${p.isEvent === 'takeoff' || p.isEvent === 'landing' ? '#f44336' : (p.isEvent === 'autopilot_on' ? '#2196f3' : (p.isEvent === 'autopilot_off' ? '#ff9800' : '#4caf50'))}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
-                                iconSize: [12, 12],
-                                iconAnchor: [6, 6]
-                            })}
+                            icon={getEventIcon(p.isEvent)}
                         >
                             <Popup>
                                 <strong>{p.isEvent?.toUpperCase().replace('_', ' ')}</strong>
@@ -131,14 +178,7 @@ function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, screensho
                         <Marker 
                             key={`scr-${i}`} 
                             position={[s.latitude, s.longitude]}
-                            icon={L.divIcon({
-                                className: 'custom-scr-marker',
-                                html: `<div style="background-color: #e91e63; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                                </div>`,
-                                iconSize: [24, 24],
-                                iconAnchor: [12, 12]
-                            })}
+                            icon={screenshotIcon}
                         >
                             <Popup>
                                 <div style={{ width: "220px" }}>
@@ -335,12 +375,7 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
                         <Marker 
                             key={`event-full-${i}`} 
                             position={[e.latitude, e.longitude]}
-                            icon={L.divIcon({
-                                className: 'custom-event-marker',
-                                html: `<div style="background-color: ${e.eventType === 'takeoff' || e.eventType === 'landing' ? '#f44336' : (e.eventType.startsWith('autopilot') ? (e.eventType === 'autopilot_on' ? '#2196f3' : '#ff9800') : '#4caf50')}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
-                                iconSize: [12, 12],
-                                iconAnchor: [6, 6]
-                            })}
+                            icon={getEventIcon(e.eventType)}
                         >
                             <Popup>
                                 <strong>{e.eventType.toUpperCase().replace('_', ' ')}</strong><br/>
@@ -356,14 +391,7 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
                         <Marker 
                             key={`scr-full-${i}`} 
                             position={[s.latitude, s.longitude]}
-                            icon={L.divIcon({
-                                className: 'custom-scr-marker',
-                                html: `<div style="background-color: #e91e63; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                                </div>`,
-                                iconSize: [24, 24],
-                                iconAnchor: [12, 12]
-                            })}
+                            icon={screenshotIcon}
                         >
                             <Popup>
                                 <div style={{ width: "220px" }}>
@@ -433,7 +461,7 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
     );
 }
 
-export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
+function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
@@ -449,17 +477,6 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
         return currentFlightId && flight.filename.replace(".db", "") === currentFlightId;
     }, [currentFlightId, flight.filename]);
 
-    const fetchData = () => {
-        const flightId = flight.filename.replace(".db", "");
-        Promise.all([
-            invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
-            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
-        ]).then(([flightData, scrs]) => {
-            setData(flightData);
-            setScreenshots(scrs);
-        }).finally(() => setLoading(false));
-    };
-
     const fetchSummary = async () => {
         try {
             const updatedSummary = await invoke<FlightSummary>("get_flight_summary", { filename: flight.filename });
@@ -471,7 +488,9 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
 
     useEffect(() => {
         setLoading(true);
+        let active = true;
         const flightId = flight.filename.replace(".db", "");
+        
         Promise.all([
             invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
             invoke<Runway[]>("get_runways", { ident: flight.startIcao }),
@@ -480,42 +499,76 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
             invoke<any>("get_config"),
             invoke<number | null>("get_remote_id", { filename: flight.filename })
         ]).then(([flightData, startRwys, endRwys, scrs, config, rId]) => {
+            if (!active) return;
             setData(flightData);
             setStartRunways(startRwys);
             setEndRunways(endRwys);
             setScreenshots(scrs);
             setWebhookEnabled(config.enableWebhook && !!config.webhookUrl);
             setRemoteId(rId);
-        }).finally(() => setLoading(false));
-
-        const unlistenNew = listen("new-screenshot", () => {
-            const flightId = flight.filename.replace(".db", "");
-            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then(setScreenshots);
+        }).finally(() => {
+            if (active) setLoading(false);
         });
 
-        const unlistenUploaded = listen("screenshot-uploaded", () => {
+        let unlistenNewFn: (() => void) | null = null;
+        let unlistenUploadedFn: (() => void) | null = null;
+        let unlistenSummaryFn: (() => void) | null = null;
+
+        listen("new-screenshot", () => {
+            if (!active) return;
             const flightId = flight.filename.replace(".db", "");
-            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then(setScreenshots);
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then((scrs) => {
+                if (active) setScreenshots(scrs);
+            });
+        }).then(fn => {
+            if (!active) fn();
+            else unlistenNewFn = fn;
         });
 
-        const unlistenSummary = listen("flight-logs-updated", () => {
+        listen("screenshot-uploaded", () => {
+            if (!active) return;
+            const flightId = flight.filename.replace(".db", "");
+            invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).then((scrs) => {
+                if (active) setScreenshots(scrs);
+            });
+        }).then(fn => {
+            if (!active) fn();
+            else unlistenUploadedFn = fn;
+        });
+
+        listen("flight-logs-updated", () => {
+            if (!active) return;
             fetchSummary();
+        }).then(fn => {
+            if (!active) fn();
+            else unlistenSummaryFn = fn;
         });
 
+        let interval: any = null;
         if (isCurrentFlight) {
-            const interval = setInterval(fetchData, 2000);
-            return () => {
-                clearInterval(interval);
-                unlistenNew.then(fn => fn());
-                unlistenUploaded.then(fn => fn());
-                unlistenSummary.then(fn => fn());
-            };
+            interval = setInterval(() => {
+                if (!active) return;
+                const flightId = flight.filename.replace(".db", "");
+                Promise.all([
+                    invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
+                    invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
+                ]).then(([flightData, scrs]) => {
+                    if (active) {
+                        setData(flightData);
+                        setScreenshots(scrs);
+                    }
+                }).finally(() => {
+                    if (active) setLoading(false);
+                });
+            }, 2000);
         }
 
         return () => {
-            unlistenNew.then(fn => fn());
-            unlistenUploaded.then(fn => fn());
-            unlistenSummary.then(fn => fn());
+            active = false;
+            if (interval) clearInterval(interval);
+            if (unlistenNewFn) unlistenNewFn();
+            if (unlistenUploadedFn) unlistenUploadedFn();
+            if (unlistenSummaryFn) unlistenSummaryFn();
         };
     }, [flight.filename, flight.startIcao, flight.endIcao, isCurrentFlight]);
 
@@ -1087,3 +1140,5 @@ export function FlightDetails({ flight: initialFlight, onBack, currentFlightId }
         </div>
     );
 }
+
+export const FlightDetails = memo(FlightDetailsComponent);
