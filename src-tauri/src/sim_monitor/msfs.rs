@@ -694,7 +694,11 @@ impl SimConnectMonitor {
                             continue;
                         }
 
-                        if !flight_ongoing && data.ground_speed > 10.0 {
+                        let has_aircraft_title = {
+                            let info = aircraft_info_mutex.lock().unwrap();
+                            !info.title.is_empty()
+                        };
+                        if !flight_ongoing && data.ground_speed > 10.0 && has_aircraft_title {
                             flight_ongoing = true;
                             
                             sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
