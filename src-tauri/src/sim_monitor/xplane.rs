@@ -1,6 +1,6 @@
 use crate::airports::AirportsDatabase;
 use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
-use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportInfo};
+use crate::models::{AircraftInfo, FlightMetrics, WebhookFlightSummary, AirportInfo, ClosestAirportInfo};
 use crate::sim_monitor::SimMonitor;
 use crate::webhook_manager::WebhookManager;
 use crate::runways::RunwaysDatabase;
@@ -519,36 +519,50 @@ impl XPlaneMonitor {
 
                                 if takeoff_time.is_some() {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                        let summary = WebhookFlightSummary {
-                                            log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                            airframe_name: aircraft_info.title.clone(),
-                                            atc_model: aircraft_info.atc_model.clone(),
-                                            atc_id: aircraft_info.atc_id.clone(),
-                                            simulator: "X-Plane".to_string(),
-                                            simulator_version: "12".to_string(),
-                                            departure: AirportInfo { 
-                                                icao: analyzer.find_start_icao(&db), 
-                                                name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                            },
-                                            arrival: AirportInfo { 
-                                                icao: analyzer.find_end_icao(&db), 
-                                                name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
-                                            },
-                                            takeoff_time: takeoff_time.clone(),
-                                            landing_time: landing_time.clone(),
-                                            start_time: start_time.clone(),
-                                            end_time: Some(now_str.clone()),
+                                         let closest_airport = {
+                                             let lat = m.latitude;
+                                             let lon = m.longitude;
+                                             let nearest = db.find_nearest(lat, lon, 1);
+                                             nearest.first().map(|airport| {
+                                                 let dist = crate::sim_monitor::calculate_distance(lat, lon, airport.latitude_deg.unwrap_or(0.0), airport.longitude_deg.unwrap_or(0.0));
+                                                 ClosestAirportInfo {
+                                                     icao: airport.ident.clone(),
+                                                     name: airport.name.clone(),
+                                                     distance: dist,
+                                                 }
+                                             })
+                                         };
 
-                                            takeoff_snapshot,
-                                            landing_snapshot,
-                                            current_snapshot: Some(m),
-                                            max_entries: max_metrics,
-                                            vs_variance: None,
-                                            ias_variance: None,
-                                            landing_score: None,
-                                            landing_offset_percent: None,
-                                            landing_threshold_dist_ft: None,
-                                        };
+                                         let summary = WebhookFlightSummary {
+                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                             airframe_name: aircraft_info.title.clone(),
+                                             atc_model: aircraft_info.atc_model.clone(),
+                                             atc_id: aircraft_info.atc_id.clone(),
+                                             simulator: "X-Plane".to_string(),
+                                             simulator_version: "12".to_string(),
+                                             departure: AirportInfo { 
+                                                 icao: analyzer.find_start_icao(&db), 
+                                                 name: db.get_by_ident(&analyzer.find_start_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                             },
+                                             arrival: AirportInfo { 
+                                                 icao: analyzer.find_end_icao(&db), 
+                                                 name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
+                                             },
+                                             closest_airport,
+                                             takeoff_time: takeoff_time.clone(),
+                                             landing_time: landing_time.clone(),
+                                             start_time: start_time.clone(),
+                                             end_time: Some(now_str.clone()),
+                                             takeoff_snapshot,
+                                             landing_snapshot,
+                                             current_snapshot: Some(m),
+                                             max_entries: max_metrics,
+                                             vs_variance: None,
+                                             ias_variance: None,
+                                             landing_score: None,
+                                             landing_offset_percent: None,
+                                             landing_threshold_dist_ft: None,
+                                         };
                                         let app_c = app.clone();
                                         let sum_c = summary.clone();
                                         tauri::async_runtime::spawn(async move {
@@ -593,29 +607,46 @@ impl XPlaneMonitor {
                                         
                                         if takeoff_time.is_some() {
                                             let landing_event = analyzer.events.iter().find(|e| e.event_type == "landing");
-                                            let summary = WebhookFlightSummary {
-                                                log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                                                airframe_name: aircraft_info.title.clone(),
-                                                atc_model: aircraft_info.atc_model.clone(),
-                                                atc_id: aircraft_info.atc_id.clone(),
-                                                simulator: "X-Plane".to_string(),
-                                                simulator_version: "12".to_string(),
-                                                departure: AirportInfo { icao: start_icao.clone(), name: "".to_string() },
-                                                arrival: AirportInfo { icao: end_icao.clone(), name: "".to_string() },
-                                                takeoff_time: takeoff_time.clone(),
-                                                landing_time: landing_time.clone(),
-                                                start_time: start_time.clone(),
-                                                end_time: Some(now_str.clone()),
-                                                takeoff_snapshot: takeoff_snapshot.clone(),
-                                                landing_snapshot: landing_snapshot.clone(),
-                                                current_snapshot: Some(m),
-                                                max_entries: max_metrics.clone(),
-                                                vs_variance: landing_event.and_then(|e| e.vs_variance),
-                                                ias_variance: landing_event.and_then(|e| e.ias_variance),
-                                                landing_score: landing_event.and_then(|e| e.calculate_landing_score()),
-                                                landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
-                                                landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
-                                            };
+                                             let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_default();
+                                             let end_name = db.get_by_ident(&end_icao).map(|a| a.name.clone()).unwrap_or_default();
+                                             let closest_airport = {
+                                                 let lat = m.latitude;
+                                                 let lon = m.longitude;
+                                                 let nearest = db.find_nearest(lat, lon, 1);
+                                                 nearest.first().map(|airport| {
+                                                     let dist = crate::sim_monitor::calculate_distance(lat, lon, airport.latitude_deg.unwrap_or(0.0), airport.longitude_deg.unwrap_or(0.0));
+                                                     ClosestAirportInfo {
+                                                         icao: airport.ident.clone(),
+                                                         name: airport.name.clone(),
+                                                         distance: dist,
+                                                     }
+                                                 })
+                                             };
+
+                                             let summary = WebhookFlightSummary {
+                                                 log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+                                                 airframe_name: aircraft_info.title.clone(),
+                                                 atc_model: aircraft_info.atc_model.clone(),
+                                                 atc_id: aircraft_info.atc_id.clone(),
+                                                 simulator: "X-Plane".to_string(),
+                                                 simulator_version: "12".to_string(),
+                                                 departure: AirportInfo { icao: start_icao.clone(), name: start_name },
+                                                 arrival: AirportInfo { icao: end_icao.clone(), name: end_name },
+                                                 closest_airport,
+                                                 takeoff_time: takeoff_time.clone(),
+                                                 landing_time: landing_time.clone(),
+                                                 start_time: start_time.clone(),
+                                                 end_time: Some(now_str.clone()),
+                                                 takeoff_snapshot: takeoff_snapshot.clone(),
+                                                 landing_snapshot: landing_snapshot.clone(),
+                                                 current_snapshot: Some(m),
+                                                 max_entries: max_metrics.clone(),
+                                                 vs_variance: landing_event.and_then(|e| e.vs_variance),
+                                                 ias_variance: landing_event.and_then(|e| e.ias_variance),
+                                                 landing_score: landing_event.and_then(|e| e.calculate_landing_score()),
+                                                 landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
+                                                 landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
+                                             };
                                             let app_c = app.clone();
                                             let sum_c = summary.clone();
                                             tauri::async_runtime::spawn(async move {
@@ -699,6 +730,20 @@ impl XPlaneMonitor {
 
                 let now_str = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
                 let landing_event = analyzer.events.iter().find(|e| e.event_type == "landing");
+                let closest_airport = {
+                    let lat = m.latitude;
+                    let lon = m.longitude;
+                    let nearest = db.find_nearest(lat, lon, 1);
+                    nearest.first().map(|airport| {
+                        let dist = crate::sim_monitor::calculate_distance(lat, lon, airport.latitude_deg.unwrap_or(0.0), airport.longitude_deg.unwrap_or(0.0));
+                        ClosestAirportInfo {
+                            icao: airport.ident.clone(),
+                            name: airport.name.clone(),
+                            distance: dist,
+                        }
+                    })
+                };
+
                 let summary = WebhookFlightSummary {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                     airframe_name: aircraft_info.title.clone(),
@@ -714,6 +759,7 @@ impl XPlaneMonitor {
                         icao: analyzer.find_end_icao(&db), 
                         name: db.get_by_ident(&analyzer.find_end_icao(&db)).map(|a| a.name.clone()).unwrap_or_default()
                     },
+                    closest_airport,
                     takeoff_time: takeoff_time.clone(),
                     landing_time: landing_time.clone(),
                     start_time: start_time.clone(),

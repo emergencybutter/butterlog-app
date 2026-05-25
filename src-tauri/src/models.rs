@@ -243,6 +243,13 @@ pub struct AirportInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClosestAirportInfo {
+    pub icao: String,
+    pub name: String,
+    pub distance: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookFlightSummary {
     pub log_path: String,
     pub airframe_name: String,
@@ -252,6 +259,7 @@ pub struct WebhookFlightSummary {
     pub simulator_version: String,
     pub departure: AirportInfo,
     pub arrival: AirportInfo,
+    pub closest_airport: Option<ClosestAirportInfo>,
     pub takeoff_time: Option<String>,
     pub landing_time: Option<String>,
     pub start_time: Option<String>,
