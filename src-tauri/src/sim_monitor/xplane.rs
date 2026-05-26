@@ -244,8 +244,18 @@ impl XPlaneMonitor {
                             path_to_id.get(path).and_then(|id| data_values.get(id))
                         };
 
-                        if let Some(v) = get_path_val("sim/flightmodel/position/latitude").and_then(|v| v.as_f64()) { m.latitude = v; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/position/longitude").and_then(|v| v.as_f64()) { m.longitude = v; updated = true; }
+                        let get_path_double = |path: &str| -> Option<f64> {
+                            get_path_val(path).and_then(|v| {
+                                if let Some(arr) = v.as_array() {
+                                    arr.first().and_then(|x| x.as_f64())
+                                } else {
+                                    v.as_f64()
+                                }
+                            })
+                        };
+
+                        if let Some(v) = get_path_double("sim/flightmodel/position/latitude") { m.latitude = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/longitude") { m.longitude = v; updated = true; }
                         
                         // Check for teleportation (> 1nm jump)
                         if updated {
@@ -263,26 +273,33 @@ impl XPlaneMonitor {
                             last_pos = Some((m.latitude, m.longitude));
                         }
 
-                        if let Some(v) = get_path_val("sim/flightmodel/position/elevation").and_then(|v| v.as_f64()) { m.gps_altitude_msl = v * 3.28084; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/position/indicated_airspeed").and_then(|v| v.as_f64()) { m.indicated_airspeed = v; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/position/groundspeed").and_then(|v| v.as_f64()) { m.ground_speed = v * 1.94384; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/position/vh_ind").and_then(|v| v.as_f64()) { m.vertical_speed = v * 196.85; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/elevation") { m.gps_altitude_msl = v * 3.28084; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/indicated_airspeed") { m.indicated_airspeed = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/groundspeed") { m.ground_speed = v * 1.94384; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/vh_ind") { m.vertical_speed = v * 196.85; updated = true; }
                         
                         if let Some(val) = get_path_val("sim/flightmodel/failures/onground_any") {
-                            if let Some(b) = val.as_bool() {
-                                m.is_on_ground = if b { 1.0 } else { 0.0 };
-                                updated = true;
-                            } else if let Some(f) = val.as_f64() {
-                                m.is_on_ground = if f > 0.5 { 1.0 } else { 0.0 };
-                                updated = true;
+                            let val_to_check = if let Some(arr) = val.as_array() {
+                                arr.first()
+                            } else {
+                                Some(val)
+                            };
+                            if let Some(v) = val_to_check {
+                                if let Some(b) = v.as_bool() {
+                                    m.is_on_ground = if b { 1.0 } else { 0.0 };
+                                    updated = true;
+                                } else if let Some(f) = v.as_f64() {
+                                    m.is_on_ground = if f > 0.5 { 1.0 } else { 0.0 };
+                                    updated = true;
+                                }
                             }
                         }
                         
-                        if let Some(v) = get_path_val("sim/flightmodel/position/y_agl").and_then(|v| v.as_f64()) { m.altitude_agl = v * 3.28084; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/position/mag_psi").and_then(|v| v.as_f64()) { m.heading = v; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/weight/m_fuel1").and_then(|v| v.as_f64()) { m.fuel_quantity_left = v * 0.1498; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/weight/m_fuel2").and_then(|v| v.as_f64()) { m.fuel_quantity_right = v * 0.1498; updated = true; }
-                        if let Some(v) = get_path_val("sim/flightmodel/forces/g_nrm").and_then(|v| v.as_f64()) { m.normal_acceleration = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/y_agl") { m.altitude_agl = v * 3.28084; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/mag_psi") { m.heading = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel1") { m.fuel_quantity_left = v * 0.1498; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel2") { m.fuel_quantity_right = v * 0.1498; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.normal_acceleration = v; updated = true; }
 
                         if !updated { continue; }
 
