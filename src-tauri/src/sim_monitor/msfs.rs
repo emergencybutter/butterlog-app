@@ -300,7 +300,7 @@ impl SimConnectMonitor {
 
             while let Some(msg) = get_next_dispatch_with_retry(&sc, app)? {
                 if msg.is_quit() {
-                    return Ok(());
+                    return Err(anyhow::anyhow!("SimConnect connection lost: simulator exited (received QUIT message)"));
                 }
                 
                 // Track assigned object IDs
