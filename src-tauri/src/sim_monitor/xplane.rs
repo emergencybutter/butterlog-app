@@ -125,6 +125,13 @@ impl XPlaneMonitor {
             "sim/flightmodel/weight/m_fuel2",
             "sim/flightmodel/forces/g_nrm",
             "sim/aircraft/view/acf_ui_name",
+            "sim/cockpit2/gauges/indicators/altitude_ft_pilot",
+            "sim/cockpit/misc/barometer_setting",
+            "sim/weather/temperature_ambient_c",
+            "sim/flightmodel/position/theta",
+            "sim/flightmodel/position/phi",
+            "sim/flightmodel/forces/g_side",
+            "sim/flightmodel/position/hpath",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -300,6 +307,13 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel1") { m.fuel_quantity_left = v * 0.1498; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel2") { m.fuel_quantity_right = v * 0.1498; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.normal_acceleration = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/gauges/indicators/altitude_ft_pilot") { m.indicated_altitude = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit/misc/barometer_setting") { m.altimeter_setting = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/weather/temperature_ambient_c") { m.outside_air_temp = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/theta") { m.pitch_angle = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_side") { m.lateral_acceleration = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/hpath") { m.track = v; updated = true; }
 
                         if !updated { continue; }
 
