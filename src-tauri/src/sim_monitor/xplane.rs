@@ -175,12 +175,7 @@ impl XPlaneMonitor {
         
         crate::append_log(&app, format!("[X-Plane] Starting dataref discovery via REST..."));
         
-        let mut query_params = Vec::new();
-        for path in &paths {
-            query_params.push(("filter[name]", *path));
-        }
-
-        let resp = match client.get(&rest_url).query(&query_params).send().await {
+        let resp = match client.get(&rest_url).send().await {
             Ok(r) => match r.json::<Value>().await {
                 Ok(j) => j,
                 Err(e) => {
@@ -192,10 +187,14 @@ impl XPlaneMonitor {
             }
         };
 
+        let paths_set: std::collections::HashSet<&str> = paths.iter().copied().collect();
+
         if let Some(data) = resp["data"].as_array() {
             for item in data {
                 if let (Some(name), Some(id)) = (item["name"].as_str(), item["id"].as_i64()) {
-                    path_to_id.insert(name.to_string(), id.to_string());
+                    if paths_set.contains(name) {
+                        path_to_id.insert(name.to_string(), id.to_string());
+                    }
                 }
             }
         }
