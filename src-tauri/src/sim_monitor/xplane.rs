@@ -121,8 +121,7 @@ impl XPlaneMonitor {
             "sim/flightmodel/failures/onground_any",
             "sim/flightmodel/position/y_agl",
             "sim/flightmodel/position/mag_psi",
-            "sim/flightmodel/weight/m_fuel1",
-            "sim/flightmodel/weight/m_fuel2",
+            "sim/cockpit2/fuel/fuel_quantity",
             "sim/flightmodel/forces/g_nrm",
             "sim/aircraft/view/acf_ui_name",
             "sim/cockpit2/gauges/indicators/altitude_ft_pilot",
@@ -132,6 +131,20 @@ impl XPlaneMonitor {
             "sim/flightmodel/position/phi",
             "sim/flightmodel/forces/g_side",
             "sim/flightmodel/position/hpath",
+            "sim/cockpit2/electrical/bus_volts",
+            "sim/cockpit2/electrical/generator_amps",
+            "sim/cockpit2/engine/indicators/fuel_flow_kg_sec",
+            "sim/cockpit2/engine/indicators/oil_temp_deg_C",
+            "sim/cockpit2/engine/indicators/oil_pressure_psi",
+            "sim/cockpit2/engine/indicators/MP_in_hg",
+            "sim/cockpit2/engine/indicators/engine_speed_rpm",
+            "sim/cockpit2/engine/indicators/power_pct",
+            "sim/cockpit2/engine/indicators/CHT_deg_C",
+            "sim/cockpit2/engine/indicators/EGT_deg_C",
+            "sim/cockpit2/autopilot/autopilot_on",
+            "sim/cockpit2/autopilot/sync_hold_pitch_deg",
+            "sim/cockpit2/autopilot/sync_hold_roll_deg",
+            "sim/cockpit2/autopilot/vvi_dial_fpm",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -251,14 +264,20 @@ impl XPlaneMonitor {
                             path_to_id.get(path).and_then(|id| data_values.get(id))
                         };
 
-                        let get_path_double = |path: &str| -> Option<f64> {
+                        let get_path_double_idx = |path: &str, idx: usize| -> Option<f64> {
                             get_path_val(path).and_then(|v| {
                                 if let Some(arr) = v.as_array() {
-                                    arr.first().and_then(|x| x.as_f64())
-                                } else {
+                                    arr.get(idx).and_then(|x| x.as_f64())
+                                } else if idx == 0 {
                                     v.as_f64()
+                                } else {
+                                    None
                                 }
                             })
+                        };
+
+                        let get_path_double = |path: &str| -> Option<f64> {
+                            get_path_double_idx(path, 0)
                         };
 
                         if let Some(v) = get_path_double("sim/flightmodel/position/latitude") { m.latitude = v; updated = true; }
@@ -304,8 +323,8 @@ impl XPlaneMonitor {
                         
                         if let Some(v) = get_path_double("sim/flightmodel/position/y_agl") { m.altitude_agl = v * 3.28084; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/mag_psi") { m.heading = v; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel1") { m.fuel_quantity_left = v * 0.1498; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/weight/m_fuel2") { m.fuel_quantity_right = v * 0.1498; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 0) { m.fuel_quantity_left = v * 2.20462 * 0.1498; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 1) { m.fuel_quantity_right = v * 2.20462 * 0.1498; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.normal_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/gauges/indicators/altitude_ft_pilot") { m.indicated_altitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit/misc/barometer_setting") { m.altimeter_setting = v; updated = true; }
@@ -314,6 +333,50 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_side") { m.lateral_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/hpath") { m.track = v; updated = true; }
+
+                        // Electrical
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/electrical/bus_volts", 0) { m.volts_1 = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/electrical/bus_volts", 1) { m.volts_2 = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/electrical/generator_amps", 0) { m.amps_1 = v; updated = true; }
+
+                        // Engine
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/fuel_flow_kg_sec", 0) { m.engine_1_fuel_flow = v * 3600.0 * 2.20462 * 0.1498; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_temp_deg_C", 0) { m.engine_1_oil_temp = v * 1.8 + 32.0; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_pressure_psi", 0) { m.engine_1_oil_pressure = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/MP_in_hg", 0) { m.engine_1_manifold_pressure = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/engine_speed_rpm", 0) { m.engine_1_rpm = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/power_pct", 0) { m.engine_1_percent_power = v; updated = true; }
+
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/CHT_deg_C", 0) {
+                            let temp_f = v * 1.8 + 32.0;
+                            m.engine_1_cht_1 = temp_f;
+                            m.engine_1_cht_2 = temp_f;
+                            m.engine_1_cht_3 = temp_f;
+                            m.engine_1_cht_4 = temp_f;
+                            m.engine_1_cht_5 = temp_f;
+                            m.engine_1_cht_6 = temp_f;
+                            updated = true;
+                        }
+
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/EGT_deg_C", 0) {
+                            let temp_f = v * 1.8 + 32.0;
+                            m.engine_1_egt_1 = temp_f;
+                            m.engine_1_egt_2 = temp_f;
+                            m.engine_1_egt_3 = temp_f;
+                            m.engine_1_egt_4 = temp_f;
+                            m.engine_1_egt_5 = temp_f;
+                            m.engine_1_egt_6 = temp_f;
+                            updated = true;
+                        }
+
+                        // Autopilot
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/autopilot_on") {
+                            m.autopilot_active = if (v - 2.0).abs() < 0.1 { 1.0 } else { 0.0 };
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/vvi_dial_fpm") { m.vertical_speed_target = v; updated = true; }
 
                         if !updated { continue; }
 
