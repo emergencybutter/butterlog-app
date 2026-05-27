@@ -156,6 +156,17 @@ impl XPlaneMonitor {
             "sim/flightmodel2/position/pressure_altitude",
             "sim/aircraft/parts/acf_gear_deploy",
             "sim/flightmodel/engine/ENGHP",
+            "sim/cockpit2/engine/indicators/ITT_deg_C",
+            "sim/cockpit2/radios/indicators/nav1_hdef_dots_pilot",
+            "sim/cockpit2/radios/indicators/nav1_vdef_dots_pilot",
+            "sim/weather/wind_speed_kt",
+            "sim/weather/wind_direction_degt",
+            "sim/cockpit2/radios/indicators/gps_dme_distance_nm",
+            "sim/cockpit2/radios/indicators/gps_bearing_deg_mag",
+            "sim/flightmodel/position/magnetic_variation",
+            "sim/cockpit2/autopilot/roll_status",
+            "sim/cockpit2/autopilot/pitch_status",
+            "sim/cockpit2/pressurization/indicators/cabin_altitude_ft",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -409,6 +420,32 @@ impl XPlaneMonitor {
                             updated = true;
                         }
                         if let Some(v) = get_path_double_idx("sim/aircraft/parts/acf_gear_deploy", 0) { m.xp_gear_ratio = v; updated = true; }
+
+                        // Added X-Plane parameter mapping
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/ITT_deg_C", 0) {
+                            m.engine_1_tit_1 = v * 1.8 + 32.0;
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/ITT_deg_C", 1) {
+                            m.engine_1_tit_2 = v * 1.8 + 32.0;
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/indicators/nav1_hdef_dots_pilot") { m.horizontal_cdi = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/indicators/nav1_vdef_dots_pilot") { m.vertical_cdi = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/weather/wind_speed_kt") { m.wind_speed = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/weather/wind_direction_degt") { m.wind_direction = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/indicators/gps_dme_distance_nm") { m.waypoint_distance = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/indicators/gps_bearing_deg_mag") { m.waypoint_bearing = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/magnetic_variation") { m.magnetic_variation = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/roll_status") {
+                            m.roll_mode = if (v - 2.0).abs() < 0.1 { 1.0 } else { 0.0 };
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/pitch_status") {
+                            m.pitch_mode = if (v - 2.0).abs() < 0.1 { 1.0 } else { 0.0 };
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double("sim/cockpit2/pressurization/indicators/cabin_altitude_ft") { m.pressurization_cabin_altitude = v; updated = true; }
 
                         if !updated { continue; }
 
