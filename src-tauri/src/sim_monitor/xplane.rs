@@ -109,6 +109,7 @@ impl XPlaneMonitor {
         let base_host = "localhost:8086";
         let rest_url = format!("http://{}/api/v3/datarefs", base_host);
         let ws_url = format!("ws://{}/api/v3", base_host);
+        let mut max_hp = 180.0;
 
         // Required dataref paths for flight tracking
         let paths = vec![
@@ -138,13 +139,23 @@ impl XPlaneMonitor {
             "sim/cockpit2/engine/indicators/oil_pressure_psi",
             "sim/cockpit2/engine/indicators/MP_in_hg",
             "sim/cockpit2/engine/indicators/engine_speed_rpm",
-            "sim/cockpit2/engine/indicators/power_pct",
             "sim/cockpit2/engine/indicators/CHT_deg_C",
             "sim/cockpit2/engine/indicators/EGT_deg_C",
             "sim/cockpit2/autopilot/autopilot_on",
             "sim/cockpit2/autopilot/sync_hold_pitch_deg",
             "sim/cockpit2/autopilot/sync_hold_roll_deg",
             "sim/cockpit2/autopilot/vvi_dial_fpm",
+            "sim/flightmodel2/position/ellipsoid_height",
+            "sim/flightmodel/position/true_airspeed",
+            "sim/cockpit2/radios/actuators/HSI_source_select_pilot",
+            "sim/cockpit2/radios/actuators/hsi_obs_deg_mag_pilot",
+            "sim/cockpit2/radios/actuators/nav1_frequency_hz",
+            "sim/cockpit2/radios/actuators/nav2_frequency_hz",
+            "sim/cockpit2/radios/actuators/com1_frequency_hz_833",
+            "sim/cockpit2/radios/actuators/com2_frequency_hz_833",
+            "sim/flightmodel2/position/pressure_altitude",
+            "sim/aircraft/parts/acf_gear_deploy",
+            "sim/flightmodel/engine/ENGHP",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -345,7 +356,7 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_pressure_psi", 0) { m.engine_1_oil_pressure = v; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/MP_in_hg", 0) { m.engine_1_manifold_pressure = v; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/engine_speed_rpm", 0) { m.engine_1_rpm = v; updated = true; }
-                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/power_pct", 0) { m.engine_1_percent_power = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/flightmodel/engine/ENGHP", 0) { m.engine_1_percent_power = (v / max_hp) * 100.0; updated = true; }
 
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/CHT_deg_C", 0) {
                             let temp_f = v * 1.8 + 32.0;
@@ -377,6 +388,27 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/vvi_dial_fpm") { m.vertical_speed_target = v; updated = true; }
+
+                        // Frequencies
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com1_frequency_hz_833") { m.com_1_frequency = v / 1_000_000.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com2_frequency_hz_833") { m.com_2_frequency = v / 1_000_000.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav1_frequency_hz") { m.nav_1_frequency = v / 1_000_000.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav2_frequency_hz") { m.nav_2_frequency = v / 1_000_000.0; updated = true; }
+
+                        // OBS / HSI Source
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/HSI_source_select_pilot") { m.hsi_source = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/hsi_obs_deg_mag_pilot") { m.selected_course = v; updated = true; }
+
+                        // GPS / TAS / G-force / Alt
+                        if let Some(v) = get_path_double("sim/flightmodel2/position/ellipsoid_height") { m.gps_altitude_wgs84 = v * 3.28084; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/true_airspeed") { m.true_airspeed = v * 1.94384; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.gforce = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel2/position/pressure_altitude") {
+                            m.pressure_altitude = v;
+                            m.density_altitude = v + 120.0 * (m.outside_air_temp - (15.0 - 1.98 * (v / 1000.0)));
+                            updated = true;
+                        }
+                        if let Some(v) = get_path_double_idx("sim/aircraft/parts/acf_gear_deploy", 0) { m.xp_gear_ratio = v; updated = true; }
 
                         if !updated { continue; }
 
@@ -421,6 +453,12 @@ impl XPlaneMonitor {
                                 2 => "jet".to_string(),
                                 _ => "unknown".to_string(),
                             };
+
+                            if let Some(pmax) = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/engine/acf_pmax").await {
+                                if pmax > 0.0 {
+                                    max_hp = pmax / 745.7;
+                                }
+                            }
 
                             if !actual_title.is_empty() {
                                 // Reset if aircraft name changes mid-flight
