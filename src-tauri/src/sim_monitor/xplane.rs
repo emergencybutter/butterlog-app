@@ -271,7 +271,6 @@ impl XPlaneMonitor {
         let mut last_pos: Option<(f64, f64)> = None;
         let mut last_known_title = String::new();
 
-        // 4. Processing Phase: Handle dataref_update_values (partial updates)
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock().unwrap() { break; }
 
@@ -306,7 +305,7 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/position/longitude") { m.longitude = v; updated = true; }
                         
                         // Check for teleportation (> 1nm jump)
-                        if updated {
+                        if updated && m.latitude != 0.0 && m.longitude != 0.0 {
                             if let Some((l_lat, l_lon)) = last_pos {
                                 let d_lat = (m.latitude - l_lat).abs() * 60.0; // 1 deg lat = 60nm
                                 let d_lon = (m.longitude - l_lon).abs() * 60.0 * l_lat.to_radians().cos();
