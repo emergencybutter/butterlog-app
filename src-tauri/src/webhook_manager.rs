@@ -11,10 +11,20 @@ pub struct WebhookFlightResponse {
     pub peers: Option<Vec<String>>,
 }
 
+struct SyncGuard<'a>(&'a Mutex<bool>);
+
+impl<'a> Drop for SyncGuard<'a> {
+    fn drop(&mut self) {
+        let mut syncing = self.0.lock().unwrap();
+        *syncing = false;
+    }
+}
+
 pub struct WebhookManager {
     client: Client,
     current_remote_id: Mutex<Option<i64>>,
     last_update_time: Mutex<Option<std::time::Instant>>,
+    is_syncing: Mutex<bool>,
 }
 
 impl WebhookManager {
@@ -23,6 +33,7 @@ impl WebhookManager {
             client: Client::new(),
             current_remote_id: Mutex::new(None),
             last_update_time: Mutex::new(None),
+            is_syncing: Mutex::new(false),
         }
     }
 
@@ -49,6 +60,8 @@ impl WebhookManager {
         *id = None;
         let mut time = self.last_update_time.lock().unwrap();
         *time = None;
+        let mut syncing = self.is_syncing.lock().unwrap();
+        *syncing = false;
     }
 
     pub async fn sync_flight(
@@ -61,6 +74,15 @@ impl WebhookManager {
             Some(url) => url,
             None => return,
         };
+
+        {
+            let mut syncing = self.is_syncing.lock().unwrap();
+            if *syncing {
+                return;
+            }
+            *syncing = true;
+        }
+        let _guard = SyncGuard(&self.is_syncing);
 
         let config = app.state::<crate::config::ConfigManager>().get_config();
         let multiplayer_enabled = config.enable_multiplayer_hubs;
