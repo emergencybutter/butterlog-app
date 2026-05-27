@@ -175,29 +175,51 @@ impl XPlaneMonitor {
         
         crate::append_log(&app, format!("[X-Plane] Starting dataref discovery via REST..."));
         
+        let mut query_params = Vec::new();
         for path in &paths {
-            let resp = match client.get(&rest_url).query(&[("filter[name]", *path)]).send().await {
-                Ok(r) => r.json::<Value>().await?,
-                Err(_e) => {
-                    // This floods the logs when xplane is not running.
-                    // crate::append_log(&app, format!("[X-Plane] Discovery failed for {}: {}", path, e));
-                    continue;
-                }
-            };
+            query_params.push(("filter[name]", *path));
+        }
 
-            if let Some(data) = resp["data"].as_array() {
-                if let Some(item) = data.first() {
-                    if let Some(id) = item["id"].as_i64() {
-                        path_to_id.insert(path.to_string(), id.to_string());
-                    }
+        let resp = match client.get(&rest_url).query(&query_params).send().await {
+            Ok(r) => match r.json::<Value>().await {
+                Ok(j) => j,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to parse datarefs JSON: {}", e));
+                }
+            },
+            Err(e) => {
+                return Err(anyhow::anyhow!("Failed to send datarefs discovery request: {}", e));
+            }
+        };
+
+        if let Some(data) = resp["data"].as_array() {
+            for item in data {
+                if let (Some(name), Some(id)) = (item["name"].as_str(), item["id"].as_i64()) {
+                    path_to_id.insert(name.to_string(), id.to_string());
                 }
             }
         }
 
-        if path_to_id.is_empty() {
-            // This floods the logs when xplane is not running.
-            // crate::append_log(&app, "[X-Plane] ERROR: No dataref IDs discovered. Connection aborted.".to_string());
-            return Err(anyhow::anyhow!("No datarefs discovered. Is X-Plane running?"));
+        // Validate that all critical datarefs were successfully mapped
+        let critical_datarefs = vec![
+            "sim/flightmodel/position/latitude",
+            "sim/flightmodel/position/longitude",
+            "sim/flightmodel/position/elevation",
+            "sim/flightmodel/position/indicated_airspeed",
+            "sim/flightmodel/position/groundspeed",
+            "sim/flightmodel/failures/onground_any",
+        ];
+
+        let mut missing = Vec::new();
+        for key in &critical_datarefs {
+            if !path_to_id.contains_key(*key) {
+                missing.push(*key);
+            }
+        }
+
+        if !missing.is_empty() {
+            crate::append_log(&app, format!("[X-Plane] ERROR: Missing critical datarefs: {:?}. Connection aborted.", missing));
+            return Err(anyhow::anyhow!("Missing critical datarefs: {:?}", missing));
         }
 
         crate::append_log(&app, format!("[X-Plane] Discovered {}/{} dataref IDs.", path_to_id.len(), paths.len()));

@@ -75,6 +75,7 @@ impl UnifiedMonitor {
 }
 
 pub(crate) fn append_log(app: &AppHandle, message: String) {
+    println!("{}", message);
     let state = app.state::<LogState>();
     let mut logs = state.0.lock().unwrap();
     logs.push(message.clone());
