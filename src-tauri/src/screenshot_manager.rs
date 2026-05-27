@@ -503,6 +503,10 @@ pub async fn perform_screenshot_upload(
         base_url.pop();
     }
 
+    if let Some(custom_url) = crate::get_custom_service_url() {
+        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
+    }
+
     // Get screenshot path
     let sc_manager = app.state::<ScreenshotManager>();
     let screenshot = {

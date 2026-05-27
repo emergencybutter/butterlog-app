@@ -36,6 +36,11 @@ impl WebhookManager {
         if url.ends_with('/') {
             url.pop();
         }
+        
+        if let Some(custom_url) = crate::get_custom_service_url() {
+            url = url.replace("https://butterlog.flyvoyager.net", &custom_url);
+        }
+        
         Some(url)
     }
 

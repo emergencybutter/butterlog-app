@@ -12,6 +12,13 @@ mod webhook_manager;
 
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
+
+static CUSTOM_SERVICE_URL: OnceLock<Option<String>> = OnceLock::new();
+
+pub fn get_custom_service_url() -> Option<String> {
+    CUSTOM_SERVICE_URL.get().cloned().flatten()
+}
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
@@ -224,7 +231,8 @@ async fn start_discord_login(app: AppHandle) -> Result<String, String> {
     let port = listener.local_addr().map_err(|e| format!("Failed to get local port: {}", e))?.port();
     
     // 2. Open default browser
-    let login_url = format!("https://butterlog.flyvoyager.net/api/v0/auth/login?port={}", port);
+    let base_service_url = get_custom_service_url().unwrap_or_else(|| "https://butterlog.flyvoyager.net".to_string());
+    let login_url = format!("{}/api/v0/auth/login?port={}", base_service_url, port);
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_path(&login_url, None::<String>).map_err(|e| format!("Failed to open browser: {}", e))?;
     
@@ -347,6 +355,25 @@ fn get_runways(
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     let regenerate_summary = args.contains(&"--regenerate_summary".to_string());
+
+    let mut custom_url = None;
+    for i in 0..args.len() {
+        if args[i] == "--service-url" && i + 1 < args.len() {
+            custom_url = Some(args[i + 1].clone());
+        } else if args[i].starts_with("--service-url=") {
+            custom_url = Some(args[i].trim_start_matches("--service-url=").to_string());
+        }
+    }
+    
+    // Normalize trailing slash
+    let custom_url = custom_url.map(|mut url| {
+        if url.ends_with('/') {
+            url.pop();
+        }
+        url
+    });
+
+    let _ = CUSTOM_SERVICE_URL.set(custom_url);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
