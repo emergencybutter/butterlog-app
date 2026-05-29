@@ -173,8 +173,6 @@ impl XPlaneMonitor {
         let client = reqwest::Client::new();
         let mut path_to_id = std::collections::HashMap::new();
         
-        crate::append_log(&app, format!("[X-Plane] Starting dataref discovery via REST..."));
-        
         let resp = match client.get(&rest_url).send().await {
             Ok(r) => match r.json::<Value>().await {
                 Ok(j) => j,
