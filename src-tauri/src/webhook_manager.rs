@@ -124,6 +124,10 @@ impl WebhookManager {
             }
         }
 
+        if let Some(ref addr) = udp_address {
+            crate::append_log(app, format!("[Webhook] Publishing public UDP address: {} to service", addr));
+        }
+
         match current_id {
             Some(id) => {
                 // Update
@@ -141,6 +145,7 @@ impl WebhookManager {
                             *self.last_update_time.lock().unwrap() = Some(now);
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
                                 if let Some(peers) = data.peers {
+                                    crate::append_log(app, format!("[Webhook] Received {} peers from service", peers.len()));
                                     if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
                                         multiplayer.update_peers(peers);
                                     }
@@ -173,6 +178,7 @@ impl WebhookManager {
                                 *self.last_update_time.lock().unwrap() = Some(now);
 
                                 if let Some(peers) = data.peers {
+                                    crate::append_log(app, format!("[Webhook] Received {} peers from service", peers.len()));
                                     if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
                                         multiplayer.update_peers(peers);
                                     }
