@@ -360,7 +360,7 @@ fn parse_ts(ts: &str) -> Result<i64, String> {
 
 fn find_closest_metrics(app: &AppHandle, flight_id: &str, timestamp: i64) -> Result<(f64, f64), String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let db_path = log_dir.join(format!("{}.db", flight_id));
     
     if !db_path.exists() {
@@ -466,7 +466,7 @@ pub async fn get_random_screenshot_for_aircraft(app: AppHandle, aircraft_title: 
 
 async fn get_remote_id_internal(app: &AppHandle, flight_id: &str) -> Result<Option<i64>, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(format!("{}.db", flight_id));
     
     if !path.exists() {

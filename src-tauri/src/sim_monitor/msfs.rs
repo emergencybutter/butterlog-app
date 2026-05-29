@@ -393,7 +393,7 @@ impl SimConnectMonitor {
                         }
 
                         let app_data_dir = app.path().app_data_dir().unwrap();
-                        let internal_log_dir = app_data_dir.join("flightlogs");
+                        let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
                         let _ = create_dir_all(&internal_log_dir);
                         
                         let (path, filename) = if let Some(ref p) = resumed_path {
@@ -712,7 +712,7 @@ impl SimConnectMonitor {
                             
                             
                             let app_data_dir = app.path().app_data_dir().unwrap();
-                            let internal_log_dir = app_data_dir.join("flightlogs");
+                            let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
                             let _ = create_dir_all(&internal_log_dir);
                             
                             let (path, filename) = if let Some(ref p) = resumed_path {

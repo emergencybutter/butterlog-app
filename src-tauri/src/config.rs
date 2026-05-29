@@ -80,18 +80,41 @@ impl Default for Config {
     }
 }
 
+pub fn get_flightlogs_dir_name_from_args(args: &[String]) -> &'static str {
+    if args.contains(&"--dev".to_string()) {
+        "flightlogs-dev"
+    } else {
+        "flightlogs"
+    }
+}
+
+pub fn get_flightlogs_dir_name() -> &'static str {
+    let args: Vec<String> = std::env::args().collect();
+    get_flightlogs_dir_name_from_args(&args)
+}
+
 pub struct ConfigManager {
     pub config: Mutex<Config>,
     config_path: PathBuf,
 }
 
 impl ConfigManager {
+    pub fn get_config_filename(args: &[String]) -> &'static str {
+        if args.contains(&"--dev".to_string()) {
+            "config-dev.json"
+        } else {
+            "config.json"
+        }
+    }
+
     pub fn new(app: &AppHandle) -> Self {
         let app_dir = app
             .path()
             .app_data_dir()
             .expect("Failed to get app data dir");
-        let config_path = app_dir.join("config.json");
+        let args: Vec<String> = std::env::args().collect();
+        let config_filename = Self::get_config_filename(&args);
+        let config_path = app_dir.join(config_filename);
 
         if !app_dir.exists() {
             fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
@@ -154,5 +177,45 @@ mod tests {
         
         assert_eq!(config.screenshot_regex, deserialized.screenshot_regex);
         assert_eq!(config.open_at_login, deserialized.open_at_login);
+    }
+
+    #[test]
+    fn test_get_config_filename() {
+        assert_eq!(
+            ConfigManager::get_config_filename(&[]),
+            "config.json"
+        );
+        assert_eq!(
+            ConfigManager::get_config_filename(&["--dev".to_string()]),
+            "config-dev.json"
+        );
+        assert_eq!(
+            ConfigManager::get_config_filename(&["--some-flag".to_string(), "--dev".to_string()]),
+            "config-dev.json"
+        );
+        assert_eq!(
+            ConfigManager::get_config_filename(&["--dev-something".to_string()]),
+            "config.json"
+        );
+    }
+
+    #[test]
+    fn test_get_flightlogs_dir_name() {
+        assert_eq!(
+            get_flightlogs_dir_name_from_args(&[]),
+            "flightlogs"
+        );
+        assert_eq!(
+            get_flightlogs_dir_name_from_args(&["--dev".to_string()]),
+            "flightlogs-dev"
+        );
+        assert_eq!(
+            get_flightlogs_dir_name_from_args(&["--some-flag".to_string(), "--dev".to_string()]),
+            "flightlogs-dev"
+        );
+        assert_eq!(
+            get_flightlogs_dir_name_from_args(&["--dev-something".to_string()]),
+            "flightlogs"
+        );
     }
 }

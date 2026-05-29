@@ -266,7 +266,7 @@ pub async fn get_flight_data(
     regen_flag: tauri::State<'_, crate::RegenerateSummaryFlag>,
 ) -> Result<Vec<FlightLogRow>, String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     let path = log_dir.join(&filename);
     if !path.exists() {
@@ -472,7 +472,7 @@ pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics
 pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     crate::append_log(&app, format!("[Logs] Scanning logs."));
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     if !log_dir.exists() {
         return Ok(Vec::new());
@@ -515,7 +515,7 @@ pub fn try_find_resume_flight(
         aircraft_title: &str,
    ) -> Option<PathBuf> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     if !log_dir.exists() {
         return None;
@@ -720,7 +720,7 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
 #[tauri::command]
 pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<String, String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let internal_log_dir = app_data_dir.join("flightlogs");
+    let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     let config = app.state::<ConfigManager>().get_config();
     let export_dir = config.log_directory.clone().unwrap_or_else(|| {
@@ -1038,7 +1038,7 @@ fn save_imported_flight(
     source_path: &str,
 ) -> anyhow::Result<FlightSummary> {
     let app_data_dir = app.path().app_data_dir()?;
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     fs::create_dir_all(&log_dir)?;
 
     let first_ts = &rows.first().unwrap().timestamp;

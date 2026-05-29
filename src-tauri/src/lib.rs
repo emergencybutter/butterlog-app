@@ -90,7 +90,7 @@ async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, Stri
 #[tauri::command]
 async fn get_flight_summary(app: AppHandle, filename: String) -> Result<FlightSummary, String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
     
     if !path.exists() {
@@ -191,7 +191,7 @@ fn get_current_flight_id(state: State<'_, UnifiedMonitor>) -> String {
 #[tauri::command]
 async fn get_remote_id(app: AppHandle, filename: String) -> Result<Option<i64>, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join("flightlogs");
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
     
     if !path.exists() {

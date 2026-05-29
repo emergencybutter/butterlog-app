@@ -543,7 +543,7 @@ impl XPlaneMonitor {
                             }
 
                             let app_data_dir = app.path().app_data_dir().unwrap();
-                            let internal_log_dir = app_data_dir.join("flightlogs");
+                            let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
                             let _ = create_dir_all(&internal_log_dir);
                             
                             let (path, filename) = if let Some(ref p) = resumed_path {
@@ -1044,13 +1044,47 @@ impl SimMonitor for XPlaneMonitor {
     fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
     fn update_remote_aircraft(
         &self,
-        _id: &str,
+        id: &str,
         _title: &str,
-        _atc_model: &str,
+        atc_model: &str,
         _object_class: &str,
         _category: &str,
         _num_engines: i32,
         _engine_type: &str,
-        _metrics: &FlightMetrics,
-    ) {}
+        metrics: &FlightMetrics,
+    ) {
+        static UDP_SOCKET: std::sync::OnceLock<std::net::UdpSocket> = std::sync::OnceLock::new();
+        let socket = UDP_SOCKET.get_or_init(|| {
+            std::net::UdpSocket::bind("0.0.0.0:0").expect("Failed to bind UDP socket")
+        });
+
+        // Parse airline from callsign/id if possible
+        let mut airline = None;
+        if id.len() >= 4 {
+            let first_3 = &id[..3];
+            if first_3.chars().all(|c| c.is_ascii_alphabetic()) {
+                airline = Some(first_3.to_uppercase());
+            }
+        }
+
+        let icao = if atc_model.is_empty() { "A320" } else { atc_model };
+
+        let payload = serde_json::json!({
+            "id": id,
+            "icao": icao,
+            "airline": airline,
+            "livery": None::<String>,
+            "latitude": metrics.latitude,
+            "longitude": metrics.longitude,
+            "elevation": metrics.gps_altitude_msl * 0.3048, // convert feet to meters
+            "pitch": metrics.pitch_angle as f32,
+            "heading": metrics.heading as f32,
+            "roll": metrics.roll_angle as f32,
+            "remove": false
+        });
+
+        if let Ok(data) = serde_json::to_vec(&payload) {
+            let _ = socket.send_to(&data, "127.0.0.1:49020");
+        }
+    }
 }
