@@ -145,7 +145,7 @@ impl WebhookManager {
                             *self.last_update_time.lock().unwrap() = Some(now);
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
                                 if let Some(peers) = data.peers {
-                                    crate::append_log(app, format!("[Webhook] Received {} peers from service", peers.len()));
+                                    crate::append_log(app, format!("[Webhook] Received {} peers from service: {:?}", peers.len(), peers));
                                     if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
                                         multiplayer.update_peers(peers);
                                     }
@@ -178,7 +178,7 @@ impl WebhookManager {
                                 *self.last_update_time.lock().unwrap() = Some(now);
 
                                 if let Some(peers) = data.peers {
-                                    crate::append_log(app, format!("[Webhook] Received {} peers from service", peers.len()));
+                                    crate::append_log(app, format!("[Webhook] Received {} peers from service: {:?}", peers.len(), peers));
                                     if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
                                         multiplayer.update_peers(peers);
                                     }
