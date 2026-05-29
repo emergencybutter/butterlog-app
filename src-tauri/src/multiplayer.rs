@@ -55,6 +55,70 @@ impl MultiplayerManager {
     pub fn start(&self, app: AppHandle) {
         let multiplayer = app.state::<Arc<MultiplayerManager>>().inner().clone();
         
+        let ping_app = app.clone();
+        let ping_multiplayer = multiplayer.clone();
+        tauri::async_runtime::spawn(async move {
+            let client = reqwest::Client::new();
+            let mut last_log_time: Option<std::time::Instant> = None;
+            loop {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                
+                let config = ping_app.state::<ConfigManager>().get_config();
+                
+                // Only ping if features are enabled and logged in (webhook_url present)
+                let features_enabled = config.inject_butterlog_traffic || config.enable_multiplayer_hubs;
+                if !features_enabled || config.webhook_url.is_empty() {
+                    continue;
+                }
+                
+                // Only ping if connected to a simulator
+                let monitor = ping_app.state::<UnifiedMonitor>();
+                let sim_connected = monitor.get_all_monitors().iter().any(|m| m.is_connected());
+                if !sim_connected {
+                    continue;
+                }
+                
+                // Get public address discovered by STUN
+                let public_addr = ping_multiplayer.get_public_address();
+                let public_addr_str = public_addr.map(|a| a.to_string());
+                
+                let url = format!("{}/multiplayer/ping", config.webhook_url);
+                let body = serde_json::json!({
+                    "udp_address": public_addr_str
+                });
+                
+                match client.post(&url).json(&body).send().await {
+                    Ok(res) => {
+                        if res.status().is_success() {
+                            #[derive(serde::Deserialize)]
+                            struct PingResponse {
+                                peers: Vec<String>,
+                            }
+                            if let Ok(data) = res.json::<PingResponse>().await {
+                                let now = std::time::Instant::now();
+                                let should_log = match last_log_time {
+                                    Some(t) if now.duration_since(t).as_secs() < 30 => false,
+                                    _ => {
+                                        last_log_time = Some(now);
+                                        true
+                                    }
+                                };
+                                if should_log {
+                                    crate::append_log(&ping_app, format!("[Multiplayer Ping] Active. Received {} peers from service", data.peers.len()));
+                                }
+                                ping_multiplayer.update_peers(data.peers);
+                            }
+                        } else {
+                            crate::append_log(&ping_app, format!("[Multiplayer Ping] Failed with status: {}", res.status()));
+                        }
+                    }
+                    Err(e) => {
+                        crate::append_log(&ping_app, format!("[Multiplayer Ping] Error: {}", e));
+                    }
+                }
+            }
+        });
+
         // Background thread for sending data
         std::thread::spawn(move || {
             let socket = match UdpSocket::bind("0.0.0.0:0") {
