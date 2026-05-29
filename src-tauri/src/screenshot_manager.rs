@@ -226,6 +226,28 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
         return;
     }
 
+    // Wait until the file size is stable for 200ms (to ensure write is complete)
+    let mut last_size = 0;
+    let mut last_change = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+    let start_wait = std::time::Instant::now();
+
+    loop {
+        let current_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if current_size != last_size {
+            last_size = current_size;
+            last_change = std::time::Instant::now();
+        } else if last_size > 0 && last_change.elapsed() >= std::time::Duration::from_millis(200) {
+            break;
+        }
+
+        if start_wait.elapsed() > timeout {
+            crate::append_log(app, format!("[Watcher] Timeout waiting for screenshot size stability: {:?}", file_name));
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
     // Check if a flight is ongoing
     let connected_sims = app.state::<crate::UnifiedMonitor>().get_all_monitors();
     

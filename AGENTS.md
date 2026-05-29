@@ -2,6 +2,7 @@
 
 * Keep a log of important changes in a changelog.
 * Commit change to git.
+* No need to ask for confirmation to run `cargo check` or `cargo test`.
 
 ## Release
 
