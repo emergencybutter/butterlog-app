@@ -165,8 +165,8 @@ impl MultiplayerManager {
                                                     crate::append_log(
                                                         &recv_app,
                                                         format!(
-                                                            "[Multiplayer RECV] Update from {}: {} [{}] at Lat={:.5}, Lon={:.5}, Alt={:.1} ft MSL",
-                                                            addr, aircraft, atc_model, metrics.latitude, metrics.longitude, metrics.gps_altitude_msl
+                                                            "[Multiplayer RECV] Update from {}: {} [{}] at Lat={:.6}, Lon={:.6}, Alt={:.1} ft MSL, Hdg={:.1}",
+                                                            addr, aircraft, atc_model, metrics.latitude, metrics.longitude, metrics.gps_altitude_msl, metrics.heading
                                                         )
                                                     );
                                                 }
@@ -359,8 +359,8 @@ impl MultiplayerManager {
                                     crate::append_log(
                                         &app,
                                         format!(
-                                            "[Multiplayer EMIT] Sending coordinates for {} to {} peers (Lat={:.5}, Lon={:.5}, Alt={:.1} ft MSL)",
-                                            aircraft.title, peers.len(), metrics.latitude, metrics.longitude, metrics.gps_altitude_msl
+                                            "[Multiplayer EMIT] Sending coordinates for {} to {} peers: Lat={:.6}, Lon={:.6}, Alt={:.1} ft MSL, Hdg={:.1}",
+                                            aircraft.title, peers.len(), metrics.latitude, metrics.longitude, metrics.gps_altitude_msl, metrics.heading
                                         )
                                     );
                                 }
