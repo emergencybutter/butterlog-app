@@ -24,6 +24,8 @@ pub struct MultiplayerManager {
     peers: Mutex<Vec<SocketAddr>>,
     public_address: Mutex<Option<SocketAddr>>,
     tracked_aircrafts: Mutex<HashMap<String, TrackedAircraft>>,
+    last_received_log: Mutex<Option<std::time::Instant>>,
+    last_emitted_log: Mutex<Option<std::time::Instant>>,
 }
 
 impl MultiplayerManager {
@@ -32,6 +34,8 @@ impl MultiplayerManager {
             peers: Mutex::new(Vec::new()),
             public_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
+            last_received_log: Mutex::new(None),
+            last_emitted_log: Mutex::new(None),
         }
     }
 
@@ -143,6 +147,30 @@ impl MultiplayerManager {
 
                                             let config = recv_app.state::<ConfigManager>().get_config();
                                             let monitor = recv_app.state::<UnifiedMonitor>();
+                                            
+                                            // Throttled logging of received peer telemetry (every 10s)
+                                            if config.inject_butterlog_traffic || config.enable_multiplayer_hubs {
+                                                let now = std::time::Instant::now();
+                                                let should_log = {
+                                                    let mut last_log = recv_multiplayer.last_received_log.lock().unwrap();
+                                                    match *last_log {
+                                                        Some(t) if now.duration_since(t).as_secs() < 10 => false,
+                                                        _ => {
+                                                            *last_log = Some(now);
+                                                            true
+                                                        }
+                                                    }
+                                                };
+                                                if should_log {
+                                                    crate::append_log(
+                                                        &recv_app,
+                                                        format!(
+                                                            "[Multiplayer RECV] Update from {}: {} [{}] at Lat={:.5}, Lon={:.5}, Alt={:.1} ft MSL",
+                                                            addr, aircraft, atc_model, metrics.latitude, metrics.longitude, metrics.gps_altitude_msl
+                                                        )
+                                                    );
+                                                }
+                                            }
                                             
                                             if config.inject_butterlog_traffic {
                                                 if let Some(m) = monitor.get_connected_monitor() {
@@ -312,7 +340,32 @@ impl MultiplayerManager {
                         });
 
                         if let Ok(data) = serde_json::to_vec(&payload) {
-                            let peers = multiplayer.peers.lock().unwrap();
+                            let peers = multiplayer.peers.lock().unwrap().clone();
+                            
+                            // Throttled logging of emitted peer telemetry (every 10s)
+                            if !peers.is_empty() {
+                                let now = std::time::Instant::now();
+                                let should_log = {
+                                    let mut last_log = multiplayer.last_emitted_log.lock().unwrap();
+                                    match *last_log {
+                                        Some(t) if now.duration_since(t).as_secs() < 10 => false,
+                                        _ => {
+                                            *last_log = Some(now);
+                                            true
+                                        }
+                                    }
+                                };
+                                if should_log {
+                                    crate::append_log(
+                                        &app,
+                                        format!(
+                                            "[Multiplayer EMIT] Sending coordinates for {} to {} peers (Lat={:.5}, Lon={:.5}, Alt={:.1} ft MSL)",
+                                            aircraft.title, peers.len(), metrics.latitude, metrics.longitude, metrics.gps_altitude_msl
+                                        )
+                                    );
+                                }
+                            }
+
                             for peer in peers.iter() {
                                 let _ = socket.send_to(&data, peer);
                             }
