@@ -1356,9 +1356,7 @@ fn find_best_multiplayer_model(
         }
         
         if let Some(m) = best_match {
-            if best_score >= 100 {
-                return m;
-            }
+            return m;
         }
     }
 
