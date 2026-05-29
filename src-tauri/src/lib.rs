@@ -422,6 +422,15 @@ pub fn run() {
                 ),
             );
 
+            let startup_config = app.state::<ConfigManager>().get_config();
+            let screenshot_dir = startup_config.screenshot_directory.as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "None".to_string());
+            append_log(
+                app.handle(),
+                format!("Screenshot directory path: {}", screenshot_dir),
+            );
+
             // Tray menu
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Open Window", true, None::<&str>)?;
