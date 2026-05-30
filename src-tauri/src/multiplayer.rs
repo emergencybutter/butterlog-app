@@ -9,6 +9,36 @@ use crate::UnifiedMonitor;
 
 const STUN_TX_ID: [u8; 12] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0];
 
+fn lerp(start: f64, target: f64, t: f64) -> f64 {
+    start + (target - start) * t
+}
+
+fn interpolate_angle_0_360(start: f64, target: f64, t: f64) -> f64 {
+    let mut diff = (target - start) % 360.0;
+    if diff > 180.0 {
+        diff -= 360.0;
+    } else if diff < -180.0 {
+        diff += 360.0;
+    }
+    let res = start + diff * t;
+    (res + 360.0) % 360.0
+}
+
+fn interpolate_angle_signed(start: f64, target: f64, t: f64) -> f64 {
+    let mut diff = (target - start) % 360.0;
+    if diff > 180.0 {
+        diff -= 360.0;
+    } else if diff < -180.0 {
+        diff += 360.0;
+    }
+    let mut res = start + diff * t;
+    res = (res + 180.0) % 360.0;
+    if res < 0.0 {
+        res += 360.0;
+    }
+    res - 180.0
+}
+
 struct TrackedAircraft {
     last_seen: std::time::Instant,
     aircraft: String,
@@ -17,7 +47,11 @@ struct TrackedAircraft {
     category: String,
     num_engines: i32,
     engine_type: String,
-    metrics: FlightMetrics,
+    start_time: std::time::Instant,
+    expected_duration: std::time::Duration,
+    start_metrics: FlightMetrics,
+    target_metrics: FlightMetrics,
+    current_metrics: FlightMetrics,
 }
 
 pub struct MultiplayerManager {
@@ -55,6 +89,72 @@ impl MultiplayerManager {
     pub fn start(&self, app: AppHandle) {
         let multiplayer = app.state::<Arc<MultiplayerManager>>().inner().clone();
         
+        // Dedicated thread for 100ms interpolation and simulator injection
+        let interp_app = app.clone();
+        let interp_multiplayer = multiplayer.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_millis(100));
+                
+                let config = interp_app.state::<ConfigManager>().get_config();
+                if !config.inject_butterlog_traffic && !config.enable_multiplayer_hubs {
+                    continue;
+                }
+                
+                let monitor = interp_app.state::<UnifiedMonitor>();
+                if let Some(m) = monitor.get_connected_monitor() {
+                    if m.is_connected() {
+                        let now = std::time::Instant::now();
+                        let mut tracked = interp_multiplayer.tracked_aircrafts.lock().unwrap();
+                        
+                        for (id, ac) in tracked.iter_mut() {
+                            let elapsed = now.duration_since(ac.start_time);
+                            let duration_secs = ac.expected_duration.as_secs_f64();
+                            let t = if duration_secs > 0.0 {
+                                (elapsed.as_secs_f64() / duration_secs).clamp(0.0, 1.0)
+                            } else {
+                                1.0
+                            };
+                            
+                            let lat = lerp(ac.start_metrics.latitude, ac.target_metrics.latitude, t);
+                            let lon = lerp(ac.start_metrics.longitude, ac.target_metrics.longitude, t);
+                            let gps_alt = lerp(ac.start_metrics.gps_altitude_msl, ac.target_metrics.gps_altitude_msl, t);
+                            let ind_alt = lerp(ac.start_metrics.indicated_altitude, ac.target_metrics.indicated_altitude, t);
+                            let gnd_spd = lerp(ac.start_metrics.ground_speed, ac.target_metrics.ground_speed, t);
+                            
+                            let hdg = interpolate_angle_0_360(ac.start_metrics.heading, ac.target_metrics.heading, t);
+                            let trk = interpolate_angle_0_360(ac.start_metrics.track, ac.target_metrics.track, t);
+                            let pitch = interpolate_angle_signed(ac.start_metrics.pitch_angle, ac.target_metrics.pitch_angle, t);
+                            let roll = interpolate_angle_signed(ac.start_metrics.roll_angle, ac.target_metrics.roll_angle, t);
+                            
+                            ac.current_metrics = ac.target_metrics;
+                            
+                            ac.current_metrics.latitude = lat;
+                            ac.current_metrics.longitude = lon;
+                            ac.current_metrics.gps_altitude_msl = gps_alt;
+                            ac.current_metrics.indicated_altitude = ind_alt;
+                            ac.current_metrics.ground_speed = gnd_spd;
+                            ac.current_metrics.heading = hdg;
+                            ac.current_metrics.track = trk;
+                            ac.current_metrics.pitch_angle = pitch;
+                            ac.current_metrics.roll_angle = roll;
+                            
+                            m.update_remote_aircraft(
+                                id,
+                                &ac.aircraft,
+                                &ac.atc_model,
+                                &ac.object_class,
+                                &ac.category,
+                                ac.num_engines,
+                                &ac.engine_type,
+                                &ac.current_metrics,
+                            );
+                        }
+                    }
+                }
+            }
+        });
+
         let ping_app = app.clone();
         let ping_multiplayer = multiplayer.clone();
         tauri::async_runtime::spawn(async move {
@@ -236,11 +336,12 @@ impl MultiplayerManager {
                                                 }
                                             }
                                             
-                                            if config.inject_butterlog_traffic {
-                                                if let Some(m) = monitor.get_connected_monitor() {
-                                                    if m.is_connected() {
+                                            // Determine if we should process this aircraft
+                                            let mut should_process = false;
+                                            if let Some(m) = monitor.get_connected_monitor() {
+                                                if m.is_connected() {
+                                                    if config.inject_butterlog_traffic {
                                                         let self_metrics = m.get_metrics();
-                                                        // Validate self coordinates
                                                         if self_metrics.latitude != 0.0 || self_metrics.longitude != 0.0 {
                                                             let dist = crate::sim_monitor::calculate_distance(
                                                                 self_metrics.latitude,
@@ -248,48 +349,50 @@ impl MultiplayerManager {
                                                                 metrics.latitude,
                                                                 metrics.longitude,
                                                             );
-                                                            
                                                             if dist <= 20.0 {
-                                                                // Insert/update into tracked aircrafts list
-                                                                let mut tracked = recv_multiplayer.tracked_aircrafts.lock().unwrap();
-                                                                tracked.insert(addr.to_string(), TrackedAircraft {
-                                                                    last_seen: std::time::Instant::now(),
-                                                                    aircraft: aircraft.to_string(),
-                                                                    atc_model: atc_model.clone(),
-                                                                    object_class: object_class.clone(),
-                                                                    category: category.clone(),
-                                                                    num_engines,
-                                                                    engine_type: engine_type.clone(),
-                                                                    metrics,
-                                                                });
-                                                                
-                                                                // Instantly feed update to simulator
-                                                                m.update_remote_aircraft(
-                                                                    &addr.to_string(),
-                                                                    aircraft,
-                                                                    &atc_model,
-                                                                    &object_class,
-                                                                    &category,
-                                                                    num_engines,
-                                                                    &engine_type,
-                                                                    &metrics,
-                                                                );
+                                                                should_process = true;
                                                             }
                                                         }
+                                                    } else if config.enable_multiplayer_hubs {
+                                                        should_process = true;
                                                     }
                                                 }
-                                            } else if config.enable_multiplayer_hubs {
-                                                if let Some(m) = monitor.get_connected_monitor() {
-                                                    m.update_remote_aircraft(
-                                                        &addr.to_string(),
-                                                        aircraft,
-                                                        &atc_model,
-                                                        &object_class,
-                                                        &category,
+                                            }
+
+                                            if should_process {
+                                                let now = std::time::Instant::now();
+                                                let mut tracked = recv_multiplayer.tracked_aircrafts.lock().unwrap();
+                                                if let Some(ac) = tracked.get_mut(&addr.to_string()) {
+                                                    let elapsed = now.duration_since(ac.last_seen);
+                                                    let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
+                                                    
+                                                    ac.start_metrics = ac.current_metrics;
+                                                    ac.target_metrics = metrics;
+                                                    ac.start_time = now;
+                                                    ac.expected_duration = expected_duration;
+                                                    ac.last_seen = now;
+                                                    
+                                                    ac.aircraft = aircraft.to_string();
+                                                    ac.atc_model = atc_model.clone();
+                                                    ac.object_class = object_class.clone();
+                                                    ac.category = category.clone();
+                                                    ac.num_engines = num_engines;
+                                                    ac.engine_type = engine_type.clone();
+                                                } else {
+                                                    tracked.insert(addr.to_string(), TrackedAircraft {
+                                                        last_seen: now,
+                                                        aircraft: aircraft.to_string(),
+                                                        atc_model: atc_model.clone(),
+                                                        object_class: object_class.clone(),
+                                                        category: category.clone(),
                                                         num_engines,
-                                                        &engine_type,
-                                                        &metrics,
-                                                    );
+                                                        engine_type: engine_type.clone(),
+                                                        start_time: now,
+                                                        expected_duration: Duration::from_millis(250),
+                                                        start_metrics: metrics,
+                                                        target_metrics: metrics,
+                                                        current_metrics: metrics,
+                                                    });
                                                 }
                                             }
                                         }
@@ -351,14 +454,20 @@ impl MultiplayerManager {
                                 crate::sim_monitor::calculate_distance(
                                     self_metrics.latitude,
                                     self_metrics.longitude,
-                                    ac.metrics.latitude,
-                                    ac.metrics.longitude,
+                                    ac.current_metrics.latitude,
+                                    ac.current_metrics.longitude,
                                 )
                             } else {
                                 999.0 // force remove if we don't have our own coordinates
                             };
                             
-                            if age > Duration::from_secs(60) || dist > 20.0 {
+                            let prune_dist = if config.enable_multiplayer_hubs {
+                                false
+                            } else {
+                                dist > 20.0
+                            };
+                            
+                            if age > Duration::from_secs(60) || prune_dist {
                                 to_remove.push(id.clone());
                             }
                         }
@@ -511,6 +620,38 @@ mod tests {
         let addr = parsed_addr.unwrap();
         assert_eq!(addr.port(), 4902);
         assert_eq!(addr.ip().to_string(), "192.168.1.100");
+    }
+
+    #[test]
+    fn test_interpolation_logic() {
+        // Test basic lerp
+        assert_eq!(lerp(0.0, 10.0, 0.5), 5.0);
+        assert_eq!(lerp(10.0, 20.0, 0.25), 12.5);
+        assert_eq!(lerp(5.0, 5.0, 0.5), 5.0);
+
+        // Test 0-360 angle interpolation (headings)
+        // Midpoint of 350 and 10 heading should be 0.0 (or 360.0 equivalent)
+        let mid1 = interpolate_angle_0_360(350.0, 10.0, 0.5);
+        assert!((mid1 - 0.0).abs() < 1e-5 || (mid1 - 360.0).abs() < 1e-5);
+
+        // Midpoint of 10 and 350 heading should be 0.0 (or 360.0 equivalent)
+        let mid2 = interpolate_angle_0_360(10.0, 350.0, 0.5);
+        assert!((mid2 - 0.0).abs() < 1e-5 || (mid2 - 360.0).abs() < 1e-5);
+
+        // Regular heading transition
+        assert!((interpolate_angle_0_360(90.0, 180.0, 0.5) - 135.0).abs() < 1e-5);
+
+        // Test signed angle interpolation (pitch/roll [-180, 180])
+        // Midpoint of 170 and -170 should be 180 (or -180)
+        let signed_mid1 = interpolate_angle_signed(170.0, -170.0, 0.5);
+        assert!((signed_mid1 - 180.0).abs() < 1e-5 || (signed_mid1 - -180.0).abs() < 1e-5);
+
+        // Midpoint of -170 and 170 should be 180 (or -180)
+        let signed_mid2 = interpolate_angle_signed(-170.0, 170.0, 0.5);
+        assert!((signed_mid2 - 180.0).abs() < 1e-5 || (signed_mid2 - -180.0).abs() < 1e-5);
+
+        // Regular transition
+        assert!((interpolate_angle_signed(-10.0, 10.0, 0.5) - 0.0).abs() < 1e-5);
     }
 }
 
