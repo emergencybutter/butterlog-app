@@ -226,7 +226,7 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
         return;
     }
 
-    // Wait until the file size is stable for 200ms (to ensure write is complete)
+    // Wait until the file size is stable for 500ms and the file can be opened (ensuring write is complete and lock is released)
     let mut last_size = 0;
     let mut last_change = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(5);
@@ -237,15 +237,17 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
         if current_size != last_size {
             last_size = current_size;
             last_change = std::time::Instant::now();
-        } else if last_size > 0 && last_change.elapsed() >= std::time::Duration::from_millis(200) {
-            break;
+        } else if last_size > 0 && last_change.elapsed() >= std::time::Duration::from_millis(500) {
+            if std::fs::File::open(&path).is_ok() {
+                break;
+            }
         }
 
         if start_wait.elapsed() > timeout {
             crate::append_log(app, format!("[Watcher] Timeout waiting for screenshot size stability: {:?}", file_name));
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
     // Check if a flight is ongoing
