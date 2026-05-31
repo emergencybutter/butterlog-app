@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FlightMetrics {
     #[serde(rename = "Latitude")]
     pub latitude: f64,

@@ -257,7 +257,7 @@ impl SimConnectMonitor {
                         }
 
                         let should_log = last_ai_log.get(&update.id)
-                            .map(|t| t.elapsed().as_secs() >= 1)
+                            .map(|t| t.elapsed().as_secs() >= 60)
                             .unwrap_or(true);
                         if should_log {
                             crate::append_log(app, format!(

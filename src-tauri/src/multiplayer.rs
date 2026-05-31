@@ -302,7 +302,11 @@ impl MultiplayerManager {
                                 // Parse as JSON payload
                                 if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(data) {
                                     if let (Some(aircraft), Some(metrics_val)) = (payload["aircraft"].as_str(), payload.get("metrics")) {
-                                        if let Ok(metrics) = serde_json::from_value::<FlightMetrics>(metrics_val.clone()) {
+                                        match serde_json::from_value::<FlightMetrics>(metrics_val.clone()) {
+                                            Err(e) => {
+                                                crate::append_log(&recv_app, format!("[Multiplayer RECV] Failed to deserialize FlightMetrics from {}: {}", addr, e));
+                                            }
+                                            Ok(metrics) => {
                                             let atc_model = payload.get("atc_model").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                             let object_class = payload.get("object_class").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                             let category = payload.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -318,7 +322,7 @@ impl MultiplayerManager {
                                                 let should_log = {
                                                     let mut last_log = recv_multiplayer.last_received_log.lock().unwrap();
                                                     match *last_log {
-                                                        Some(t) if now.duration_since(t).as_secs() < 10 => false,
+                                                        Some(t) if now.duration_since(t).as_secs() < 60 => false,
                                                         _ => {
                                                             *last_log = Some(now);
                                                             true
@@ -395,7 +399,8 @@ impl MultiplayerManager {
                                                     });
                                                 }
                                             }
-                                        }
+                                            }
+                                        } // match
                                     }
                                 }
                             }
