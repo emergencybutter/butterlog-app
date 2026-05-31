@@ -167,6 +167,7 @@ impl XPlaneMonitor {
             "sim/cockpit2/autopilot/roll_status",
             "sim/cockpit2/autopilot/pitch_status",
             "sim/cockpit2/pressurization/indicators/cabin_altitude_ft",
+            "sim/cockpit2/controls/parking_brake_ratio",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -289,6 +290,7 @@ impl XPlaneMonitor {
         let mut m = FlightMetrics::default();
         let mut last_pos: Option<(f64, f64)> = None;
         let mut last_known_title = String::new();
+        let mut last_parking_brake: Option<bool> = None;
 
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock().unwrap() { break; }
@@ -464,6 +466,7 @@ impl XPlaneMonitor {
                             updated = true;
                         }
                         if let Some(v) = get_path_double("sim/cockpit2/pressurization/indicators/cabin_altitude_ft") { m.pressurization_cabin_altitude = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/controls/parking_brake_ratio") { m.parking_brake = v; updated = true; }
 
                         if !updated { continue; }
 
@@ -486,6 +489,7 @@ impl XPlaneMonitor {
                             webhook_manager.reset();
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+                            last_parking_brake = None;
 
                             // Fetch aircraft title once via REST (strings often not subscribable)
                             let actual_title = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ui_name").await.unwrap_or_default();
@@ -780,8 +784,26 @@ impl XPlaneMonitor {
                                     } else { false })
                                 } else { false };
 
-                                if should_close && !auto_finalized {
-                                    crate::append_log(&app, "[X-Plane] Aircraft stationary. Updating flight summary and stats.".to_string());
+                                // Parking brake: only act on the off→on transition while on ground and stationary.
+                                let parking_brake_now = m.parking_brake > 0.5;
+                                let parking_brake_trigger = last_parking_brake
+                                    .map(|prev| !prev && parking_brake_now
+                                        && m.is_on_ground > 0.5
+                                        && m.ground_speed.abs() < 1.0)
+                                    .unwrap_or(false);
+                                last_parking_brake = Some(parking_brake_now);
+
+                                if parking_brake_trigger && !auto_finalized {
+                                    crate::append_log(&app, "[X-Plane] Parking brake set while stationary. Forcing Parked phase.".to_string());
+                                    if analyzer.current_phase != crate::models::FlightPhase::Parked {
+                                        analyzer.current_phase = crate::models::FlightPhase::Parked;
+                                        let _ = app.emit("flight-phase-change", crate::models::FlightPhase::Parked);
+                                    }
+                                }
+
+                                if (should_close || parking_brake_trigger) && !auto_finalized {
+                                    let reason = if parking_brake_trigger { "Parking brake set" } else { "Aircraft stationary" };
+                                    crate::append_log(&app, format!("[X-Plane] {}. Updating flight summary and stats.", reason));
                                     auto_finalized = true;
 
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {

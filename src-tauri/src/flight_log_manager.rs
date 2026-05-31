@@ -466,6 +466,7 @@ pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics
         pressurization_cabin_altitude: row.get(67)?,
         xp_prop_rpm: row.get(68)?,
         xp_gear_ratio: row.get(69)?,
+        parking_brake: 0.0,
     })
 }
 
@@ -1025,6 +1026,7 @@ fn parse_csv_line_to_row(
         pressurization_cabin_altitude: alt_msl,
         xp_prop_rpm: 0.0,
         xp_gear_ratio: 0.0,
+        parking_brake: 0.0,
     };
 
     Some(FlightLogRow { timestamp, metrics })

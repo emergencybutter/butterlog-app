@@ -135,6 +135,7 @@ pub struct FlightMetrics {
 
     pub xp_prop_rpm: f64,
     pub xp_gear_ratio: f64,
+    pub parking_brake: f64,
 }
 
 impl FlightMetrics {
@@ -209,6 +210,7 @@ impl FlightMetrics {
         
         self.xp_prop_rpm = self.xp_prop_rpm.max(other.xp_prop_rpm);
         self.xp_gear_ratio = self.xp_gear_ratio.max(other.xp_gear_ratio);
+        self.parking_brake = self.parking_brake.max(other.parking_brake);
     }
 }
 

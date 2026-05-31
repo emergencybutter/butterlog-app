@@ -152,8 +152,9 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "DENSITY ALTITUDE", "feet")?;
         sc.add_to_data_definition::<f64>(define_id, "PRESSURIZATION CABIN ALTITUDE", "feet")?;
 
-        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for prop rpm
-        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for gear ratio
+        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for xp_prop_rpm
+        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for xp_gear_ratio
+        sc.add_to_data_definition::<f64>(define_id, "BRAKE PARKING POSITION", "bool")?;
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC MODEL")?;
@@ -212,6 +213,7 @@ impl SimConnectMonitor {
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
         let mut last_msfs_update = std::time::Instant::now();
+        let mut last_parking_brake: Option<bool> = None;
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -377,6 +379,7 @@ impl SimConnectMonitor {
                         last_agl = 0.0;
                         touchdown_time = None;
                         touchdown_update_done = false;
+                        last_parking_brake = None;
 
                         // Resumption check
                         let m_lock = metrics.lock().unwrap();
@@ -462,6 +465,7 @@ impl SimConnectMonitor {
                     } else if event.event_id == event_sim_stop {
                         crate::append_log(app, format!("[{}] Received SimStop event. Closing and analyzing flight log.", Utc::now().format("%H:%M:%S")));
                         flight_ongoing = false;
+                        last_parking_brake = None;
                         {
                             let mut fid = current_flight_id_mutex.lock().unwrap();
                             fid.clear();
@@ -702,9 +706,8 @@ impl SimConnectMonitor {
                             webhook_manager.reset();
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+                            last_parking_brake = None;
 
-
-                            
                             let mut resumed_path = None;
                             if !aircraft_info.title.is_empty() {
                                 resumed_path = crate::flight_log_manager::try_find_resume_flight(app, data, &aircraft_info.title);
@@ -975,8 +978,27 @@ impl SimConnectMonitor {
                                     } else { false })
                                 } else { false };
 
-                                if should_close && !auto_finalized {
-                                    crate::append_log(app, "[MSFS] Aircraft stationary. Updating flight summary and stats.".to_string());
+                                // Parking brake: only act on the off→on transition while on ground and stationary.
+                                // Use Option<bool> so the very first sample never falsely triggers.
+                                let parking_brake_now = data.parking_brake > 0.5;
+                                let parking_brake_trigger = last_parking_brake
+                                    .map(|prev| !prev && parking_brake_now
+                                        && data.is_on_ground > 0.5
+                                        && data.ground_speed.abs() < 1.0)
+                                    .unwrap_or(false);
+                                last_parking_brake = Some(parking_brake_now);
+
+                                if parking_brake_trigger && !auto_finalized {
+                                    crate::append_log(app, "[MSFS] Parking brake set while stationary. Forcing Parked phase.".to_string());
+                                    if analyzer.current_phase != crate::models::FlightPhase::Parked {
+                                        analyzer.current_phase = crate::models::FlightPhase::Parked;
+                                        let _ = app.emit("flight-phase-change", crate::models::FlightPhase::Parked);
+                                    }
+                                }
+
+                                if (should_close || parking_brake_trigger) && !auto_finalized {
+                                    let reason = if parking_brake_trigger { "Parking brake set" } else { "Aircraft stationary" };
+                                    crate::append_log(app, format!("[MSFS] {}. Updating flight summary and stats.", reason));
                                     auto_finalized = true;
                                     
                                     // Finalize logic manually

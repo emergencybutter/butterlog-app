@@ -634,6 +634,7 @@ mod tests {
             pressurization_cabin_altitude: 0.0,
             xp_prop_rpm: 0.0,
             xp_gear_ratio: 0.0,
+            parking_brake: 0.0,
         }
     }
 
