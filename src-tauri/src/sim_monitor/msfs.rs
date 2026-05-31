@@ -210,6 +210,7 @@ impl SimConnectMonitor {
 
         let mut remote_aircraft: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         let mut last_update_times: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
+        let mut last_ai_log: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
         let mut last_msfs_update = std::time::Instant::now();
@@ -241,7 +242,7 @@ impl SimConnectMonitor {
                             bank: update.metrics.roll_angle,
                             heading: update.metrics.heading,
                         };
-                        
+
                         unsafe {
                             let handle: HANDLE = std::mem::transmute_copy(&sc);
                             let _ = SimConnect_SetDataOnSimObject(
@@ -253,6 +254,18 @@ impl SimConnectMonitor {
                                 std::mem::size_of::<RemoteAircraftData>() as DWORD,
                                 std::mem::transmute(&data),
                             );
+                        }
+
+                        let should_log = last_ai_log.get(&update.id)
+                            .map(|t| t.elapsed().as_secs() >= 1)
+                            .unwrap_or(true);
+                        if should_log {
+                            crate::append_log(app, format!(
+                                "[MSFS AI] Updating '{}' (obj {}) at Lat={:.4}, Lon={:.4}, Alt={:.0} ft, Hdg={:.0}",
+                                update.title, object_id, update.metrics.latitude, update.metrics.longitude,
+                                update.metrics.gps_altitude_msl, update.metrics.heading
+                            ));
+                            last_ai_log.insert(update.id.clone(), std::time::Instant::now());
                         }
                     }
                 } else {
@@ -285,7 +298,13 @@ impl SimConnectMonitor {
                         }
                         mapped
                     };
-                    
+
+                    crate::append_log(app, format!(
+                        "[MSFS AI] Spawning '{}' for peer {} at Lat={:.4}, Lon={:.4}, Alt={:.0} ft",
+                        title, update.id, update.metrics.latitude, update.metrics.longitude, update.metrics.gps_altitude_msl
+                    ));
+                    last_ai_log.insert(update.id.clone(), std::time::Instant::now());
+
                     let init_pos = InitPosition {
                         latitude: update.metrics.latitude,
                         longitude: update.metrics.longitude,

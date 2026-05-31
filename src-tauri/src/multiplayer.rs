@@ -514,31 +514,6 @@ impl MultiplayerManager {
 
                         if let Ok(data) = serde_json::to_vec(&payload) {
                             let peers = multiplayer.peers.lock().unwrap().clone();
-                            
-                            // Throttled logging of emitted peer telemetry (every 10s)
-                            if !peers.is_empty() {
-                                let now = std::time::Instant::now();
-                                let should_log = {
-                                    let mut last_log = multiplayer.last_emitted_log.lock().unwrap();
-                                    match *last_log {
-                                        Some(t) if now.duration_since(t).as_secs() < 10 => false,
-                                        _ => {
-                                            *last_log = Some(now);
-                                            true
-                                        }
-                                    }
-                                };
-                                if should_log {
-                                    crate::append_log(
-                                        &app,
-                                        format!(
-                                            "[Multiplayer EMIT] Sending coordinates for {} to {} peers: Lat={:.6}, Lon={:.6}, Alt={:.1} ft MSL, Hdg={:.1}",
-                                            aircraft.title, peers.len(), metrics.latitude, metrics.longitude, metrics.gps_altitude_msl, metrics.heading
-                                        )
-                                    );
-                                }
-                            }
-
                             for peer in peers.iter() {
                                 let _ = socket.send_to(&data, peer);
                             }
