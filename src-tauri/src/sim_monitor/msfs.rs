@@ -709,7 +709,7 @@ impl SimConnectMonitor {
                             last_parking_brake = None;
 
                             let mut resumed_path = None;
-                            if !aircraft_info.title.is_empty() {
+                            if !aircraft_info.title.is_empty() && data.is_on_ground < 0.5 {
                                 resumed_path = crate::flight_log_manager::try_find_resume_flight(app, data, &aircraft_info.title);
                             }
                             

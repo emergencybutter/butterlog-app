@@ -538,9 +538,9 @@ impl XPlaneMonitor {
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.num_engines, aircraft_info.engine_type));
                             }
 
-                            // Resumption check
+                            // Resumption check — only when airborne
                             let mut resumed_path = None;
-                            if !aircraft_info.title.is_empty() {
+                            if !aircraft_info.title.is_empty() && m.is_on_ground < 0.5 {
                                 resumed_path = crate::flight_log_manager::try_find_resume_flight(&app, &m, &aircraft_info.title);
                             }
 
