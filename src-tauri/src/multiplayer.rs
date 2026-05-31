@@ -89,12 +89,12 @@ impl MultiplayerManager {
     pub fn start(&self, app: AppHandle) {
         let multiplayer = app.state::<Arc<MultiplayerManager>>().inner().clone();
         
-        // Dedicated thread for 100ms interpolation and simulator injection
+        // Dedicated thread for 50ms interpolation and simulator injection
         let interp_app = app.clone();
         let interp_multiplayer = multiplayer.clone();
         std::thread::spawn(move || {
             loop {
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(50));
                 
                 let config = interp_app.state::<ConfigManager>().get_config();
                 if !config.inject_butterlog_traffic && !config.enable_multiplayer_hubs {
