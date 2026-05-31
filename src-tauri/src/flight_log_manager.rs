@@ -314,6 +314,37 @@ pub async fn get_flight_data(
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn get_flight_data_since(
+    app: AppHandle,
+    filename: String,
+    since: String,
+) -> Result<Vec<FlightLogRow>, String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(&filename);
+    if !path.exists() {
+        return Err("File not found".to_string());
+    }
+    let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT * FROM metrics WHERE timestamp > ?1 ORDER BY timestamp ASC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![since], |row| {
+            Ok(FlightLogRow {
+                timestamp: row.get(0)?,
+                metrics: map_row_to_metrics(row)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(result)
+}
+
 fn regenerate_flight_summary(app: &AppHandle, path: &PathBuf) -> anyhow::Result<()> {
     let conn = Connection::open(path)?;
     

@@ -27,7 +27,8 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 use config::{Config, ConfigManager};
 use flight_log_manager::{
-    export_flight_to_csv, get_flight_data, import_flight_from_csv, scan_logs, FlightSummary,
+    export_flight_to_csv, get_flight_data, get_flight_data_since, import_flight_from_csv,
+    scan_logs, FlightSummary,
 };
 use models::FlightMetrics;
 use multiplayer::MultiplayerManager;
@@ -598,6 +599,7 @@ pub fn run() {
             get_flight_summaries,
             get_flight_summary,
             get_flight_data,
+            get_flight_data_since,
             export_flight_to_csv,
             import_flight_from_csv,
             get_runways,

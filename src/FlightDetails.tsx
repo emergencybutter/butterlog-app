@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, memo } from "react";
+import { useState, useEffect, useMemo, memo, useRef } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -461,6 +461,9 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
     );
 }
 
+// Max rows kept in state for the live rolling window (~1 hour at 1 Hz)
+const MAX_LIVE_ROWS = 3600;
+
 function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
@@ -472,6 +475,10 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
     const [uploadingIds, setUploadingIds] = useState<Set<number>>(new Set());
+
+    // Refs for incremental live fetch — not state so they don't cause re-renders
+    const lastTimestamp = useRef<string | null>(null);
+    const initialDataRef = useRef<FlightLogRow[]>([]); // full initial load, used for departure trajectory
 
     const isCurrentFlight = useMemo(() => {
         return currentFlightId && flight.filename.replace(".db", "") === currentFlightId;
@@ -501,6 +508,8 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
         ]).then(([flightData, startRwys, endRwys, scrs, config, rId]) => {
             if (!active) return;
             setData(flightData);
+            initialDataRef.current = flightData;
+            lastTimestamp.current = flightData.length > 0 ? flightData[flightData.length - 1].timestamp : null;
             setStartRunways(startRwys);
             setEndRunways(endRwys);
             setScreenshots(scrs);
@@ -549,14 +558,22 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
             interval = setInterval(() => {
                 if (!active) return;
                 const flightId = flight.filename.replace(".db", "");
+                const since = lastTimestamp.current;
                 Promise.all([
-                    invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
+                    since
+                        ? invoke<FlightLogRow[]>("get_flight_data_since", { filename: flight.filename, since })
+                        : invoke<FlightLogRow[]>("get_flight_data", { filename: flight.filename }),
                     invoke<Screenshot[]>("get_screenshots_for_flight", { flightId })
-                ]).then(([flightData, scrs]) => {
-                    if (active) {
-                        setData(flightData);
-                        setScreenshots(scrs);
+                ]).then(([newRows, scrs]) => {
+                    if (!active) return;
+                    if (newRows.length > 0) {
+                        lastTimestamp.current = newRows[newRows.length - 1].timestamp;
+                        setData(prev => {
+                            const combined = [...prev, ...newRows];
+                            return combined.length > MAX_LIVE_ROWS ? combined.slice(-MAX_LIVE_ROWS) : combined;
+                        });
                     }
+                    setScreenshots(scrs);
                 }).finally(() => {
                     if (active) setLoading(false);
                 });
@@ -595,21 +612,23 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
     };
 
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
-        if (data.length === 0) return { departureTrajectory: [], arrivalTrajectory: [] };
+        // For departure, use the full initial snapshot so takeoff rows are never evicted by the cap
+        const depData = (isCurrentFlight && initialDataRef.current.length > 0)
+            ? initialDataRef.current
+            : data;
 
-        const findClosestIndex = (timestamp: string) => {
+        if (depData.length === 0 && data.length === 0)
+            return { departureTrajectory: [], arrivalTrajectory: [] };
+
+        const findClosestIn = (rows: FlightLogRow[], timestamp: string) => {
             let bestIdx = -1;
             let minDiff = Infinity;
             const targetTs = new Date(timestamp.replace(' ', 'T')).getTime();
-            
-            for (let i = 0; i < data.length; i++) {
-                const currentTs = new Date(data[i].timestamp.replace(' ', 'T')).getTime();
+            for (let i = 0; i < rows.length; i++) {
+                const currentTs = new Date(rows[i].timestamp.replace(' ', 'T')).getTime();
                 const diff = Math.abs(currentTs - targetTs);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestIdx = i;
-                }
-                if (diff > minDiff && i > 0) break; 
+                if (diff < minDiff) { minDiff = diff; bestIdx = i; }
+                if (diff > minDiff && i > 0) break;
             }
             return minDiff < 5000 ? bestIdx : -1;
         };
@@ -622,31 +641,37 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
         });
 
         const firstTakeoff = flight.events.find(e => e.eventType === 'takeoff');
-        const takeoffIdx = firstTakeoff ? findClosestIndex(firstTakeoff.timestamp) : -1;
+        const takeoffIdx = firstTakeoff ? findClosestIn(depData, firstTakeoff.timestamp) : -1;
 
-        const lastLanding = [...flight.events].reverse().find(e => e.eventType === 'landing');
-        const landingIdx = lastLanding ? findClosestIndex(lastLanding.timestamp) : -1;
-
-        const eventIndexMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'>();
+        const depEventMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'>();
         flight.events.forEach(e => {
-            const idx = findClosestIndex(e.timestamp);
-            if (idx > -1) eventIndexMap.set(idx, e.eventType as any);
+            const idx = findClosestIn(depData, e.timestamp);
+            if (idx > -1) depEventMap.set(idx, e.eventType as any);
         });
 
         const depStart = Math.max(0, (takeoffIdx > -1 ? takeoffIdx : 0) - 60);
-        const depEnd = Math.min(data.length, (takeoffIdx > -1 ? takeoffIdx : 60) + 60);
-        const departureTrajectory = data.slice(depStart, depEnd).map((row, i) => 
-            mapToTraj(row, eventIndexMap.get(depStart + i))
+        const depEnd = Math.min(depData.length, (takeoffIdx > -1 ? takeoffIdx : 60) + 60);
+        const departureTrajectory = depData.slice(depStart, depEnd).map((row, i) =>
+            mapToTraj(row, depEventMap.get(depStart + i))
         );
+
+        const lastLanding = [...flight.events].reverse().find(e => e.eventType === 'landing');
+        const landingIdx = lastLanding ? findClosestIn(data, lastLanding.timestamp) : -1;
+
+        const arrEventMap = new Map<number, 'takeoff' | 'landing' | 'top_of_climb' | 'top_of_descent' | 'autopilot_on' | 'autopilot_off'>();
+        flight.events.forEach(e => {
+            const idx = findClosestIn(data, e.timestamp);
+            if (idx > -1) arrEventMap.set(idx, e.eventType as any);
+        });
 
         const arrStart = Math.max(0, (landingIdx > -1 ? landingIdx : data.length) - 120);
         const arrEnd = Math.min(data.length, (landingIdx > -1 ? landingIdx : data.length) + 30);
-        const arrivalTrajectory = data.slice(arrStart, arrEnd).map((row, i) => 
-            mapToTraj(row, eventIndexMap.get(arrStart + i))
+        const arrivalTrajectory = data.slice(arrStart, arrEnd).map((row, i) =>
+            mapToTraj(row, arrEventMap.get(arrStart + i))
         );
 
         return { departureTrajectory, arrivalTrajectory };
-    }, [data, flight.events]);
+    }, [data, flight.events, isCurrentFlight]);
 
     const chartData = useMemo(() => {
         if (data.length === 0) return [];
