@@ -1,11 +1,11 @@
 {
-  "version": "0.3.6",
-  "notes": "Butterlog v0.3.6 Release",
-  "pub_date": "2026-05-31T11:21:59Z",
+  "version": "0.3.7",
+  "notes": "Butterlog v0.3.7 Release",
+  "pub_date": "2026-05-31T13:06:02Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHFzaDVvc1VNVlRFa2UwYnhHbWQrVitTbzFqenRPdWhJaEl1cVc2bjVkRnZ2bFQvVU83MXhnTFRMSUtsazdCNnA1UCtHR01OUWJ4SGNoT3lpU2lSWWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMjI2NTE5CWZpbGU6YnV0dGVybG9nXzAuMy42X3g2NC1zZXR1cC5leGUKSWtzVDRQdkN6RTgrQk9LMXZxNWVBdks2Y2g2azl2QXdNQnFRSjVpc0hEdjJYd09zTUcxaHU4QlFrZHpLVy9LZC9wdWJKWlNCUS9LazFYZTRHcnp5Qnc9PQo=",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.6_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGxVc3Rma0NKL0FLVDkwUlRpQjYzNlhUTys0ckRwbjJWdGUxT3ZVdzFHRkduU1JCUnllRFpPWkZaMGRJS2xHSFFzbUM2dUtPYkRveEg5THB6Zzg4NkF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwMjMyNzYyCWZpbGU6YnV0dGVybG9nXzAuMy43X3g2NC1zZXR1cC5leGUKOXNjOFIvNk5RNTJkTkZWSms1cUtDYzgvbVUrbms1Nm9pT2RHWGFaN1hYNEVJWnl3YXpEUGhhalJKT1dJKzgwWStCN09DQ3RkQjRhUEJBVjVPMGRaREE9PQo=",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.7_x64-setup.exe"
     }
   }
 }
