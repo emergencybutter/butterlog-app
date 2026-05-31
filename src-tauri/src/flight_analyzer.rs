@@ -309,7 +309,8 @@ impl FlightAnalyzer {
             }
             FlightPhase::TaxiIn => {
                 if ground_speed < 1.0 {
-                    // Parked
+                    self.current_phase = FlightPhase::Parked;
+                    self.add_event("parked", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, Some(metrics.heading));
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
                 }
