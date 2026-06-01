@@ -20,6 +20,7 @@ pub struct Config {
     pub start_minimized: bool,
     pub enable_multiplayer_hubs: bool,
     pub inject_butterlog_traffic: bool,
+    pub auto_share_flights: bool,
 }
 
 impl Config {
@@ -57,6 +58,7 @@ impl Config {
             start_minimized: false,
             enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
+            auto_share_flights: false,
         }
     }
 }
@@ -76,6 +78,7 @@ impl Default for Config {
             start_minimized: false,
             enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
+            auto_share_flights: false,
         }
     }
 }

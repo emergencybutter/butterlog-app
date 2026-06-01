@@ -3,7 +3,7 @@ use crate::config::ConfigManager;
 use crate::models::{FlightEvent, FlightMetrics};
 use chrono::{FixedOffset, NaiveDateTime, TimeZone, Utc};
 use directories::UserDirs;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -1229,4 +1229,235 @@ fn save_imported_flight(
     }
 
     Ok(parse_db_file(app, &path).unwrap())
+}
+
+// ── Share feature ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransposedFlightData {
+    pub timestamps: Vec<i64>,
+    pub latitudes: Vec<f32>,
+    pub longitudes: Vec<f32>,
+    pub altitudes: Vec<f32>,
+    pub ias: Vec<f32>,
+    pub vspeed: Vec<f32>,
+    pub pitch: Vec<f32>,
+    pub roll: Vec<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShareScreenshot {
+    pub timestamp: i64,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightDetailShare {
+    pub transposed_data: TransposedFlightData,
+    pub summary: FlightSummary,
+    pub screenshots: Vec<ShareScreenshot>,
+    pub remote_flight_id: Option<i64>,
+}
+
+fn ts_to_epoch(ts: &str) -> i64 {
+    NaiveDateTime::parse_from_str(ts.split('.').next().unwrap_or(ts), "%Y-%m-%d %H:%M:%S")
+        .map(|dt| dt.and_utc().timestamp())
+        .unwrap_or(0)
+}
+
+fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
+    let mut last_sec = i64::MIN;
+    let mut last_min = i64::MIN;
+    let mut indices = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let epoch = ts_to_epoch(&row.timestamp);
+        let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= 60);
+        if near {
+            if epoch != last_sec {
+                last_sec = epoch;
+                last_min = epoch / 60;
+                indices.push(i);
+            }
+        } else if epoch / 60 != last_min {
+            last_min = epoch / 60;
+            last_sec = epoch;
+            indices.push(i);
+        }
+    }
+    indices
+}
+
+fn read_remote_id(path: &std::path::Path) -> Option<i64> {
+    let conn = Connection::open(path).ok()?;
+    conn.query_row(
+        "SELECT value FROM summary WHERE key = 'remote_id'",
+        [],
+        |r| r.get::<_, String>(0),
+    ).ok()?.parse().ok()
+}
+
+pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(filename);
+
+    if !path.exists() {
+        return Err("Flight log not found".to_string());
+    }
+
+    // Return existing share URL if already shared
+    if let Ok(conn) = Connection::open(&path) {
+        if let Ok(Some(url)) = conn.query_row(
+            "SELECT value FROM summary WHERE key = 'share_url'",
+            [],
+            |r| r.get::<_, String>(0),
+        ).optional() {
+            return Ok(url);
+        }
+    }
+
+    let config = app.state::<crate::config::ConfigManager>().get_config();
+    if config.webhook_url.is_empty() {
+        return Err("Not connected to ButterLog service. Log in first.".to_string());
+    }
+
+    let mut base_url = config.webhook_url.clone();
+    if base_url.ends_with('/') { base_url.pop(); }
+    if let Some(custom_url) = crate::get_custom_service_url() {
+        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
+    }
+
+    // Parse flight summary
+    let summary = parse_db_file(app, &path).ok_or("Failed to parse flight summary")?;
+
+    let event_epochs: Vec<i64> = summary.events.iter()
+        .filter(|e| e.event_type == "takeoff" || e.event_type == "landing")
+        .map(|e| ts_to_epoch(&e.timestamp))
+        .filter(|&t| t > 0)
+        .collect();
+
+    // Read flight rows directly from DB
+    let all_rows: Vec<FlightLogRow> = {
+        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| Ok(FlightLogRow {
+            timestamp: row.get(0)?,
+            metrics: map_row_to_metrics(row)?,
+        })).map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    let indices = downsample(&all_rows, &event_epochs);
+
+    let n = indices.len();
+    let mut timestamps = Vec::with_capacity(n);
+    let mut latitudes = Vec::with_capacity(n);
+    let mut longitudes = Vec::with_capacity(n);
+    let mut altitudes = Vec::with_capacity(n);
+    let mut ias = Vec::with_capacity(n);
+    let mut vspeed = Vec::with_capacity(n);
+    let mut pitch = Vec::with_capacity(n);
+    let mut roll = Vec::with_capacity(n);
+
+    let mut prev_epoch = 0i64;
+    for (pos, &i) in indices.iter().enumerate() {
+        let row = &all_rows[i];
+        let epoch = ts_to_epoch(&row.timestamp);
+        timestamps.push(if pos == 0 { prev_epoch = epoch; epoch } else { let d = epoch - prev_epoch; prev_epoch = epoch; d });
+        latitudes.push(row.metrics.latitude as f32);
+        longitudes.push(row.metrics.longitude as f32);
+        altitudes.push(row.metrics.indicated_altitude as f32);
+        ias.push(row.metrics.indicated_airspeed as f32);
+        vspeed.push(row.metrics.vertical_speed as f32);
+        pitch.push(row.metrics.pitch_angle as f32);
+        roll.push(row.metrics.roll_angle as f32);
+    }
+
+    let remote_flight_id = read_remote_id(&path);
+
+    // Include screenshots that have already been uploaded (have a public URL)
+    let flight_id = filename.replace(".db", "");
+    let screenshots: Vec<ShareScreenshot> = if let Some(mgr) = app.try_state::<crate::screenshot_manager::ScreenshotManager>() {
+        mgr.get_screenshots_for_flight(&flight_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|s| {
+                let url = s.remote_url.filter(|u| !u.is_empty())?;
+                Some(ShareScreenshot {
+                    timestamp: ts_to_epoch(&s.timestamp),
+                    url,
+                })
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    let share = FlightDetailShare {
+        transposed_data: TransposedFlightData { timestamps, latitudes, longitudes, altitudes, ias, vspeed, pitch, roll },
+        summary,
+        screenshots,
+        remote_flight_id,
+    };
+
+    let json = serde_json::to_string(&share).map_err(|e| e.to_string())?;
+
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+    let compressed = encoder.finish().map_err(|e| e.to_string())?;
+
+    let upload_url = format!("{}/share", base_url);
+    let client = reqwest::Client::new();
+    let res = client.post(&upload_url)
+        .header("Content-Type", "application/octet-stream")
+        .body(compressed)
+        .send()
+        .await
+        .map_err(|e| format!("Upload failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        return Err(format!("Share failed ({}): {}", status, text));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ShareResponse { url: String }
+    let data = res.json::<ShareResponse>().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Persist share URL locally
+    if let Ok(conn) = Connection::open(&path) {
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO summary (key, value) VALUES ('share_url', ?1)",
+            rusqlite::params![&data.url],
+        );
+    }
+
+    crate::append_log(app, format!("[Share] Flight shared: {}", data.url));
+    Ok(data.url)
+}
+
+#[tauri::command]
+pub async fn share_flight(app: AppHandle, filename: String) -> Result<String, String> {
+    perform_share_flight(&app, &filename).await
+}
+
+#[tauri::command]
+pub async fn get_share_url(app: AppHandle, filename: String) -> Result<Option<String>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(&filename);
+    if !path.exists() { return Ok(None); }
+    let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+    Ok(conn.query_row(
+        "SELECT value FROM summary WHERE key = 'share_url'",
+        [],
+        |r| r.get::<_, String>(0),
+    ).optional().map_err(|e| e.to_string())?)
 }

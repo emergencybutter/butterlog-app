@@ -41,6 +41,7 @@ notify = "8.2.0"
 regex = "1.12.3"
 chrono-tz = "0.10.4"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
+flate2 = "1.0"
 image = { version = "0.25", default-features = false, features = ["webp", "jpeg", "png"] }
 webp = "0.3.1"
 

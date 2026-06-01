@@ -19,6 +19,7 @@ pub struct Screenshot {
     pub latitude: f64,
     pub longitude: f64,
     pub remote_hash: Option<String>,
+    pub remote_url: Option<String>,
 }
 
 pub struct ScreenshotManager {
@@ -50,8 +51,9 @@ impl ScreenshotManager {
             [],
         ).expect("Failed to create screenshots table");
 
-        // Migration: Add remote_hash if it doesn't exist (for existing databases)
+        // Migrations for existing databases
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_hash TEXT", []);
+        let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_url TEXT", []);
 
         Self { db_path }
     }
@@ -70,18 +72,18 @@ impl ScreenshotManager {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn mark_as_uploaded(&self, id: i64, hash: &str) -> Result<(), String> {
+    pub fn mark_as_uploaded(&self, id: i64, hash: &str, url: &str) -> Result<(), String> {
         let conn = self.get_connection()?;
         conn.execute(
-            "UPDATE screenshots SET remote_hash = ?1 WHERE id = ?2",
-            params![hash, id],
+            "UPDATE screenshots SET remote_hash = ?1, remote_url = ?2 WHERE id = ?3",
+            params![hash, url, id],
         ).map_err(|e| e.to_string())?;
         Ok(())
     }
 
     pub fn get_screenshots_for_flight(&self, flight_id: &str) -> Result<Vec<Screenshot>, String> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash FROM screenshots WHERE flight_id = ?1")
+        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash, remote_url FROM screenshots WHERE flight_id = ?1")
             .map_err(|e| e.to_string())?;
         
         let rows = stmt.query_map(params![flight_id], |row| {
@@ -94,6 +96,7 @@ impl ScreenshotManager {
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
                 remote_hash: row.get(7)?,
+                remote_url: row.get(8)?,
             })
         }).map_err(|e| e.to_string())?;
 
@@ -106,7 +109,7 @@ impl ScreenshotManager {
 
     pub fn get_random_screenshot_for_aircraft(&self, aircraft_title: &str) -> Result<Option<Screenshot>, String> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash FROM screenshots WHERE aircraft_title = ?1 ORDER BY RANDOM() LIMIT 1")
+        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash, remote_url FROM screenshots WHERE aircraft_title = ?1 ORDER BY RANDOM() LIMIT 1")
             .map_err(|e| e.to_string())?;
         
         let mut rows = stmt.query_map(params![aircraft_title], |row| {
@@ -119,6 +122,7 @@ impl ScreenshotManager {
                 latitude: row.get(5)?,
                 longitude: row.get(6)?,
                 remote_hash: row.get(7)?,
+                remote_url: row.get(8)?,
             })
         }).map_err(|e| e.to_string())?;
 
@@ -596,12 +600,14 @@ pub async fn perform_screenshot_upload(
     #[derive(serde::Deserialize)]
     struct UploadResponse {
         hash: String,
+        url: Option<String>,
     }
 
     let data = res.json::<UploadResponse>().await.map_err(|e| format!("Failed to parse upload response: {}", e))?;
-    
-    // Mark as uploaded in DB
-    sc_manager.mark_as_uploaded(screenshot_id, &data.hash)?;
+
+    // Mark as uploaded in DB, storing the public URL for use in shares
+    let url = data.url.as_deref().unwrap_or("");
+    sc_manager.mark_as_uploaded(screenshot_id, &data.hash, url)?;
 
     crate::append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
 

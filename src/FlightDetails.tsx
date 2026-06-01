@@ -472,6 +472,8 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
     const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
+    const [sharing, setSharing] = useState(false);
+    const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
     const [uploadingIds, setUploadingIds] = useState<Set<number>>(new Set());
@@ -757,6 +759,31 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
         }
     };
 
+    useEffect(() => {
+        invoke<string | null>("get_share_url", { filename: flight.filename })
+            .then(url => { if (url) setShareUrl(url); })
+            .catch(() => {});
+    }, [flight.filename]);
+
+    const handleShare = async () => {
+        if (shareUrl) {
+            await navigator.clipboard.writeText(shareUrl).catch(() => {});
+            alert(`Share URL copied to clipboard:\n${shareUrl}`);
+            return;
+        }
+        setSharing(true);
+        try {
+            const url = await invoke<string>("share_flight", { filename: flight.filename });
+            setShareUrl(url);
+            await navigator.clipboard.writeText(url).catch(() => {});
+            alert(`Flight shared!\nURL copied to clipboard:\n${url}`);
+        } catch (e) {
+            alert(`Share failed: ${e}`);
+        } finally {
+            setSharing(false);
+        }
+    };
+
     const landingEvent = useMemo(() => {
         const landingEvents = flight.events.filter(e => e.eventType === 'landing');
         if (landingEvents.length === 0) return undefined;
@@ -787,12 +814,20 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
                     <p style={{ color: "#888", margin: "5px 0" }}>{flight.startTime} ({flight.durationMinutes} min)</p>
                 </div>
                 <div>
-                    <button 
-                        onClick={handleExport} 
+                    <button
+                        onClick={handleExport}
                         disabled={exporting}
                         style={{ marginRight: "10px", backgroundColor: "#4caf50" }}
                     >
                         {exporting ? "Exporting..." : "Export G1000 Log (CSV)"}
+                    </button>
+                    <button
+                        onClick={handleShare}
+                        disabled={sharing}
+                        style={{ marginRight: "10px", backgroundColor: shareUrl ? "#89b4fa" : "#cba6f7", color: "#11111b" }}
+                        title={shareUrl ? "Click to copy share URL" : "Upload and share this flight"}
+                    >
+                        {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
                     </button>
                     <button onClick={onBack}>Back to History</button>
                 </div>

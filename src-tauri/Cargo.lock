@@ -371,6 +371,7 @@ dependencies = [
  "chrono-tz",
  "csv",
  "directories",
+ "flate2",
  "futures-util",
  "image",
  "notify",
