@@ -1411,7 +1411,7 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     encoder.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
     let compressed = encoder.finish().map_err(|e| e.to_string())?;
 
-    let upload_url = format!("{}/share", base_url);
+    let upload_url = format!("{}/flights/share", base_url);
     let client = reqwest::Client::new();
     let res = client.post(&upload_url)
         .header("Content-Type", "application/octet-stream")
@@ -1423,7 +1423,9 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await.unwrap_or_default();
-        return Err(format!("Share failed ({}): {}", status, text));
+        let msg = format!("Share failed ({}): {}", status, text);
+        crate::append_log(app, format!("[Share] {}", msg));
+        return Err(msg);
     }
 
     #[derive(serde::Deserialize)]
@@ -1460,4 +1462,60 @@ pub async fn get_share_url(app: AppHandle, filename: String) -> Result<Option<St
         [],
         |r| r.get::<_, String>(0),
     ).optional().map_err(|e| e.to_string())?)
+}
+
+#[tauri::command]
+pub async fn delete_flight_share(app: AppHandle, filename: String) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(&filename);
+
+    let share_url = {
+        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT value FROM summary WHERE key = 'share_url'",
+            [],
+            |r| r.get::<_, String>(0),
+        ).optional().map_err(|e| e.to_string())?
+    };
+
+    let share_url = share_url.ok_or("This flight has no share URL")?;
+
+    // Extract share ID from URL (last path segment)
+    let share_id = share_url.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .ok_or("Invalid share URL")?
+        .to_string();
+
+    let config = app.state::<crate::config::ConfigManager>().get_config();
+    if config.webhook_url.is_empty() {
+        return Err("Not connected to ButterLog service".to_string());
+    }
+
+    let mut base_url = config.webhook_url.clone();
+    if base_url.ends_with('/') { base_url.pop(); }
+    if let Some(custom_url) = crate::get_custom_service_url() {
+        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
+    }
+
+    let delete_url = format!("{}/flights/share/{}", base_url, share_id);
+    let res = reqwest::Client::new()
+        .delete(&delete_url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !res.status().is_success() && res.status().as_u16() != 404 {
+        let text = res.text().await.unwrap_or_default();
+        return Err(format!("Delete failed: {}", text));
+    }
+
+    // Clear share URL from local DB
+    let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM summary WHERE key = 'share_url'", [])
+        .map_err(|e| e.to_string())?;
+
+    crate::append_log(&app, format!("[Share] Deleted share {}", share_id));
+    Ok(())
 }
