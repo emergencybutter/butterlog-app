@@ -475,7 +475,6 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
     const [sharing, setSharing] = useState(false);
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [shareToast, setShareToast] = useState<string | null>(null);
-    const [deletingShare, setDeletingShare] = useState(false);
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
     const [uploadingIds, setUploadingIds] = useState<Set<number>>(new Set());
@@ -791,20 +790,6 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
         }
     };
 
-    const handleDeleteShare = async () => {
-        if (!shareUrl) return;
-        setDeletingShare(true);
-        try {
-            await invoke("delete_flight_share", { filename: flight.filename });
-            setShareUrl(null);
-            showToast("Share deleted");
-        } catch (e) {
-            showToast(`Delete failed: ${e}`);
-        } finally {
-            setDeletingShare(false);
-        }
-    };
-
     const landingEvent = useMemo(() => {
         const landingEvents = flight.events.filter(e => e.eventType === 'landing');
         if (landingEvents.length === 0) return undefined;
@@ -854,15 +839,6 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
                     >
                         {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
                     </button>
-                    {shareUrl && (
-                        <button
-                            onClick={handleDeleteShare}
-                            disabled={deletingShare}
-                            style={{ marginRight: "10px", backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)" }}
-                        >
-                            {deletingShare ? "Deleting..." : "Delete Share"}
-                        </button>
-                    )}
                     <button
                         onClick={handleExport}
                         disabled={exporting}
