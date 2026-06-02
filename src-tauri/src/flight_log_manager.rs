@@ -1456,12 +1456,47 @@ pub async fn get_share_url(app: AppHandle, filename: String) -> Result<Option<St
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
     if !path.exists() { return Ok(None); }
+
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    Ok(conn.query_row(
+    let share_url: Option<String> = conn.query_row(
         "SELECT value FROM summary WHERE key = 'share_url'",
         [],
         |r| r.get::<_, String>(0),
-    ).optional().map_err(|e| e.to_string())?)
+    ).optional().map_err(|e| e.to_string())?;
+
+    let share_url = match share_url {
+        None => return Ok(None),
+        Some(u) => u,
+    };
+
+    // Derive the JSON API URL from the share URL to verify it still exists
+    // share_url: .../content/flights/share/{id}  →  .../api/v0/flights/share/{id}
+    let share_id = share_url.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+    let mut base = share_url.trim_end_matches('/').to_string();
+    // strip path down to origin
+    if let Some(custom_url) = crate::get_custom_service_url() {
+        base = base.replace("https://butterlog.flyvoyager.net", &custom_url);
+    }
+    let origin = if let Some(idx) = base.find("/content") { base[..idx].to_string() }
+                 else if let Some(idx) = base.find("/flights") { base[..idx].to_string() }
+                 else { "https://butterlog.flyvoyager.net".to_string() };
+    let check_url = format!("{}/api/v0/flights/share/{}", origin, share_id);
+
+    let status = reqwest::Client::new()
+        .head(&check_url)
+        .send()
+        .await
+        .map(|r| r.status().as_u16())
+        .unwrap_or(200); // if request fails (offline etc.), assume still valid
+
+    if status == 404 {
+        // Share was deleted remotely — clear local record
+        let _ = conn.execute("DELETE FROM summary WHERE key = 'share_url'", []);
+        crate::append_log(&app, format!("[Share] Cleared stale share URL for {}", filename));
+        return Ok(None);
+    }
+
+    Ok(Some(share_url))
 }
 
 #[tauri::command]
