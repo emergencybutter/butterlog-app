@@ -474,6 +474,7 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
     const [exporting, setExporting] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [shareUrl, setShareUrl] = useState<string | null>(null);
+    const [shareToast, setShareToast] = useState<string | null>(null);
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
     const [uploadingIds, setUploadingIds] = useState<Set<number>>(new Set());
@@ -765,10 +766,15 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
             .catch(() => {});
     }, [flight.filename]);
 
+    const showToast = (msg: string) => {
+        setShareToast(msg);
+        setTimeout(() => setShareToast(null), 3000);
+    };
+
     const handleShare = async () => {
         if (shareUrl) {
             await navigator.clipboard.writeText(shareUrl).catch(() => {});
-            alert(`Share URL copied to clipboard:\n${shareUrl}`);
+            showToast("URL copied to clipboard");
             return;
         }
         setSharing(true);
@@ -776,9 +782,9 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
             const url = await invoke<string>("share_flight", { filename: flight.filename });
             setShareUrl(url);
             await navigator.clipboard.writeText(url).catch(() => {});
-            alert(`Flight shared!\nURL copied to clipboard:\n${url}`);
+            showToast("Flight shared — URL copied to clipboard");
         } catch (e) {
-            alert(`Share failed: ${e}`);
+            showToast(`Share failed: ${e}`);
         } finally {
             setSharing(false);
         }
@@ -803,6 +809,17 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
 
     return (
         <div className="flight-details-view" style={{ textAlign: "left", padding: "1rem" }}>
+            {shareToast && (
+                <div style={{
+                    position: "fixed", bottom: "2rem", left: "50%", transform: "translateX(-50%)",
+                    background: "#1e1e2e", border: "1px solid #cba6f7", borderRadius: "10px",
+                    padding: "0.75rem 1.5rem", color: "#cdd6f4", fontSize: "0.95rem",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 9999,
+                    animation: "fadeInUp 0.2s ease"
+                }}>
+                    {shareToast}
+                </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
                 <div>
                     <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: "5px" }}>
@@ -815,13 +832,6 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
                 </div>
                 <div>
                     <button
-                        onClick={handleExport}
-                        disabled={exporting}
-                        style={{ marginRight: "10px", backgroundColor: "#4caf50" }}
-                    >
-                        {exporting ? "Exporting..." : "Export G1000 Log (CSV)"}
-                    </button>
-                    <button
                         onClick={handleShare}
                         disabled={sharing}
                         style={{ marginRight: "10px", backgroundColor: shareUrl ? "#89b4fa" : "#cba6f7", color: "#11111b" }}
@@ -829,7 +839,13 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
                     >
                         {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
                     </button>
-                    <button onClick={onBack}>Back to History</button>
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting}
+                        style={{ backgroundColor: "#4caf50" }}
+                    >
+                        {exporting ? "Exporting..." : "Export G1000 Log (CSV)"}
+                    </button>
                 </div>
             </div>
 
