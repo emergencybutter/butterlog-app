@@ -508,16 +508,27 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
             invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }),
             invoke<any>("get_config"),
             invoke<number | null>("get_remote_id", { filename: flight.filename })
-        ]).then(([flightData, startRwys, endRwys, scrs, config, rId]) => {
+        ]).then(async ([flightData, startRwys, endRwys, scrs, config, rId]) => {
             if (!active) return;
             setData(flightData);
             initialDataRef.current = flightData;
             lastTimestamp.current = flightData.length > 0 ? flightData[flightData.length - 1].timestamp : null;
             setStartRunways(startRwys);
             setEndRunways(endRwys);
-            setScreenshots(scrs);
             setWebhookEnabled(config.enableWebhook && !!config.webhookUrl);
             setRemoteId(rId);
+
+            // For completed flights, retroactively scan for missed screenshots
+            const isCompleted = !isCurrentFlight;
+            if (isCompleted) {
+                const found = await invoke<number>("rescan_flight_screenshots", { filename: flight.filename }).catch(() => 0);
+                const finalScrs = found > 0
+                    ? await invoke<Screenshot[]>("get_screenshots_for_flight", { flightId }).catch(() => scrs)
+                    : scrs;
+                if (active) setScreenshots(finalScrs);
+            } else {
+                if (active) setScreenshots(scrs);
+            }
         }).finally(() => {
             if (active) setLoading(false);
         });

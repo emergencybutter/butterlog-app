@@ -1446,6 +1446,45 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
 }
 
 #[tauri::command]
+pub async fn rescan_flight_screenshots(app: AppHandle, filename: String) -> Result<usize, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(&filename);
+    if !path.exists() { return Err("Flight log not found".to_string()); }
+
+    let flight_id = filename.replace(".db", "");
+    let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+
+    let (aircraft_title, start_ts, end_ts): (String, String, String) = {
+        let title = conn.query_row(
+            "SELECT value FROM summary WHERE key = 'aircraft_title'", [],
+            |r| r.get::<_, String>(0)
+        ).unwrap_or_default();
+        let (s, e): (Option<String>, Option<String>) = conn
+            .query_row("SELECT MIN(timestamp), MAX(timestamp) FROM metrics", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap_or((None, None));
+        (title, s.unwrap_or_default(), e.unwrap_or_default())
+    };
+
+    if start_ts.is_empty() { return Ok(0); }
+
+    let before = {
+        let mgr = app.state::<crate::screenshot_manager::ScreenshotManager>();
+        mgr.get_screenshots_for_flight(&flight_id).unwrap_or_default().len()
+    };
+
+    crate::screenshot_manager::scan_screenshots_for_flight(&app, &flight_id, &aircraft_title, &start_ts, &end_ts)
+        .map_err(|e| e.to_string())?;
+
+    let after = {
+        let mgr = app.state::<crate::screenshot_manager::ScreenshotManager>();
+        mgr.get_screenshots_for_flight(&flight_id).unwrap_or_default().len()
+    };
+
+    Ok(after.saturating_sub(before))
+}
+
+#[tauri::command]
 pub async fn share_flight(app: AppHandle, filename: String) -> Result<String, String> {
     perform_share_flight(&app, &filename).await
 }
