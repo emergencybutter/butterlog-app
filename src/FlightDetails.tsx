@@ -464,7 +464,7 @@ function FullFlightMap({ trajectory, events, screenshots }: { trajectory: {lat: 
 // Max rows kept in state for the live rolling window (~1 hour at 1 Hz)
 const MAX_LIVE_ROWS = 3600;
 
-function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
+function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
     const [startRunways, setStartRunways] = useState<Runway[]>([]);
@@ -827,7 +827,14 @@ function FlightDetailsComponent({ flight: initialFlight, onBack, currentFlightId
                         {flight.atcModel && flight.atcModel !== "Unknown" && flight.atcModel.trim() !== "" ? ` [${flight.atcModel}]` : ""}
                         {flight.atcId && flight.atcId !== "Unknown" && flight.atcId.trim() !== "" ? ` (${flight.atcId})` : ""}
                     </div>
-                    <h2 style={{ margin: 0 }}>{flight.startIcao} → {flight.endIcao}</h2>
+                    <h2 style={{ margin: 0 }}>
+                        {flight.startIcao}
+                        {(() => {
+                            const hasLanded = flight.events.some(e => e.eventType === 'landing');
+                            const dest = hasLanded ? flight.endIcao : (isCurrentFlight ? null : flight.endIcao);
+                            return dest ? ` → ${dest}` : '';
+                        })()}
+                    </h2>
                     <p style={{ color: "#888", margin: "5px 0" }}>{flight.startTime} ({flight.durationMinutes} min)</p>
                 </div>
                 <div>
