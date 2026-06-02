@@ -1141,6 +1141,14 @@ impl SimConnectMonitor {
                                             let duration_mins = analyzer.get_duration_minutes();
                                             let _ = crate::flight_log_manager::update_aircraft_stats(app, &aircraft_info.title, duration_mins as f64, fuel_consumed, &end_icao, true);
 
+                                            // Retroactively scan for screenshots taken during this flight
+                                            if let Some(ref log_path) = current_log_path {
+                                                let fid = log_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                                let end_ts = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                                                let start_ts_ref = start_time.as_deref().unwrap_or("");
+                                                let _ = crate::screenshot_manager::scan_screenshots_for_flight(app, &fid, &aircraft_info.title, start_ts_ref, &end_ts);
+                                            }
+
                                             let _ = app.emit("flight-logs-updated", ());
                                         }
                                     }
