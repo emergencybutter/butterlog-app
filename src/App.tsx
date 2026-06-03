@@ -236,7 +236,7 @@ function App() {
       case "aircraft":
         return <AircraftStats onViewDetails={handleViewDetails} />;
       case "settings":
-        return <Settings onBack={() => setView("status")} />;
+        return <Settings />;
       case "status":
       default:
         return (

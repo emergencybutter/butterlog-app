@@ -5,7 +5,6 @@ use tauri::{AppHandle, Manager, Emitter};
 use chrono::Utc;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, Config as NotifyConfig};
 use std::time::{Duration, UNIX_EPOCH};
-use regex::Regex;
 use crate::config::ConfigManager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -146,7 +145,7 @@ pub fn start_screenshot_watcher(app: AppHandle) {
             if last_config.as_ref() != Some(&config) {
                 _watcher = None;
 
-                if config.screenshot_regex_enabled && !config.screenshot_directories.is_empty() {
+                if !config.screenshot_directories.is_empty() {
                     let existing_dirs: Vec<PathBuf> = config.screenshot_directories.iter()
                         .filter(|d| d.exists())
                         .cloned()
@@ -154,7 +153,6 @@ pub fn start_screenshot_watcher(app: AppHandle) {
 
                     if !existing_dirs.is_empty() {
                         let app_inner = app_clone.clone();
-                        let regex_str = config.screenshot_regex.clone();
                         let (tx, rx) = std::sync::mpsc::channel();
 
                         if let Ok(mut w) = RecommendedWatcher::new(tx, NotifyConfig::default()) {
@@ -175,7 +173,7 @@ pub fn start_screenshot_watcher(app: AppHandle) {
                                         Ok(Ok(event)) => {
                                             if let EventKind::Create(_) = event.kind {
                                                 for path in event.paths {
-                                                    handle_new_file(&app_inner, path, &regex_str);
+                                                    handle_new_file(&app_inner, path);
                                                 }
                                             }
                                         }
@@ -191,10 +189,7 @@ pub fn start_screenshot_watcher(app: AppHandle) {
                                     }
 
                                     let current = app_inner.state::<crate::config::ConfigManager>().get_config();
-                                    if current.screenshot_directories != config.screenshot_directories
-                                        || current.screenshot_regex != regex_str
-                                        || !current.screenshot_regex_enabled
-                                    {
+                                    if current.screenshot_directories != config.screenshot_directories {
                                         crate::append_log(&app_inner, "Screenshot watcher config changed, restarting...".to_string());
                                         break;
                                     }
@@ -213,20 +208,25 @@ pub fn start_screenshot_watcher(app: AppHandle) {
     });
 }
 
-fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
+/// Returns whether a screenshot file should be auto-uploaded. When the
+/// screenshot regex is enabled it acts purely as an auto-upload filter; an
+/// invalid regex is treated as "match all" so uploads are not silently dropped.
+fn passes_upload_filter(config: &crate::config::Config, file_name: &str) -> bool {
+    if !config.screenshot_regex_enabled {
+        return true;
+    }
+    regex::RegexBuilder::new(&config.screenshot_regex)
+        .case_insensitive(true)
+        .build()
+        .map(|re| re.is_match(file_name))
+        .unwrap_or(true)
+}
+
+fn handle_new_file(app: &AppHandle, path: PathBuf) {
     let file_name = match path.file_name().and_then(|n| n.to_str()) {
         Some(name) => name,
         None => return,
     };
-
-    let re = match regex::RegexBuilder::new(regex_str).case_insensitive(true).build() {
-        Ok(r) => r,
-        Err(_) => return,
-    };
-
-    if !re.is_match(file_name) {
-        return;
-    }
 
     // Wait until the file size is stable for 500ms and the file can be opened (ensuring write is complete and lock is released)
     let mut last_size = 0;
@@ -279,9 +279,10 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
                         crate::append_log(app, format!("Captured screenshot for flight {}: {:?}", flight_id, file_name));
                         let _ = app.emit("new-screenshot", ());
 
-                        // Auto-upload if enabled
+                        // Auto-upload if enabled. The screenshot regex, when
+                        // enabled, acts purely as an auto-upload filter.
                         let config = app.state::<ConfigManager>().get_config();
-                        if config.auto_upload_screenshots {
+                        if config.auto_upload_screenshots && passes_upload_filter(&config, file_name) {
                             let app_clone = app.clone();
                             let flight_id_clone = flight_id.clone();
                             tauri::async_runtime::spawn(async move {
@@ -305,16 +306,6 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
         return Ok(());
     }
 
-    if !config.screenshot_regex_enabled {
-        crate::append_log(app, "Screenshot scan skipped: Regex matching is disabled.".to_string());
-        return Ok(());
-    }
-
-    let re = Regex::new(&config.screenshot_regex).map_err(|e| {
-        let err = format!("Screenshot scan failed: Invalid regex: {}", e);
-        crate::append_log(app, err.clone());
-        err
-    })?;
     let manager = app.state::<ScreenshotManager>();
     let start_time = parse_ts(start_ts)?;
     let end_time = parse_ts(end_ts)?;
@@ -329,8 +320,6 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_file() { continue; }
-            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !re.is_match(file_name) { continue; }
             let Ok(metadata) = entry.metadata() else { continue };
             let created_res = metadata.created().or_else(|_| metadata.modified());
             let Ok(created) = created_res else { continue };

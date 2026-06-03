@@ -97,7 +97,7 @@ impl Config {
             screenshot_directories,
             screenshot_directory: None,
             screenshot_regex_enabled: true,
-            screenshot_regex: ".*".to_string(),
+            screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
@@ -105,7 +105,7 @@ impl Config {
             start_minimized: false,
             enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
-            auto_share_flights: false,
+            auto_share_flights: true,
         }
     }
 }
@@ -118,7 +118,7 @@ impl Default for Config {
             screenshot_directories: Vec::new(),
             screenshot_directory: None,
             screenshot_regex_enabled: true,
-            screenshot_regex: ".*".to_string(),
+            screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
@@ -126,7 +126,7 @@ impl Default for Config {
             start_minimized: false,
             enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
-            auto_share_flights: false,
+            auto_share_flights: true,
         }
     }
 }
@@ -192,6 +192,12 @@ impl ConfigManager {
                 let defaults = Config::default_with_app_handle(app);
                 config.screenshot_directories = defaults.screenshot_directories;
             }
+        }
+
+        // Resolve the export log directory so the UI always shows a concrete
+        // path instead of an empty field.
+        if config.log_directory.is_none() {
+            config.log_directory = Config::default_with_app_handle(app).log_directory;
         }
 
         let manager = Self {

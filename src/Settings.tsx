@@ -17,7 +17,7 @@ interface Config {
     autoShareFlights: boolean;
 }
 
-export function Settings({ onBack }: { onBack: () => void }) {
+export function Settings() {
     const [config, setConfig] = useState<Config | null>(null);
     const [status, setStatus] = useState<string>("");
     const [loginLoading, setLoginLoading] = useState<boolean>(false);
@@ -124,7 +124,6 @@ export function Settings({ onBack }: { onBack: () => void }) {
         <div className="settings-page" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
                 <h2>Settings</h2>
-                <button onClick={onBack}>Back to Dashboard</button>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -158,13 +157,13 @@ export function Settings({ onBack }: { onBack: () => void }) {
                     <h4>Directories</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         <div className="setting-input-group">
-                            <label>Log Directory:</label>
-                            <input 
-                                type="text" 
+                            <label>Exported log directory:</label>
+                            <input
+                                type="text"
                                 className="setting-input"
-                                value={config.logDirectory || ""} 
+                                value={config.logDirectory || ""}
                                 onChange={(e) => handleChange("logDirectory", e.target.value || null)}
-                                placeholder="Default (App Data)"
+                                placeholder="Where CSV exports are saved (default: Documents/butterlog)"
                             />
                         </div>
                         <div className="setting-input-group">
@@ -203,35 +202,56 @@ export function Settings({ onBack }: { onBack: () => void }) {
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         <div className="setting-control">
                             <label>
-                                <input 
-                                    type="checkbox" 
-                                    checked={config.screenshotRegexEnabled} 
-                                    onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
-                                /> 
-                                <span>Enable Screenshot Window Regex</span>
-                            </label>
-                        </div>
-                        <input 
-                            type="text" 
-                            className="setting-input"
-                            value={config.screenshotRegex} 
-                            onChange={(e) => handleChange("screenshotRegex", e.target.value)}
-                            disabled={!config.screenshotRegexEnabled}
-                        />
-                        <div className="setting-control">
-                            <label>
-                                <input 
-                                    type="checkbox" 
-                                    checked={config.autoUploadScreenshots} 
+                                <input
+                                    type="checkbox"
+                                    checked={config.autoUploadScreenshots}
                                     onChange={(e) => handleChange("autoUploadScreenshots", e.target.checked)}
-                                /> 
+                                />
                                 <span>Auto-upload Screenshots</span>
                             </label>
                         </div>
+                        {config.autoUploadScreenshots && (
+                            <>
+                                <div className="setting-control">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={config.screenshotRegexEnabled}
+                                            onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
+                                        />
+                                        <span>Enable Screenshot Window Regex</span>
+                                    </label>
+                                </div>
+                                <input
+                                    type="text"
+                                    className="setting-input"
+                                    value={config.screenshotRegex}
+                                    onChange={(e) => handleChange("screenshotRegex", e.target.value)}
+                                    disabled={!config.screenshotRegexEnabled}
+                                    placeholder="Only auto-upload files matching this regex"
+                                />
+                            </>
+                        )}
                     </div>
                 </section>
 
 
+
+                <section>
+                    <h4>Multiplayer</h4>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <div className="setting-control">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={config.injectButterlogTraffic}
+                                    onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
+                                />
+                                <span>Inject traffic from other butterlog users</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
 
                 <section>
                     <h4>ButterLog Service Authentication</h4>
@@ -364,16 +384,6 @@ export function Settings({ onBack }: { onBack: () => void }) {
                                     )}
                                 </button>
                             )}
-                        </div>
-                        <div className="setting-control" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem", marginTop: "0.5rem" }}>
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={config.injectButterlogTraffic}
-                                    onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
-                                />
-                                <span>Inject traffic from other butterlog users</span>
-                            </label>
                         </div>
                         <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem", marginTop: "0.5rem" }}>
                             <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
