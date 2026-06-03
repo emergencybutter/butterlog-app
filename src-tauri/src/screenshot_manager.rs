@@ -137,76 +137,74 @@ impl ScreenshotManager {
 pub fn start_screenshot_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let app_clone = app.clone();
-        let mut last_config = None;
+        let mut last_config: Option<crate::config::Config> = None;
         let mut _watcher: Option<RecommendedWatcher> = None;
-        
+
         loop {
             let config = app_clone.state::<crate::config::ConfigManager>().get_config();
-            
+
             if last_config.as_ref() != Some(&config) {
                 _watcher = None;
-                
-                if let (Some(dir), true) = (&config.screenshot_directory, config.screenshot_regex_enabled) {
-                    if dir.exists() {
+
+                if config.screenshot_regex_enabled && !config.screenshot_directories.is_empty() {
+                    let existing_dirs: Vec<PathBuf> = config.screenshot_directories.iter()
+                        .filter(|d| d.exists())
+                        .cloned()
+                        .collect();
+
+                    if !existing_dirs.is_empty() {
                         let app_inner = app_clone.clone();
-                        let dir_inner = dir.clone();
                         let regex_str = config.screenshot_regex.clone();
-                        
                         let (tx, rx) = std::sync::mpsc::channel();
-                        
+
                         if let Ok(mut w) = RecommendedWatcher::new(tx, NotifyConfig::default()) {
-                            if let Ok(_) = w.watch(&dir_inner, RecursiveMode::NonRecursive) {
+                            let mut watched = Vec::new();
+                            for dir in &existing_dirs {
+                                if w.watch(dir, RecursiveMode::NonRecursive).is_ok() {
+                                    watched.push(dir.clone());
+                                    crate::append_log(&app_inner, format!("Watching for screenshots in: {:?}", dir));
+                                }
+                            }
+
+                            if !watched.is_empty() {
                                 _watcher = Some(w);
-                                crate::append_log(&app_inner, format!("Started watching for screenshots in: {:?} with regex: {}", dir_inner, regex_str));
-                                
                                 last_config = Some(config.clone());
-                                
+
                                 loop {
                                     match rx.recv_timeout(Duration::from_secs(2)) {
-                                        Ok(res) => {
-                                            match res {
-                                                Ok(event) => {
-                                                    if let EventKind::Create(_) = event.kind {
-                                                        for path in event.paths {
-                                                            handle_new_file(&app_inner, path, &regex_str);
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    crate::append_log(&app_inner, format!("Screenshot watcher error: {:?}", e));
-                                                    break;
+                                        Ok(Ok(event)) => {
+                                            if let EventKind::Create(_) = event.kind {
+                                                for path in event.paths {
+                                                    handle_new_file(&app_inner, path, &regex_str);
                                                 }
                                             }
                                         }
-                                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                            // timeout, proceed to check config
+                                        Ok(Err(e)) => {
+                                            crate::append_log(&app_inner, format!("Screenshot watcher error: {:?}", e));
+                                            break;
                                         }
                                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                             crate::append_log(&app_inner, "Screenshot watcher channel disconnected.".to_string());
                                             break;
                                         }
+                                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                                     }
-                                    
-                                    let current_config = app_inner.state::<crate::config::ConfigManager>().get_config();
-                                    if current_config.screenshot_directory != Some(dir_inner.clone()) || 
-                                       current_config.screenshot_regex != regex_str ||
-                                       !current_config.screenshot_regex_enabled {
-                                        crate::append_log(&app_inner, "Screenshot watcher configuration changed, restarting...".to_string());
+
+                                    let current = app_inner.state::<crate::config::ConfigManager>().get_config();
+                                    if current.screenshot_directories != config.screenshot_directories
+                                        || current.screenshot_regex != regex_str
+                                        || !current.screenshot_regex_enabled
+                                    {
+                                        crate::append_log(&app_inner, "Screenshot watcher config changed, restarting...".to_string());
                                         break;
                                     }
                                 }
-                            } else {
-                                crate::append_log(&app_inner, format!("Failed to watch directory: {:?}", dir_inner));
                             }
-                        } else {
-                            crate::append_log(&app_inner, "Failed to create recommended watcher.".to_string());
                         }
                     } else {
-                        crate::append_log(&app_clone, format!("Screenshot directory does not exist: {:?}", dir));
-                        last_config = Some(config.clone()); // Don't spam the log
+                        last_config = Some(config.clone());
                     }
-                } else if config.screenshot_directory.is_some() && !config.screenshot_regex_enabled {
-                    crate::append_log(&app_clone, "Screenshot watcher is disabled by configuration.".to_string());
+                } else {
                     last_config = Some(config.clone());
                 }
             }
@@ -301,16 +299,9 @@ fn handle_new_file(app: &AppHandle, path: PathBuf, regex_str: &str) {
 
 pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_title: &str, start_ts: &str, end_ts: &str) -> Result<(), String> {
     let config = app.state::<crate::config::ConfigManager>().get_config();
-    let screenshot_dir = match &config.screenshot_directory {
-        Some(dir) => dir,
-        None => {
-            crate::append_log(app, "Screenshot scan skipped: No screenshot directory configured.".to_string());
-            return Ok(());
-        }
-    };
 
-    if !screenshot_dir.exists() {
-        crate::append_log(app, format!("Screenshot scan skipped: Directory does not exist: {:?}", screenshot_dir));
+    if config.screenshot_directories.is_empty() {
+        crate::append_log(app, "Screenshot scan skipped: No screenshot directories configured.".to_string());
         return Ok(());
     }
 
@@ -325,58 +316,37 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
         err
     })?;
     let manager = app.state::<ScreenshotManager>();
-
-    // Parse timestamps
     let start_time = parse_ts(start_ts)?;
     let end_time = parse_ts(end_ts)?;
 
-    crate::append_log(app, format!("Scanning for screenshots between {} and {} (Epoch: {} to {}) in {:?}", start_ts, end_ts, start_time, end_time, screenshot_dir));
+    let mut total = 0;
+    for screenshot_dir in &config.screenshot_directories {
+        if !screenshot_dir.exists() { continue; }
 
-    match std::fs::read_dir(screenshot_dir) {
-        Ok(entries) => {
-            let mut count = 0;
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        
-                        if re.is_match(file_name) {
-                            if let Ok(metadata) = entry.metadata() {
-                                let created_res = metadata.created().or_else(|_| metadata.modified());
-                                if let Ok(created) = created_res {
-                                    let created_ts = created.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-                                    if created_ts >= start_time && created_ts <= end_time {
-                                        // Found a potential screenshot!
-                                        let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
-                                        let timestamp = chrono::DateTime::<chrono::Utc>::from(created).format("%Y-%m-%d %H:%M:%S").to_string();
-                                        
-                                        match manager.record_screenshot(
-                                            flight_id,
-                                            aircraft_title,
-                                            path.to_str().unwrap_or(""),
-                                            &timestamp,
-                                            lat,
-                                            lon
-                                        ) {
-                                            Ok(_) => count += 1,
-                                            Err(e) => crate::append_log(app, format!("Failed to record scanned screenshot: {}", e)),
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        crate::append_log(app, format!("Scanning {:?} for screenshots between {} and {}", screenshot_dir, start_ts, end_ts));
+
+        let Ok(entries) = std::fs::read_dir(screenshot_dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !re.is_match(file_name) { continue; }
+            let Ok(metadata) = entry.metadata() else { continue };
+            let created_res = metadata.created().or_else(|_| metadata.modified());
+            let Ok(created) = created_res else { continue };
+            let created_ts = created.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            if created_ts < start_time || created_ts > end_time { continue; }
+
+            let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
+            let timestamp = chrono::DateTime::<chrono::Utc>::from(created).format("%Y-%m-%d %H:%M:%S").to_string();
+            match manager.record_screenshot(flight_id, aircraft_title, path.to_str().unwrap_or(""), &timestamp, lat, lon) {
+                Ok(_) => total += 1,
+                Err(e) => crate::append_log(app, format!("Failed to record scanned screenshot: {}", e)),
             }
-            crate::append_log(app, format!("Screenshot scan complete. Imported {} screenshots.", count));
-        }
-        Err(e) => {
-            let err = format!("Screenshot scan failed: Failed to read directory: {}", e);
-            crate::append_log(app, err.clone());
-            return Err(err);
         }
     }
 
+    crate::append_log(app, format!("Screenshot scan complete. Imported {} screenshots.", total));
     Ok(())
 }
 

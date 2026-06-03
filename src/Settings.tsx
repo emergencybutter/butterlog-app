@@ -4,7 +4,7 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 
 interface Config {
     logDirectory: string | null;
-    screenshotDirectory: string | null;
+    screenshotDirectories: string[];
     screenshotRegexEnabled: boolean;
     screenshotRegex: string;
     autoUploadScreenshots: boolean;
@@ -168,14 +168,32 @@ export function Settings({ onBack }: { onBack: () => void }) {
                             />
                         </div>
                         <div className="setting-input-group">
-                            <label>Screenshot Directory:</label>
-                            <input 
-                                type="text" 
-                                className="setting-input"
-                                value={config.screenshotDirectory || ""} 
-                                onChange={(e) => handleChange("screenshotDirectory", e.target.value || null)}
-                                placeholder="Default (App Data)"
-                            />
+                            <label>Screenshot Directories:</label>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.25rem" }}>
+                                {(config.screenshotDirectories || []).map((dir, i) => (
+                                    <div key={i} style={{ display: "flex", gap: "0.5rem" }}>
+                                        <input
+                                            type="text"
+                                            className="setting-input"
+                                            style={{ flex: 1 }}
+                                            value={dir}
+                                            onChange={(e) => {
+                                                const dirs = [...config.screenshotDirectories];
+                                                dirs[i] = e.target.value;
+                                                handleChange("screenshotDirectories", dirs);
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
+                                            style={{ backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)", padding: "0.3rem 0.7rem" }}
+                                        >✕</button>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={() => handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), ""])}
+                                    style={{ alignSelf: "flex-start", backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem" }}
+                                >+ Add directory</button>
+                            </div>
                         </div>
                     </div>
                 </section>
