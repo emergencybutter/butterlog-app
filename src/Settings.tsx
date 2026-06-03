@@ -205,6 +205,17 @@ export function Settings() {
                                             title={dir}
                                         />
                                         <button
+                                            onClick={async () => {
+                                                const picked = await pickDirectory();
+                                                if (picked && !(config.screenshotDirectories || []).some((d, j) => d === picked && j !== i)) {
+                                                    const dirs = [...config.screenshotDirectories];
+                                                    dirs[i] = picked;
+                                                    handleChange("screenshotDirectories", dirs);
+                                                }
+                                            }}
+                                            style={{ backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem", whiteSpace: "nowrap" }}
+                                        >Browse…</button>
+                                        <button
                                             onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
                                             style={{ backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)", padding: "0.3rem 0.7rem" }}
                                         >✕</button>
@@ -437,7 +448,6 @@ export function Settings() {
 
 
                 <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", color: "#a6adc8", fontSize: "0.85rem" }}>
-                    <span>Changes are saved automatically.</span>
                     {status && <span style={{ color: status.startsWith("Error") ? "#f44336" : "#4caf50" }}>{status}</span>}
                 </div>
             </div>
