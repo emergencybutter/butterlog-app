@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface Config {
     logDirectory: string | null;
@@ -31,11 +32,13 @@ export function Settings() {
             const token = await invoke<string>("start_discord_login");
             setStatus("Successfully authenticated with ButterLog service!");
             if (config) {
-                setConfig({
+                const next = {
                     ...config,
                     webhookUrl: `https://butterlog.flyvoyager.net/api/v0/users/${token}`,
                     enableWebhook: true
-                });
+                };
+                setConfig(next);
+                await invoke("set_config", { config: next });
             }
         } catch (err) {
             setStatus("Authentication failed: " + err);
@@ -78,28 +81,15 @@ export function Settings() {
             .catch(err => setStatus("Error loading config: " + err));
     }, []);
 
-    const handleSave = async () => {
-        if (!config) return;
+    const persist = async (next: Config) => {
         try {
-            // Handle autostart plugin
-            try {
-                if (config.openAtLogin) {
-                    await enable();
-                } else {
-                    await disable();
-                }
-            } catch (e) {
-                console.error("Failed to update autostart:", e);
-            }
-
             const configToSave = {
-                ...config,
-                enableMultiplayerHubs: config.injectButterlogTraffic
+                ...next,
+                enableMultiplayerHubs: next.injectButterlogTraffic
             };
             await invoke("set_config", { config: configToSave });
-            setConfig(configToSave);
-            setStatus("Settings saved successfully!");
-            setTimeout(() => setStatus(""), 3000);
+            setStatus("All changes saved");
+            setTimeout(() => setStatus(""), 2000);
         } catch (err) {
             setStatus("Error saving config: " + err);
         }
@@ -107,15 +97,32 @@ export function Settings() {
 
     const handleChange = (key: keyof Config, value: any) => {
         if (!config) return;
-        if (key === "injectButterlogTraffic") {
-            setConfig({
-                ...config,
-                injectButterlogTraffic: value,
-                enableMultiplayerHubs: value
-            });
-        } else {
-            setConfig({ ...config, [key]: value });
+        const next: Config = key === "injectButterlogTraffic"
+            ? { ...config, injectButterlogTraffic: value, enableMultiplayerHubs: value }
+            : { ...config, [key]: value };
+        setConfig(next);
+
+        // Autostart is managed by a plugin, toggle it alongside the saved flag
+        if (key === "openAtLogin") {
+            (async () => {
+                try {
+                    if (value) {
+                        await enable();
+                    } else {
+                        await disable();
+                    }
+                } catch (e) {
+                    console.error("Failed to update autostart:", e);
+                }
+            })();
         }
+
+        persist(next);
+    };
+
+    const pickDirectory = async (): Promise<string | null> => {
+        const selected = await open({ directory: true, multiple: false });
+        return typeof selected === "string" ? selected : null;
     };
 
     if (!config) return <div>Loading settings...</div>;
@@ -158,29 +165,44 @@ export function Settings() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         <div className="setting-input-group">
                             <label>Exported log directory:</label>
-                            <input
-                                type="text"
-                                className="setting-input"
-                                value={config.logDirectory || ""}
-                                onChange={(e) => handleChange("logDirectory", e.target.value || null)}
-                                placeholder="Where CSV exports are saved (default: Documents/butterlog)"
-                            />
+                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem" }}>
+                                <input
+                                    type="text"
+                                    className="setting-input"
+                                    style={{ flex: 1 }}
+                                    value={config.logDirectory || ""}
+                                    readOnly
+                                    title={config.logDirectory || ""}
+                                    placeholder="Default: Documents/butterlog"
+                                />
+                                <button
+                                    onClick={async () => {
+                                        const dir = await pickDirectory();
+                                        if (dir) handleChange("logDirectory", dir);
+                                    }}
+                                    style={{ backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem", whiteSpace: "nowrap" }}
+                                >Browse…</button>
+                                {config.logDirectory && (
+                                    <button
+                                        onClick={() => handleChange("logDirectory", null)}
+                                        title="Reset to default"
+                                        style={{ backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)", padding: "0.3rem 0.7rem" }}
+                                    >✕</button>
+                                )}
+                            </div>
                         </div>
                         <div className="setting-input-group">
                             <label>Screenshot Directories:</label>
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.25rem" }}>
                                 {(config.screenshotDirectories || []).map((dir, i) => (
-                                    <div key={i} style={{ display: "flex", gap: "0.5rem" }}>
+                                    <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                                         <input
                                             type="text"
                                             className="setting-input"
                                             style={{ flex: 1 }}
                                             value={dir}
-                                            onChange={(e) => {
-                                                const dirs = [...config.screenshotDirectories];
-                                                dirs[i] = e.target.value;
-                                                handleChange("screenshotDirectories", dirs);
-                                            }}
+                                            readOnly
+                                            title={dir}
                                         />
                                         <button
                                             onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
@@ -189,7 +211,12 @@ export function Settings() {
                                     </div>
                                 ))}
                                 <button
-                                    onClick={() => handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), ""])}
+                                    onClick={async () => {
+                                        const dir = await pickDirectory();
+                                        if (dir && !(config.screenshotDirectories || []).includes(dir)) {
+                                            handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), dir]);
+                                        }
+                                    }}
                                     style={{ alignSelf: "flex-start", backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem" }}
                                 >+ Add directory</button>
                             </div>
@@ -409,8 +436,8 @@ export function Settings() {
 
 
 
-                <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-                    <button onClick={handleSave} style={{ backgroundColor: "#4caf50", color: "white" }}>Save Settings</button>
+                <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", color: "#a6adc8", fontSize: "0.85rem" }}>
+                    <span>Changes are saved automatically.</span>
                     {status && <span style={{ color: status.startsWith("Error") ? "#f44336" : "#4caf50" }}>{status}</span>}
                 </div>
             </div>
