@@ -2,7 +2,8 @@ use crate::models::WebhookFlightSummary;
 use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,7 +16,7 @@ struct SyncGuard<'a>(&'a Mutex<bool>);
 
 impl<'a> Drop for SyncGuard<'a> {
     fn drop(&mut self) {
-        let mut syncing = self.0.lock().unwrap();
+        let mut syncing = self.0.lock();
         *syncing = false;
     }
 }
@@ -56,11 +57,11 @@ impl WebhookManager {
     }
 
     pub fn reset(&self) {
-        let mut id = self.current_remote_id.lock().unwrap();
+        let mut id = self.current_remote_id.lock();
         *id = None;
-        let mut time = self.last_update_time.lock().unwrap();
+        let mut time = self.last_update_time.lock();
         *time = None;
-        let mut syncing = self.is_syncing.lock().unwrap();
+        let mut syncing = self.is_syncing.lock();
         *syncing = false;
     }
 
@@ -76,7 +77,7 @@ impl WebhookManager {
         };
 
         {
-            let mut syncing = self.is_syncing.lock().unwrap();
+            let mut syncing = self.is_syncing.lock();
             if *syncing {
                 return;
             }
@@ -94,8 +95,8 @@ impl WebhookManager {
             None
         };
 
-        let mut current_id = self.current_remote_id.lock().unwrap().clone();
-        let last_time = self.last_update_time.lock().unwrap().clone();
+        let mut current_id = self.current_remote_id.lock().clone();
+        let last_time = self.last_update_time.lock().clone();
 
         // 1. Try to recover ID from DB if memory is empty
         if current_id.is_none() && !summary.log_path.is_empty() {
@@ -109,7 +110,7 @@ impl WebhookManager {
                 if let Some(id_str) = existing {
                     if let Ok(id) = id_str.parse::<i64>() {
                         current_id = Some(id);
-                        *self.current_remote_id.lock().unwrap() = Some(id);
+                        *self.current_remote_id.lock() = Some(id);
                     }
                 }
             }
@@ -142,7 +143,7 @@ impl WebhookManager {
                 match self.client.put(&url).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
-                            *self.last_update_time.lock().unwrap() = Some(now);
+                            *self.last_update_time.lock() = Some(now);
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
                                 if let Some(peers) = data.peers {
                                     crate::append_log(app, format!("[Webhook Sync] Received {} peers from service: {:?}", peers.len(), peers));
@@ -174,8 +175,8 @@ impl WebhookManager {
                     Ok(res) => {
                         if res.status().is_success() {
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
-                                *self.current_remote_id.lock().unwrap() = Some(data.id);
-                                *self.last_update_time.lock().unwrap() = Some(now);
+                                *self.current_remote_id.lock() = Some(data.id);
+                                *self.last_update_time.lock() = Some(now);
 
                                 if let Some(peers) = data.peers {
                                     crate::append_log(app, format!("[Webhook Sync] Received {} peers from service: {:?}", peers.len(), peers));

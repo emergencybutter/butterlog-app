@@ -265,7 +265,7 @@ pub async fn get_flight_data(
     filename: String,
     regen_flag: tauri::State<'_, crate::RegenerateSummaryFlag>,
 ) -> Result<Vec<FlightLogRow>, String> {
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     let path = log_dir.join(&filename);
@@ -320,7 +320,7 @@ pub async fn get_flight_data_since(
     filename: String,
     since: String,
 ) -> Result<Vec<FlightLogRow>, String> {
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
     if !path.exists() {
@@ -503,7 +503,7 @@ pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics
 
 pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     crate::append_log(&app, format!("[Logs] Scanning logs."));
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     if !log_dir.exists() {
@@ -546,7 +546,10 @@ pub fn try_find_resume_flight(
         current_metrics: &FlightMetrics,
         aircraft_title: &str,
    ) -> Option<PathBuf> {
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(_) => return None,
+    };
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     if !log_dir.exists() {
@@ -751,7 +754,7 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
 
 #[tauri::command]
 pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<String, String> {
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
     let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     let config = app.state::<ConfigManager>().get_config();

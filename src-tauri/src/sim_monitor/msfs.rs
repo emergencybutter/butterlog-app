@@ -11,7 +11,8 @@ use simplesimconnect::*;
 use simplesimconnect_sys::*;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -220,12 +221,12 @@ impl SimConnectMonitor {
         webhook_manager.reset();
 
         {
-            let mut m = monitoring.lock().unwrap();
+            let mut m = monitoring.lock();
             *m = false;
         }
 
         loop {
-            if !*running.lock().unwrap() {
+            if !*running.lock() {
                 break;
             }
 
@@ -277,8 +278,8 @@ impl SimConnectMonitor {
 
                     let raw_title = if update.title.is_empty() { "Cessna Skyhawk G1000".to_string() } else { update.title };
                     let title = {
-                        let ac_list = available_aircraft.lock().unwrap();
-                        let hc_list = available_helicopters.lock().unwrap();
+                        let ac_list = available_aircraft.lock();
+                        let hc_list = available_helicopters.lock();
                         let empty_db = CharacteristicsDatabase { characteristics: std::collections::HashMap::new() };
                         let db_ref = app.try_state::<CharacteristicsDatabase>();
                         let db = db_ref.as_deref().unwrap_or(&empty_db);
@@ -346,7 +347,7 @@ impl SimConnectMonitor {
                     };
 
                     if request_id == 9001 {
-                        let mut ac = available_aircraft.lock().unwrap();
+                        let mut ac = available_aircraft.lock();
                         if is_first {
                             ac.clear();
                         }
@@ -357,7 +358,7 @@ impl SimConnectMonitor {
                             }
                         }
                     } else if request_id == 9002 {
-                        let mut hc = available_helicopters.lock().unwrap();
+                        let mut hc = available_helicopters.lock();
                         if is_first {
                             hc.clear();
                         }
@@ -379,12 +380,12 @@ impl SimConnectMonitor {
                         flight_ongoing = true;
                         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
                         {
-                            let mut m = monitoring.lock().unwrap();
+                            let mut m = monitoring.lock();
                             *m = true;
                         }
                         db_conn = None;
                         analyzer.reset();
-                        aircraft_info = aircraft_info_mutex.lock().unwrap().clone();
+                        aircraft_info = aircraft_info_mutex.lock().clone();
                         webhook_manager.reset();
                         takeoff_snapshot = None;
                         landing_snapshot = None;
@@ -401,7 +402,7 @@ impl SimConnectMonitor {
                         last_parking_brake = None;
 
                         // Resumption check
-                        let m_lock = metrics.lock().unwrap();
+                        let m_lock = metrics.lock();
                         let current_m = *m_lock;
                         drop(m_lock);
 
@@ -430,7 +431,7 @@ impl SimConnectMonitor {
 
                         current_log_path = Some(path.clone());
                         {
-                            let mut fid = current_flight_id_mutex.lock().unwrap();
+                            let mut fid = current_flight_id_mutex.lock();
                             *fid = filename.replace(".db", "");
                         }
 
@@ -449,7 +450,7 @@ impl SimConnectMonitor {
                             }
                             }
                             // Set initial departure if on ground
-                            let m_lock = metrics.lock().unwrap();
+                            let m_lock = metrics.lock();
                             if m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0 {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
@@ -486,11 +487,11 @@ impl SimConnectMonitor {
                         flight_ongoing = false;
                         last_parking_brake = None;
                         {
-                            let mut fid = current_flight_id_mutex.lock().unwrap();
+                            let mut fid = current_flight_id_mutex.lock();
                             fid.clear();
                         }
                         {
-                            let mut m = monitoring.lock().unwrap();
+                            let mut m = monitoring.lock();
                             *m = false;
                         }
 
@@ -509,7 +510,7 @@ impl SimConnectMonitor {
                                  // Final Webhook Sync
                                  if takeoff_time.is_some() {
                                      let landing_event = analyzer.events.iter().find(|e| e.event_type == "landing");
-                                     let current_snap = metrics.lock().map(|m| *m).ok();
+                                     let current_snap = Some(*metrics.lock());
                                      let closest_airport = if let Some(ref curr) = current_snap {
                                          let lat = curr.latitude;
                                          let lon = curr.longitude;
@@ -599,7 +600,7 @@ impl SimConnectMonitor {
 
                                 // Final update to analyzer to ensure duration and max values are accurate
                                 let final_ts = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
-                                let m = metrics.lock().unwrap();
+                                let m = metrics.lock();
                                 analyzer.update(&m, &final_ts);
                                 drop(m);
 
@@ -680,7 +681,7 @@ impl SimConnectMonitor {
                                 }
                             }
 
-                            let mut info = aircraft_info_mutex.lock().unwrap();
+                            let mut info = aircraft_info_mutex.lock();
                             info.title = title;
                             info.atc_model = atc_model;
                             info.atc_id = atc_id;
@@ -700,7 +701,7 @@ impl SimConnectMonitor {
                     if msg.request_id() == Some(request_id) {
                         last_msfs_update = std::time::Instant::now();
                         {
-                            let mut m = metrics.lock().unwrap();
+                            let mut m = metrics.lock();
                             *m = *data;
                         }
 
@@ -710,7 +711,7 @@ impl SimConnectMonitor {
                         }
 
                         let has_aircraft_title = {
-                            let info = aircraft_info_mutex.lock().unwrap();
+                            let info = aircraft_info_mutex.lock();
                             !info.title.is_empty()
                         };
                         if !flight_ongoing && data.ground_speed > 10.0 && has_aircraft_title {
@@ -718,10 +719,10 @@ impl SimConnectMonitor {
                             
                             sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
 
-                            { let mut m = monitoring.lock().unwrap(); *m = true; }
+                            { let mut m = monitoring.lock(); *m = true; }
                             db_conn = None;
                             analyzer.reset();
-                            aircraft_info = aircraft_info_mutex.lock().unwrap().clone();
+                            aircraft_info = aircraft_info_mutex.lock().clone();
                             webhook_manager.reset();
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
@@ -750,7 +751,7 @@ impl SimConnectMonitor {
 
                             current_log_path = Some(path.clone());
                             {
-                                let mut fid = current_flight_id_mutex.lock().unwrap();
+                                let mut fid = current_flight_id_mutex.lock();
                                 *fid = filename.replace(".db", "");
                             }
                             if let Ok(conn) = Connection::open(&path) {
@@ -1469,7 +1470,7 @@ fn find_best_multiplayer_model(
 impl SimMonitor for SimConnectMonitor {
     fn id(&self) -> &'static str { "msfs" }
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()> {
-        let mut running = self.running.lock().unwrap();
+        let mut running = self.running.lock();
         if *running { return Ok(()); }
         *running = true;
         
@@ -1488,15 +1489,15 @@ impl SimMonitor for SimConnectMonitor {
             let available_aircraft = available_aircraft.clone();
             let available_helicopters = available_helicopters.clone();
             move || loop {
-                if !*running_clone.lock().unwrap() { break; }
+                if !*running_clone.lock() { break; }
                 match SimConnect::open("ButterLogV2") {
                     Ok(sc) => {
                         crate::append_log(&app, format!("[{}] Successfully connected to MSFS.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
-                        { let mut connected = connected_clone.lock().unwrap(); *connected = true; }
+                        { let mut connected = connected_clone.lock(); *connected = true; }
                         
                         let (tx, rx) = std::sync::mpsc::channel();
                         {
-                             let mut sender = remote_aircraft_sender.lock().unwrap();
+                             let mut sender = remote_aircraft_sender.lock();
                              *sender = Some(tx);
                         }
 
@@ -1520,11 +1521,11 @@ impl SimMonitor for SimConnectMonitor {
                                 crate::append_log(&app, format!("[{}] MSFS monitor disconnected with error: {}", Utc::now().format("%Y-%m-%d %H:%M:%S"), e));
                             }
                         }
-                        { let mut connected = connected_clone.lock().unwrap(); *connected = false; }
-                        { let mut monitoring = monitoring_clone.lock().unwrap(); *monitoring = false; }
-                        { let mut m = metrics.lock().unwrap(); *m = FlightMetrics::default(); }
-                        { let mut info = aircraft_info.lock().unwrap(); *info = AircraftInfo::default(); }
-                        { let mut fid = current_flight_id.lock().unwrap(); *fid = "".to_string(); }
+                        { let mut connected = connected_clone.lock(); *connected = false; }
+                        { let mut monitoring = monitoring_clone.lock(); *monitoring = false; }
+                        { let mut m = metrics.lock(); *m = FlightMetrics::default(); }
+                        { let mut info = aircraft_info.lock(); *info = AircraftInfo::default(); }
+                        { let mut fid = current_flight_id.lock(); *fid = "".to_string(); }
                     }
                     Err(_) => {}
                 }
@@ -1533,12 +1534,12 @@ impl SimMonitor for SimConnectMonitor {
         });
         Ok(())
     }
-    fn stop(&self) { let mut running = self.running.lock().unwrap(); *running = false; }
-    fn get_metrics(&self) -> FlightMetrics { *self.metrics.lock().unwrap() }
-    fn get_aircraft_info(&self) -> crate::models::AircraftInfo { self.aircraft_info.lock().unwrap().clone() }
-    fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
-    fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
-    fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
+    fn stop(&self) { let mut running = self.running.lock(); *running = false; }
+    fn get_metrics(&self) -> FlightMetrics { *self.metrics.lock() }
+    fn get_aircraft_info(&self) -> crate::models::AircraftInfo { self.aircraft_info.lock().clone() }
+    fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().clone() }
+    fn is_connected(&self) -> bool { *self.connected.lock() }
+    fn is_monitoring(&self) -> bool { *self.monitoring.lock() }
     fn update_remote_aircraft(
         &self,
         id: &str,
@@ -1550,7 +1551,7 @@ impl SimMonitor for SimConnectMonitor {
         engine_type: &str,
         metrics: &FlightMetrics,
     ) {
-        let sender = self.remote_aircraft_sender.lock().unwrap();
+        let sender = self.remote_aircraft_sender.lock();
         if let Some(tx) = sender.as_ref() {
             let _ = tx.send(RemoteAircraftUpdate {
                 id: id.to_string(),

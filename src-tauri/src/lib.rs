@@ -11,7 +11,7 @@ mod sim_monitor;
 mod webhook_manager;
 
 use std::sync::Arc;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::sync::OnceLock;
 
 static CUSTOM_SERVICE_URL: OnceLock<Option<String>> = OnceLock::new();
@@ -55,12 +55,12 @@ impl UnifiedMonitor {
     }
 
     pub fn add_monitor(&self, monitor: Arc<dyn SimMonitor>) {
-        let mut m = self.monitors.lock().unwrap();
+        let mut m = self.monitors.lock();
         m.push(monitor);
     }
 
     pub fn get_connected_monitor(&self) -> Option<Arc<dyn SimMonitor>> {
-        let monitors = self.monitors.lock().unwrap();
+        let monitors = self.monitors.lock();
         for m in monitors.iter() {
             if m.is_connected() {
                 return Some(m.clone());
@@ -71,14 +71,14 @@ impl UnifiedMonitor {
     }
 
     pub fn get_all_monitors(&self) -> Vec<Arc<dyn SimMonitor>> {
-        self.monitors.lock().unwrap().clone()
+        self.monitors.lock().clone()
     }
 }
 
 pub(crate) fn append_log(app: &AppHandle, message: String) {
     println!("{}", message);
     let state = app.state::<LogState>();
-    let mut logs = state.0.lock().unwrap();
+    let mut logs = state.0.lock();
     logs.push(message.clone());
     let _ = app.emit("log-update", message);
 }
@@ -90,7 +90,7 @@ async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, Stri
 
 #[tauri::command]
 async fn get_flight_summary(app: AppHandle, filename: String) -> Result<FlightSummary, String> {
-    let app_data_dir = app.path().app_data_dir().unwrap();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
     
@@ -331,7 +331,7 @@ fn greet(app: AppHandle, name: &str) -> String {
 
 #[tauri::command]
 fn get_logs(state: State<'_, LogState>) -> Vec<String> {
-    state.0.lock().unwrap().clone()
+    state.0.lock().clone()
 }
 
 #[tauri::command]

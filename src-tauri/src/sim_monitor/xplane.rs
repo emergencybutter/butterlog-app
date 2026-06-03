@@ -10,7 +10,8 @@ use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -238,7 +239,7 @@ impl XPlaneMonitor {
             }
         };
 
-        { let mut c = connected.lock().unwrap(); *c = true; }
+        { let mut c = connected.lock(); *c = true; }
         crate::append_log(&app, "[X-Plane] Connected to WebSocket API.".to_string());
 
         // 3. Subscription Phase: Send dataref_subscribe_values
@@ -293,7 +294,7 @@ impl XPlaneMonitor {
         let mut last_parking_brake: Option<bool> = None;
 
         while let Some(msg) = ws_stream.next().await {
-            if !*running.lock().unwrap() { break; }
+            if !*running.lock() { break; }
 
             match msg {
                 Ok(Message::Text(text)) => {
@@ -476,14 +477,14 @@ impl XPlaneMonitor {
                             last_debug_log = std::time::Instant::now();
                         }
 
-                        { let mut metrics_lock = metrics_mutex.lock().unwrap(); *metrics_lock = m; }
+                        { let mut metrics_lock = metrics_mutex.lock(); *metrics_lock = m; }
 
                         if !flight_ongoing && (m.is_on_ground < 0.5 || m.ground_speed > 10.0) {
                             if m.is_on_ground > 0.5 {
                                 crate::append_log(&app, "[X-Plane] Aircraft movement detected on ground (GS > 10.0). Starting fallback flight log.".to_string());
                             }
                             flight_ongoing = true;
-                            { let mut mon = monitoring.lock().unwrap(); *mon = true; }
+                            { let mut mon = monitoring.lock(); *mon = true; }
                             db_conn = None;
                             analyzer.reset();
                             webhook_manager.reset();
@@ -559,7 +560,7 @@ impl XPlaneMonitor {
                             };
 
                             current_log_path = Some(path.clone());
-                            { let mut fid = current_flight_id_mutex.lock().unwrap(); *fid = filename.replace(".db", ""); }
+                            { let mut fid = current_flight_id_mutex.lock(); *fid = filename.replace(".db", ""); }
 
                             if let Ok(conn) = Connection::open(&path) {
                                 if let Err(e) = init_sqlite_db(&conn) {
@@ -600,7 +601,7 @@ impl XPlaneMonitor {
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
                                  }
-                                 let mut info = aircraft_info_mutex.lock().unwrap();
+                                 let mut info = aircraft_info_mutex.lock();
                                  info.title = title_str;
                                  info.atc_model = atc_model_str;
                                  info.atc_id = atc_id_str;
@@ -951,7 +952,7 @@ impl XPlaneMonitor {
 
         if flight_ongoing { // Finalization logic
             {
-                let mut fid = current_flight_id_mutex.lock().unwrap();
+                let mut fid = current_flight_id_mutex.lock();
                 fid.clear();
             }
             if let Some(db) = app.try_state::<AirportsDatabase>() {
@@ -1037,7 +1038,7 @@ impl XPlaneMonitor {
             }
         }
 
-        { let mut c = connected.lock().unwrap(); *c = false; }
+        { let mut c = connected.lock(); *c = false; }
         webhook_manager.reset();
         Ok(())
     }
@@ -1046,7 +1047,7 @@ impl XPlaneMonitor {
 impl SimMonitor for XPlaneMonitor {
     fn id(&self) -> &'static str { "xplane" }
     fn start(&self, app: AppHandle, _log_path: Option<PathBuf>) -> anyhow::Result<()> {
-        let mut running = self.running.lock().unwrap();
+        let mut running = self.running.lock();
         if *running { return Ok(()); }
         *running = true;
         let metrics = self.metrics.clone();
@@ -1058,7 +1059,7 @@ impl SimMonitor for XPlaneMonitor {
         
         tauri::async_runtime::spawn(async move {
             loop {
-                if !*running_clone.lock().unwrap() { break; }
+                if !*running_clone.lock() { break; }
                 let _ = Self::run_monitor_async(
                     app.clone(),
                     metrics.clone(),
@@ -1068,23 +1069,23 @@ impl SimMonitor for XPlaneMonitor {
                     connected_clone.clone(),
                     monitoring_clone.clone(),
                 ).await;
-                { let mut m = metrics.lock().unwrap(); *m = FlightMetrics::default(); }
-                { let mut info = aircraft_info.lock().unwrap(); *info = crate::models::AircraftInfo::default(); }
-                { let mut fid = current_flight_id.lock().unwrap(); *fid = "".to_string(); }
-                { let mut c = connected_clone.lock().unwrap(); *c = false; }
-                { let mut m = monitoring_clone.lock().unwrap(); *m = false; }
+                { let mut m = metrics.lock(); *m = FlightMetrics::default(); }
+                { let mut info = aircraft_info.lock(); *info = crate::models::AircraftInfo::default(); }
+                { let mut fid = current_flight_id.lock(); *fid = "".to_string(); }
+                { let mut c = connected_clone.lock(); *c = false; }
+                { let mut m = monitoring_clone.lock(); *m = false; }
                 // Retry after 5 seconds if disconnected
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
         });
         Ok(())
     }
-    fn stop(&self) { let mut running = self.running.lock().unwrap(); *running = false; }
-    fn get_metrics(&self) -> FlightMetrics { *self.metrics.lock().unwrap() }
-    fn get_aircraft_info(&self) -> crate::models::AircraftInfo { self.aircraft_info.lock().unwrap().clone() }
-    fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().unwrap().clone() }
-    fn is_connected(&self) -> bool { *self.connected.lock().unwrap() }
-    fn is_monitoring(&self) -> bool { *self.monitoring.lock().unwrap() }
+    fn stop(&self) { let mut running = self.running.lock(); *running = false; }
+    fn get_metrics(&self) -> FlightMetrics { *self.metrics.lock() }
+    fn get_aircraft_info(&self) -> crate::models::AircraftInfo { self.aircraft_info.lock().clone() }
+    fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().clone() }
+    fn is_connected(&self) -> bool { *self.connected.lock() }
+    fn is_monitoring(&self) -> bool { *self.monitoring.lock() }
     fn update_remote_aircraft(
         &self,
         id: &str,

@@ -2,7 +2,7 @@ use directories::UserDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -208,19 +208,19 @@ impl ConfigManager {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let config = self.config.lock().unwrap();
+        let config = self.config.lock();
         let content = serde_json::to_string_pretty(&*config).map_err(|e| e.to_string())?;
         fs::write(&self.config_path, content).map_err(|e| e.to_string())?;
         Ok(())
     }
 
     pub fn get_config(&self) -> Config {
-        self.config.lock().unwrap().clone()
+        self.config.lock().clone()
     }
 
     pub fn update_config(&self, new_config: Config) -> Result<(), String> {
         {
-            let mut config = self.config.lock().unwrap();
+            let mut config = self.config.lock();
             *config = new_config;
         }
         self.save()

@@ -1,5 +1,6 @@
 use std::net::{SocketAddr, UdpSocket, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
@@ -74,7 +75,7 @@ impl MultiplayerManager {
     }
 
     pub fn update_peers(&self, peer_strings: Vec<String>) {
-        let mut peers = self.peers.lock().unwrap();
+        let mut peers = self.peers.lock();
         let new_peers: Vec<SocketAddr> = peer_strings
             .into_iter()
             .filter_map(|s| s.parse().ok())
@@ -83,7 +84,7 @@ impl MultiplayerManager {
     }
 
     pub fn get_public_address(&self) -> Option<SocketAddr> {
-        *self.public_address.lock().unwrap()
+        *self.public_address.lock()
     }
 
     pub fn start(&self, app: AppHandle) {
@@ -105,7 +106,7 @@ impl MultiplayerManager {
                 if let Some(m) = monitor.get_connected_monitor() {
                     if m.is_connected() {
                         let now = std::time::Instant::now();
-                        let mut tracked = interp_multiplayer.tracked_aircrafts.lock().unwrap();
+                        let mut tracked = interp_multiplayer.tracked_aircrafts.lock();
                         
                         for (id, ac) in tracked.iter_mut() {
                             let elapsed = now.duration_since(ac.start_time);
@@ -271,7 +272,7 @@ impl MultiplayerManager {
                                                 port
                                             );
                                             
-                                            let mut addr_lock = recv_multiplayer.public_address.lock().unwrap();
+                                            let mut addr_lock = recv_multiplayer.public_address.lock();
                                             if *addr_lock != Some(public_addr) {
                                                 *addr_lock = Some(public_addr);
                                                 crate::append_log(&recv_app, format!("[Multiplayer] Discovered public UDP address: {}", public_addr));
@@ -287,7 +288,7 @@ impl MultiplayerManager {
                                                 port
                                             );
                                             
-                                            let mut addr_lock = recv_multiplayer.public_address.lock().unwrap();
+                                            let mut addr_lock = recv_multiplayer.public_address.lock();
                                             if *addr_lock != Some(public_addr) {
                                                 *addr_lock = Some(public_addr);
                                                 crate::append_log(&recv_app, format!("[Multiplayer] Discovered public UDP address: {}", public_addr));
@@ -320,7 +321,7 @@ impl MultiplayerManager {
                                             if config.inject_butterlog_traffic || config.enable_multiplayer_hubs {
                                                 let now = std::time::Instant::now();
                                                 let should_log = {
-                                                    let mut last_log = recv_multiplayer.last_received_log.lock().unwrap();
+                                                    let mut last_log = recv_multiplayer.last_received_log.lock();
                                                     match *last_log {
                                                         Some(t) if now.duration_since(t).as_secs() < 60 => false,
                                                         _ => {
@@ -365,7 +366,7 @@ impl MultiplayerManager {
 
                                             if should_process {
                                                 let now = std::time::Instant::now();
-                                                let mut tracked = recv_multiplayer.tracked_aircrafts.lock().unwrap();
+                                                let mut tracked = recv_multiplayer.tracked_aircrafts.lock();
                                                 if let Some(ac) = tracked.get_mut(&addr.to_string()) {
                                                     let elapsed = now.duration_since(ac.last_seen);
                                                     let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
@@ -450,7 +451,7 @@ impl MultiplayerManager {
                     let monitor = app.state::<UnifiedMonitor>();
                     if let Some(m) = monitor.get_connected_monitor() {
                         let self_metrics = m.get_metrics();
-                        let mut tracked = multiplayer.tracked_aircrafts.lock().unwrap();
+                        let mut tracked = multiplayer.tracked_aircrafts.lock();
                         let mut to_remove = Vec::new();
                         
                         for (id, ac) in tracked.iter() {
@@ -518,7 +519,7 @@ impl MultiplayerManager {
                         });
 
                         if let Ok(data) = serde_json::to_vec(&payload) {
-                            let peers = multiplayer.peers.lock().unwrap().clone();
+                            let peers = multiplayer.peers.lock().clone();
                             for peer in peers.iter() {
                                 let _ = socket.send_to(&data, peer);
                             }
