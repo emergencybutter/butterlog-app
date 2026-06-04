@@ -250,6 +250,8 @@ pub struct FlightSummary {
     pub fuel_consumed: f64,
     pub events: Vec<FlightEvent>,
     pub screenshot_count: usize,
+    #[serde(default)]
+    pub notes: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -686,6 +688,13 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
     let events_json = get_summary("flight_events");
     let events: Vec<FlightEvent> = serde_json::from_str(&events_json).unwrap_or_default();
 
+    // Notes are optional and default to empty (not "Unknown") when absent.
+    let notes = conn.query_row(
+        "SELECT value FROM summary WHERE key = 'notes'",
+        [],
+        |r| r.get::<_, String>(0),
+    ).optional().ok().flatten().unwrap_or_default();
+
     let mut stmt = conn
         .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
         .map_err(|e| {
@@ -749,7 +758,68 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         fuel_consumed,
         events,
         screenshot_count,
+        notes,
     })
+}
+
+/// Maximum allowed length (in characters) of a user-provided flight note.
+pub const MAX_NOTES_LEN: usize = 500;
+
+/// Save user notes for a flight to its local DB and, when the flight has been
+/// synced to the service, push them to the remote notes endpoint.
+#[tauri::command]
+pub async fn set_flight_notes(app: AppHandle, filename: String, notes: String) -> Result<(), String> {
+    if notes.chars().count() > MAX_NOTES_LEN {
+        return Err(format!("Notes must be {} characters or fewer", MAX_NOTES_LEN));
+    }
+
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
+    let path = log_dir.join(&filename);
+    if !path.exists() {
+        return Err("Flight log not found".to_string());
+    }
+
+    // Persist locally and read back the remote id (if the flight was synced).
+    let remote_id = {
+        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO summary (key, value) VALUES ('notes', ?1)",
+            params![notes],
+        ).map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT value FROM summary WHERE key = 'remote_id'",
+            [],
+            |r| r.get::<_, String>(0),
+        ).optional().ok().flatten().and_then(|s| s.parse::<i64>().ok())
+    };
+
+    // Mirror to the service when connected and the flight exists remotely.
+    if let Some(id) = remote_id {
+        let config = app.state::<ConfigManager>().get_config();
+        if config.enable_webhook && !config.webhook_url.is_empty() {
+            let mut base_url = config.webhook_url.clone();
+            if base_url.ends_with('/') {
+                base_url.pop();
+            }
+            if let Some(custom_url) = crate::get_custom_service_url() {
+                base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
+            }
+            let url = format!("{}/flights/{}/notes", base_url, id);
+            let client = reqwest::Client::new();
+            match client.put(&url).json(&serde_json::json!({ "notes": notes })).send().await {
+                Ok(res) if !res.status().is_success() => {
+                    crate::append_log(&app, format!("[Notes] Service rejected notes update: {}", res.status()));
+                }
+                Err(e) => {
+                    crate::append_log(&app, format!("[Notes] Failed to sync notes to service: {}", e));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

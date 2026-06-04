@@ -478,6 +478,10 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
     const [uploadingIds, setUploadingIds] = useState<Set<number>>(new Set());
+    const NOTES_MAX_LEN = 500;
+    const [notes, setNotes] = useState<string>(initialFlight.notes || "");
+    const [notesSaving, setNotesSaving] = useState(false);
+    const [notesStatus, setNotesStatus] = useState<string | null>(null);
 
     // Refs for incremental live fetch — not state so they don't cause re-renders
     const lastTimestamp = useRef<string | null>(null);
@@ -771,6 +775,23 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
         }
     };
 
+    const notesDirty = notes !== (flight.notes || "");
+
+    const handleSaveNotes = async () => {
+        setNotesSaving(true);
+        setNotesStatus(null);
+        try {
+            await invoke("set_flight_notes", { filename: flight.filename, notes });
+            setFlight({ ...flight, notes });
+            setNotesStatus("Saved");
+            setTimeout(() => setNotesStatus(null), 2000);
+        } catch (e) {
+            setNotesStatus(`Error: ${e}`);
+        } finally {
+            setNotesSaving(false);
+        }
+    };
+
     useEffect(() => {
         invoke<string | null>("get_share_url", { filename: flight.filename })
             .then(url => { if (url) setShareUrl(url); })
@@ -883,6 +904,41 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                 <div style={{ background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", textAlign: "center" }}>
                     <div style={{ color: "#888", fontSize: "0.9rem", marginBottom: "0.5rem" }}>DURATION</div>
                     <div style={{ fontSize: "1.5rem", fontWeight: "bold" }}>{flight.durationMinutes} min</div>
+                </div>
+            </div>
+
+            <div style={{ marginBottom: "2rem", background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #333" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+                    <h3 style={{ margin: 0, color: "#888", fontSize: "1.1rem" }}>Notes</h3>
+                    <span style={{ fontSize: "0.8rem", color: notes.length >= NOTES_MAX_LEN ? "#f38ba8" : "#888" }}>
+                        {notes.length}/{NOTES_MAX_LEN}
+                    </span>
+                </div>
+                <textarea
+                    value={notes}
+                    maxLength={NOTES_MAX_LEN}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Add notes about this flight…"
+                    rows={4}
+                    style={{
+                        width: "100%", boxSizing: "border-box", resize: "vertical",
+                        background: "#1e1e2e", color: "#cdd6f4", border: "1px solid #45475a",
+                        borderRadius: "8px", padding: "0.75rem", fontSize: "0.95rem", fontFamily: "inherit"
+                    }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.75rem" }}>
+                    <button
+                        onClick={handleSaveNotes}
+                        disabled={notesSaving || !notesDirty}
+                        style={{ backgroundColor: notesDirty ? "#cba6f7" : "#45475a", color: "#11111b", opacity: notesSaving ? 0.7 : 1 }}
+                    >
+                        {notesSaving ? "Saving..." : "Save Notes"}
+                    </button>
+                    {notesStatus && (
+                        <span style={{ fontSize: "0.85rem", color: notesStatus.startsWith("Error") ? "#f38ba8" : "#a6e3a1" }}>
+                            {notesStatus}
+                        </span>
+                    )}
                 </div>
             </div>
 

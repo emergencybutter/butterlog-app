@@ -107,6 +107,7 @@ export interface FlightSummary {
     fuelConsumed: number;
     events: FlightEvent[];
     screenshotCount: number;
+    notes: string;
 }
 export interface Screenshot {
   id: number;
