@@ -63,12 +63,23 @@ impl ScreenshotManager {
 
     pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64) -> Result<i64, String> {
         let conn = self.get_connection()?;
+        // Insert only when this path is new. Re-scans (e.g. after a flight
+        // completes) must keep the existing row so its id and upload state
+        // (remote_hash/remote_url) are preserved — REPLACE would delete the row,
+        // wiping the uploaded markers and assigning a new id.
         conn.execute(
-            "INSERT OR REPLACE INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(path) DO NOTHING",
             params![flight_id, aircraft_title, path, timestamp, lat, lon],
         ).map_err(|e| e.to_string())?;
-        Ok(conn.last_insert_rowid())
+        // Return the id for this path, whether just inserted or pre-existing.
+        let id = conn.query_row(
+            "SELECT id FROM screenshots WHERE path = ?1",
+            params![path],
+            |r| r.get::<_, i64>(0),
+        ).map_err(|e| e.to_string())?;
+        Ok(id)
     }
 
     pub fn mark_as_uploaded(&self, id: i64, hash: &str, url: &str) -> Result<(), String> {
