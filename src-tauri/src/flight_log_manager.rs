@@ -808,6 +808,9 @@ pub async fn set_flight_notes(app: AppHandle, filename: String, notes: String) -
             let url = format!("{}/flights/{}/notes", base_url, id);
             let client = reqwest::Client::new();
             match client.put(&url).json(&serde_json::json!({ "notes": notes })).send().await {
+                Ok(res) if res.status().as_u16() == 401 => {
+                    crate::force_logout(&app, "service rejected token during notes update");
+                }
                 Ok(res) if !res.status().is_success() => {
                     crate::append_log(&app, format!("[Notes] Service rejected notes update: {}", res.status()));
                 }
@@ -1495,6 +1498,9 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
 
     if !res.status().is_success() {
         let status = res.status();
+        if status.as_u16() == 401 {
+            crate::force_logout(app, "service rejected token during share upload");
+        }
         let text = res.text().await.unwrap_or_default();
         let msg = format!("Share failed ({}): {}", status, text);
         crate::append_log(app, format!("[Share] {}", msg));
@@ -1653,6 +1659,9 @@ pub async fn delete_flight_share(app: AppHandle, filename: String) -> Result<(),
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
 
+    if res.status().as_u16() == 401 {
+        crate::force_logout(&app, "service rejected token during share deletion");
+    }
     if !res.status().is_success() && res.status().as_u16() != 404 {
         let text = res.text().await.unwrap_or_default();
         return Err(format!("Delete failed: {}", text));

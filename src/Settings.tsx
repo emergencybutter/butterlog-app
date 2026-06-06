@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 
 interface Config {
     logDirectory: string | null;
@@ -79,6 +80,18 @@ export function Settings() {
                 }
             })
             .catch(err => setStatus("Error loading config: " + err));
+    }, []);
+
+    // If the backend forces a logout (token rejected with 401), reload the
+    // config so this view reflects the disconnected state.
+    useEffect(() => {
+        const unlisten = listen("auth-logout", () => {
+            invoke<Config>("get_config")
+                .then(cfg => setConfig(prev => prev ? { ...cfg, openAtLogin: prev.openAtLogin } : cfg))
+                .catch(() => {});
+            setStatus("Session expired — you've been logged out.");
+        });
+        return () => { unlisten.then(f => f()); };
     }, []);
 
     const persist = async (next: Config) => {

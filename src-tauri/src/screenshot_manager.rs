@@ -563,6 +563,9 @@ pub async fn perform_screenshot_upload(
 
     if !res.status().is_success() {
         let status = res.status();
+        if status.as_u16() == 401 {
+            crate::force_logout(&app, "service rejected token during screenshot upload");
+        }
         let text = res.text().await.unwrap_or_default();
         return Err(format!("Upload failed with status {}: {}", status, text));
     }

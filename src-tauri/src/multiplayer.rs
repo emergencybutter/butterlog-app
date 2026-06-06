@@ -209,6 +209,8 @@ impl MultiplayerManager {
                                 }
                                 ping_multiplayer.update_peers(data.peers);
                             }
+                        } else if res.status().as_u16() == 401 {
+                            crate::force_logout(&ping_app, "service rejected token during multiplayer ping");
                         } else {
                             crate::append_log(&ping_app, format!("[Multiplayer Ping] Failed with status: {}", res.status()));
                         }

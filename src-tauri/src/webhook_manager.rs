@@ -152,6 +152,8 @@ impl WebhookManager {
                                     }
                                 }
                             }
+                        } else if res.status().as_u16() == 401 {
+                            crate::force_logout(app, "service rejected token during flight sync");
                         } else {
                             crate::append_log(app, format!("[Webhook] Update failed (ID {}): {}", id, res.status()));
                         }
@@ -199,6 +201,8 @@ impl WebhookManager {
                                 
                                 crate::append_log(app, format!("[Webhook] Created remote flight ID: {}", data.id));
                             }
+                        } else if res.status().as_u16() == 401 {
+                            crate::force_logout(app, "service rejected token during flight sync");
                         } else {
                             crate::append_log(app, format!("[Webhook] Create failed: {}", res.status()));
                         }

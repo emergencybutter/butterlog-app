@@ -83,6 +83,38 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
     let _ = app.emit("log-update", message);
 }
 
+/// Clear the saved ButterLog credentials after the service rejects our token
+/// (HTTP 401). Idempotent: only the auth fields are wiped, so the user's
+/// traffic-injection / multiplayer preferences are preserved and resume on the
+/// next successful login. Emits `auth-logout` so the UI can react.
+pub(crate) fn force_logout(app: &AppHandle, reason: &str) {
+    let config_manager = app.state::<ConfigManager>();
+    let config = config_manager.get_config();
+
+    // Already logged out — nothing to do (also stops concurrent 401s from
+    // emitting repeated events).
+    if config.webhook_url.is_empty() && !config.enable_webhook {
+        return;
+    }
+
+    let new_config = Config {
+        webhook_url: String::new(),
+        enable_webhook: false,
+        ..config
+    };
+
+    if let Err(e) = config_manager.update_config(new_config) {
+        append_log(app, format!("[Auth] Failed to persist forced logout: {}", e));
+        return;
+    }
+
+    // Reset the in-flight webhook sync state so a fresh login starts clean.
+    app.state::<webhook_manager::WebhookManager>().reset();
+
+    append_log(app, format!("[Auth] Logged out: {}", reason));
+    let _ = app.emit("auth-logout", reason.to_string());
+}
+
 #[tauri::command]
 async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     scan_logs(app)

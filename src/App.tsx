@@ -133,6 +133,7 @@ function App() {
   const [currentPhase, setCurrentPhase] = useState<string>("Parked");
   const [flightOngoing, setFlightOngoing] = useState(false);
   const [currentFlightId, setCurrentFlightId] = useState<string>("");
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   const handleBackToHistory = useCallback(() => {
     setView("history");
@@ -176,6 +177,11 @@ function App() {
       setCurrentPhase(event.payload);
     });
 
+    // Backend forces a logout when the service rejects our token (HTTP 401).
+    const unlistenAuth = listen<string>("auth-logout", () => {
+      setAuthNotice("Your ButterLog session expired. Reconnect with Discord in Settings to resume syncing and traffic injection.");
+    });
+
     const interval = window.setInterval(async () => {
       try {
         const [m, connected, ongoing, sims, fid] = await Promise.all([
@@ -196,6 +202,7 @@ function App() {
     return () => {
       unlistenLogs.then((f) => f());
       unlistenPhase.then((f) => f());
+      unlistenAuth.then((f) => f());
       clearInterval(interval);
     };
   }, []);
@@ -292,6 +299,25 @@ function App() {
 
   return (
     <div className="app-container">
+      {authNotice && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem",
+          background: "rgba(243,139,168,0.12)", color: "#f38ba8",
+          borderBottom: "1px solid rgba(243,139,168,0.3)", padding: "0.6rem 1rem", fontSize: "0.9rem"
+        }}>
+          <span>{authNotice}</span>
+          <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+            <button
+              onClick={() => { setView("settings"); setAuthNotice(null); }}
+              style={{ background: "#f38ba8", color: "#11111b", border: "none", borderRadius: "6px", padding: "0.3rem 0.8rem", cursor: "pointer", fontWeight: "bold" }}
+            >Open Settings</button>
+            <button
+              onClick={() => setAuthNotice(null)}
+              style={{ background: "transparent", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.4)", borderRadius: "6px", padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >Dismiss</button>
+          </div>
+        </div>
+      )}
       <div className="app-layout">
         <nav className="sidebar">
           <div className="sidebar-top">
