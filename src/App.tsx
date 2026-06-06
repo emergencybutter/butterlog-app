@@ -120,6 +120,12 @@ const Icons = {
       <circle cx="12" cy="12" r="3"></circle>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
     </svg>
+  ),
+  Copy: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
   )
 };
 
@@ -162,6 +168,7 @@ function App() {
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [statusTab, setStatusTab] = useState<"simulator" | "multiplayer" | "logs">("simulator");
   const [multiplayerInfo, setMultiplayerInfo] = useState<MultiplayerDebugInfo | null>(null);
+  const [copiedLogs, setCopiedLogs] = useState(false);
 
   const handleBackToHistory = useCallback(() => {
     setView("history");
@@ -171,6 +178,16 @@ function App() {
     setSelectedFlight(flight);
     setView("details");
   }, []);
+
+  const handleCopyLogs = useCallback(() => {
+    const text = logs.join("\n");
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopiedLogs(true);
+        setTimeout(() => setCopiedLogs(false), 2000);
+      })
+      .catch((err) => console.error("Failed to copy logs:", err));
+  }, [logs]);
 
   useEffect(() => {
     // Check for updates on startup
@@ -441,7 +458,40 @@ function App() {
 
             {statusTab === "logs" && (
               <div className="logs-container" style={{ textAlign: "left" }}>
-                <h3>Backend Logs</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                  <h3 style={{ margin: 0 }}>Backend Logs</h3>
+                  <button
+                    onClick={handleCopyLogs}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: copiedLogs ? "#4caf50" : "#2a2a2a",
+                      color: copiedLogs ? "white" : "#eee",
+                      border: "1px solid #444",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      transition: "all 0.25s ease"
+                    }}
+                  >
+                    {copiedLogs ? (
+                      <>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Icons.Copy />
+                        Copy Logs
+                      </>
+                    )}
+                  </button>
+                </div>
                 <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "400px", overflowY: "auto" }}>
                   {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
                   {logs.map((log, index) => (
