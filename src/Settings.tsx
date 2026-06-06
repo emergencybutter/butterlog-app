@@ -291,15 +291,21 @@ export function Settings() {
                 <section>
                     <h4>Multiplayer</h4>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <div className="setting-control">
-                            <label>
+                        <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
+                            <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
                                 <input
                                     type="checkbox"
                                     checked={config.injectButterlogTraffic}
                                     onChange={(e) => handleChange("injectButterlogTraffic", e.target.checked)}
+                                    disabled={!isLoggedIn}
                                 />
                                 <span>Inject traffic from other butterlog users</span>
                             </label>
+                            {!isLoggedIn && (
+                                <span style={{ fontSize: "0.75rem", color: "#f38ba8", marginLeft: "28px", display: "block", marginTop: "2px" }}>
+                                    Requires connection to ButterLog service.
+                                </span>
+                            )}
                         </div>
                     </div>
                 </section>
