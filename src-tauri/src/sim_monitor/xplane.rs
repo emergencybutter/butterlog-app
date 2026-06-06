@@ -312,6 +312,7 @@ impl XPlaneMonitor {
         let mut last_pos: Option<(f64, f64)> = None;
         let mut last_known_title = String::new();
         let mut last_parking_brake: Option<bool> = None;
+        let mut departure_set = false;
 
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock() { break; }
@@ -587,6 +588,13 @@ impl XPlaneMonitor {
                                     crate::append_log(&app, format!("[X-Plane] Error initializing DB: {}", e));
                                 }
 
+                                let has_dep: Result<String, _> = conn.query_row(
+                                    "SELECT value FROM summary WHERE key = 'departure_icao'",
+                                    [],
+                                    |row| row.get(0)
+                                );
+                                departure_set = has_dep.is_ok();
+
                                 // Restore analyzer state if resuming
                                 if resumed_path.is_some() {
                                     if let Err(e) = analyzer.restore(&conn) {
@@ -597,13 +605,14 @@ impl XPlaneMonitor {
                                     }
                                 }
 
-                                // Set initial departure if on ground
-                                if m.is_on_ground > 0.5 {
+                                // Set initial departure if on ground and valid coordinates
+                                if !departure_set && m.is_on_ground > 0.5 && m.latitude != 0.0 && m.longitude != 0.0 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
                                             crate::append_log(&app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
                                             let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                            departure_set = true;
                                         }
                                     }
                                 }
@@ -636,6 +645,19 @@ impl XPlaneMonitor {
                         }
 
                         if flight_ongoing {
+                            if !departure_set && m.latitude != 0.0 && m.longitude != 0.0 && (m.is_on_ground > 0.5 || m.altitude_agl < 10.0) {
+                                if let Some(ref conn) = db_conn {
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
+                                            crate::append_log(&app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                            departure_set = true;
+                                        }
+                                    }
+                                }
+                            }
+
                             // Update max metrics
                             match max_metrics {
                                 Some(ref mut max_m) => max_m.update_max(&m),

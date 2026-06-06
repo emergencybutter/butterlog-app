@@ -194,6 +194,7 @@ impl SimConnectMonitor {
         let mut analyzer = crate::flight_analyzer::FlightAnalyzer::new();
         let mut last_log_time = Utc::now();
         let mut flight_ongoing = false;
+        let mut departure_set = false;
 
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
@@ -440,6 +441,13 @@ impl SimConnectMonitor {
                                 crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
                             }
 
+                            let has_dep: Result<String, _> = conn.query_row(
+                                "SELECT value FROM summary WHERE key = 'departure_icao'",
+                                [],
+                                |row| row.get(0)
+                            );
+                            departure_set = has_dep.is_ok();
+
                             // Restore analyzer state if resuming
                             if current_log_path.as_ref().map(|p| p.to_string_lossy().contains("butterlog_")).unwrap_or(false) && resumed_path.is_some() {
                             if let Err(e) = analyzer.restore(&conn) {
@@ -449,18 +457,19 @@ impl SimConnectMonitor {
                                 takeoff_time = analyzer.takeoff_timestamp.clone();
                             }
                             }
-                            // Set initial departure if on ground
+                            // Set initial departure if on ground and valid coordinates
                             let m_lock = metrics.lock();
-                            if m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0 {
+                            if !departure_set && (m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0) && m_lock.latitude != 0.0 && m_lock.longitude != 0.0 {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
-                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({}) ({},{})", nearest.ident, nearest.name, m_lock.latitude, m_lock.longitude));
+                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
                                         if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
                                             crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                         }
                                         if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
                                             crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                         }
+                                        departure_set = true;
                                     }
                                 }
                             }
@@ -759,16 +768,25 @@ impl SimConnectMonitor {
                                     crate::append_log(app, format!("[MSFS] Error initializing DB: {}", e));
                                 }
 
-                                // Set initial departure if on ground
-                                if data.is_on_ground > 0.5 {
+                                let has_dep: Result<String, _> = conn.query_row(
+                                    "SELECT value FROM summary WHERE key = 'departure_icao'",
+                                    [],
+                                    |row| row.get(0)
+                                );
+                                departure_set = has_dep.is_ok();
+
+                                // Set initial departure if on ground and valid coordinates
+                                if !departure_set && data.is_on_ground > 0.5 && data.latitude != 0.0 && data.longitude != 0.0 {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
+                                            crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
                                             if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
                                                 crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                             }
                                             if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
                                                 crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                             }
+                                            departure_set = true;
                                         }
                                     }
                                 }
@@ -795,6 +813,19 @@ impl SimConnectMonitor {
                         }
 
                         if flight_ongoing {
+                            if !departure_set && data.latitude != 0.0 && data.longitude != 0.0 && (data.is_on_ground > 0.5 || data.altitude_agl < 10.0) {
+                                if let Some(ref conn) = db_conn {
+                                    if let Some(db) = app.try_state::<AirportsDatabase>() {
+                                        if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
+                                            crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]);
+                                            let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]);
+                                            departure_set = true;
+                                        }
+                                    }
+                                }
+                            }
+
                             // Update max metrics
                             match max_metrics {
                                 Some(ref mut m) => m.update_max(data),
