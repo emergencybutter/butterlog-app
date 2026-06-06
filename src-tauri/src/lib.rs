@@ -19,7 +19,6 @@ static CUSTOM_SERVICE_URL: OnceLock<Option<String>> = OnceLock::new();
 pub fn get_custom_service_url() -> Option<String> {
     CUSTOM_SERVICE_URL.get().cloned().flatten()
 }
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
@@ -76,11 +75,13 @@ impl UnifiedMonitor {
 }
 
 pub(crate) fn append_log(app: &AppHandle, message: String) {
-    println!("{}", message);
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let formatted = format!("[{}] {}", timestamp, message);
+    println!("{}", formatted);
     let state = app.state::<LogState>();
     let mut logs = state.0.lock();
-    logs.push(message.clone());
-    let _ = app.emit("log-update", message);
+    logs.push(formatted.clone());
+    let _ = app.emit("log-update", formatted);
 }
 
 /// Clear the saved ButterLog credentials after the service rejects our token
@@ -449,16 +450,12 @@ pub fn run() {
             screenshot_manager::start_screenshot_watcher(app.handle().clone());
 
             let pkg_info = app.package_info();
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
 
             append_log(
                 app.handle(),
                 format!(
-                    "[{}] Startup - App: {} v{}",
-                    timestamp, pkg_info.name, pkg_info.version
+                    "Startup - App: {} v{}",
+                    pkg_info.name, pkg_info.version
                 ),
             );
 

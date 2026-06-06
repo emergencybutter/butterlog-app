@@ -376,7 +376,7 @@ impl SimConnectMonitor {
 
                 if let Some(event) = msg.as_event() {
                     if event.event_id == event_sim_start {
-                        crate::append_log(app, format!("[{}] Received SimStart event. Starting new flight log.", Utc::now().format("%H:%M:%S")));
+                        crate::append_log(app, "Received SimStart event. Starting new flight log.".to_string());
                         flight_ongoing = true;
                         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
                         {
@@ -483,7 +483,7 @@ impl SimConnectMonitor {
                             let _ = app.emit("flight-logs-updated", ());
                         }
                     } else if event.event_id == event_sim_stop {
-                        crate::append_log(app, format!("[{}] Received SimStop event. Closing and analyzing flight log.", Utc::now().format("%H:%M:%S")));
+                        crate::append_log(app, "Received SimStop event. Closing and analyzing flight log.".to_string());
                         flight_ongoing = false;
                         last_parking_brake = None;
                         {
@@ -1492,7 +1492,7 @@ impl SimMonitor for SimConnectMonitor {
                 if !*running_clone.lock() { break; }
                 match SimConnect::open("ButterLogV2") {
                     Ok(sc) => {
-                        crate::append_log(&app, format!("[{}] Successfully connected to MSFS.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
+                        crate::append_log(&app, "Successfully connected to MSFS.".to_string());
                         { let mut connected = connected_clone.lock(); *connected = true; }
                         
                         let (tx, rx) = std::sync::mpsc::channel();
@@ -1515,10 +1515,10 @@ impl SimMonitor for SimConnectMonitor {
                             &available_helicopters,
                         ) {
                             Ok(_) => {
-                                crate::append_log(&app, format!("[{}] MSFS monitor session closed normally.", Utc::now().format("%Y-%m-%d %H:%M:%S")));
+                                crate::append_log(&app, "MSFS monitor session closed normally.".to_string());
                             }
                             Err(e) => {
-                                crate::append_log(&app, format!("[{}] MSFS monitor disconnected with error: {}", Utc::now().format("%Y-%m-%d %H:%M:%S"), e));
+                                crate::append_log(&app, format!("MSFS monitor disconnected with error: {}", e));
                             }
                         }
                         { let mut connected = connected_clone.lock(); *connected = false; }
