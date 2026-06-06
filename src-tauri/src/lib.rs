@@ -222,6 +222,13 @@ fn get_current_flight_id(state: State<'_, UnifiedMonitor>) -> String {
 }
 
 #[tauri::command]
+fn get_multiplayer_status(
+    multiplayer: State<'_, Arc<MultiplayerManager>>,
+) -> multiplayer::MultiplayerDebugInfo {
+    multiplayer.get_debug_info()
+}
+
+#[tauri::command]
 async fn get_remote_id(app: AppHandle, filename: String) -> Result<Option<i64>, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
@@ -621,6 +628,7 @@ pub fn run() {
             get_connected_sims,
             is_flight_ongoing,
             get_current_flight_id,
+            get_multiplayer_status,
             get_remote_id,
             upload_screenshot,
             start_discord_login,

@@ -55,6 +55,36 @@ struct TrackedAircraft {
     current_metrics: FlightMetrics,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedAircraftDebugInfo {
+    pub id: String,
+    pub aircraft: String,
+    pub atc_model: String,
+    pub object_class: String,
+    pub category: String,
+    pub num_engines: i32,
+    pub engine_type: String,
+    pub last_seen_seconds_ago: u64,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub gps_altitude_msl: f64,
+    pub indicated_altitude: f64,
+    pub ground_speed: f64,
+    pub heading: f64,
+    pub track: f64,
+    pub pitch_angle: f64,
+    pub roll_angle: f64,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiplayerDebugInfo {
+    pub public_address: Option<String>,
+    pub peers: Vec<String>,
+    pub tracked_aircrafts: Vec<TrackedAircraftDebugInfo>,
+}
+
 pub struct MultiplayerManager {
     peers: Mutex<Vec<SocketAddr>>,
     public_address: Mutex<Option<SocketAddr>>,
@@ -85,6 +115,48 @@ impl MultiplayerManager {
 
     pub fn get_public_address(&self) -> Option<SocketAddr> {
         *self.public_address.lock()
+    }
+
+    pub fn get_debug_info(&self) -> MultiplayerDebugInfo {
+        let public_address = self.public_address.lock().map(|addr| addr.to_string());
+        
+        let peers = self.peers.lock()
+            .iter()
+            .map(|addr| addr.to_string())
+            .collect();
+            
+        let now = std::time::Instant::now();
+        let tracked_aircrafts = self.tracked_aircrafts.lock()
+            .iter()
+            .map(|(id, ac)| {
+                let last_seen_seconds_ago = now.duration_since(ac.last_seen).as_secs();
+                TrackedAircraftDebugInfo {
+                    id: id.clone(),
+                    aircraft: ac.aircraft.clone(),
+                    atc_model: ac.atc_model.clone(),
+                    object_class: ac.object_class.clone(),
+                    category: ac.category.clone(),
+                    num_engines: ac.num_engines,
+                    engine_type: ac.engine_type.clone(),
+                    last_seen_seconds_ago,
+                    latitude: ac.current_metrics.latitude,
+                    longitude: ac.current_metrics.longitude,
+                    gps_altitude_msl: ac.current_metrics.gps_altitude_msl,
+                    indicated_altitude: ac.current_metrics.indicated_altitude,
+                    ground_speed: ac.current_metrics.ground_speed,
+                    heading: ac.current_metrics.heading,
+                    track: ac.current_metrics.track,
+                    pitch_angle: ac.current_metrics.pitch_angle,
+                    roll_angle: ac.current_metrics.roll_angle,
+                }
+            })
+            .collect();
+            
+        MultiplayerDebugInfo {
+            public_address,
+            peers,
+            tracked_aircrafts,
+        }
     }
 
     pub fn start(&self, app: AppHandle) {

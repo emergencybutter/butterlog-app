@@ -123,6 +123,32 @@ const Icons = {
   )
 };
 
+interface TrackedAircraftDebugInfo {
+  id: string;
+  aircraft: string;
+  atcModel: string;
+  objectClass: string;
+  category: string;
+  numEngines: number;
+  engineType: string;
+  lastSeenSecondsAgo: number;
+  latitude: number;
+  longitude: number;
+  gpsAltitudeMsl: number;
+  indicatedAltitude: number;
+  groundSpeed: number;
+  heading: number;
+  track: number;
+  pitchAngle: number;
+  rollAngle: number;
+}
+
+interface MultiplayerDebugInfo {
+  publicAddress: string | null;
+  peers: string[];
+  trackedAircrafts: TrackedAircraftDebugInfo[];
+}
+
 function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<FlightMetrics | null>(null);
@@ -134,6 +160,8 @@ function App() {
   const [flightOngoing, setFlightOngoing] = useState(false);
   const [currentFlightId, setCurrentFlightId] = useState<string>("");
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [statusTab, setStatusTab] = useState<"simulator" | "multiplayer" | "logs">("simulator");
+  const [multiplayerInfo, setMultiplayerInfo] = useState<MultiplayerDebugInfo | null>(null);
 
   const handleBackToHistory = useCallback(() => {
     setView("history");
@@ -184,18 +212,20 @@ function App() {
 
     const interval = window.setInterval(async () => {
       try {
-        const [m, connected, ongoing, sims, fid] = await Promise.all([
+        const [m, connected, ongoing, sims, fid, mpInfo] = await Promise.all([
           invoke<FlightMetrics>("get_metrics"),
           invoke<boolean>("is_sim_connected"),
           invoke<boolean>("is_flight_ongoing"),
           invoke<string[]>("get_connected_sims"),
-          invoke<string>("get_current_flight_id")
+          invoke<string>("get_current_flight_id"),
+          invoke<MultiplayerDebugInfo>("get_multiplayer_status")
         ]);
         setMetrics(m);
         setSimConnected(connected);
         setFlightOngoing(ongoing);
         setConnectedSims(sims);
         setCurrentFlightId(fid);
+        setMultiplayerInfo(mpInfo);
       } catch (e) { }
     }, 200);
 
@@ -248,50 +278,178 @@ function App() {
       default:
         return (
           <div className="status-view">
-            {metrics && flightOngoing && (
-              <div className="metrics-display" style={{ textAlign: "left", marginBottom: "2rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <h3>Flight Metrics</h3>
-                    <div style={{ background: "#4caf50", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "bold" }}>
-                        PHASE: {currentPhase.toUpperCase()}
+            <div className="status-tabs">
+              <button 
+                className={`status-tab ${statusTab === "simulator" ? "active" : ""}`}
+                onClick={() => setStatusTab("simulator")}
+              >
+                Simulator Telemetry
+              </button>
+              <button 
+                className={`status-tab ${statusTab === "multiplayer" ? "active" : ""}`}
+                onClick={() => setStatusTab("multiplayer")}
+              >
+                Multiplayer Debugging
+              </button>
+              <button 
+                className={`status-tab ${statusTab === "logs" ? "active" : ""}`}
+                onClick={() => setStatusTab("logs")}
+              >
+                Backend Logs
+              </button>
+            </div>
+
+            {statusTab === "simulator" && (
+              <>
+                {metrics && flightOngoing && (
+                  <div className="metrics-display" style={{ textAlign: "left", marginBottom: "2rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                        <h3>Flight Metrics</h3>
+                        <div style={{ background: "#4caf50", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "bold" }}>
+                            PHASE: {currentPhase.toUpperCase()}
+                        </div>
                     </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
+                      {Object.entries(metrics).map(([key, value]) => (
+                        <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
+                          <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{METRIC_LABELS[key] || key}:</span>
+                          <span style={{ float: "right", fontFamily: "monospace" }}>
+                            {typeof value === "number" ? value.toFixed(2) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!flightOngoing && simConnected && (
+                  <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
+                    <div style={{ fontSize: "1.2rem", color: "#4caf50", fontWeight: "bold", marginBottom: "0.5rem" }}>{getSimNameDisplay()} CONNECTED</div>
+                    <div style={{ color: "#888" }}>Waiting for flight movement to start logging...</div>
+                  </div>
+                )}
+
+                {!simConnected && (
+                  <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
+                    <div style={{ fontSize: "1.2rem", color: "#f44336", fontWeight: "bold", marginBottom: "0.5rem" }}>DISCONNECTED</div>
+                    <div style={{ color: "#888" }}>Start your flight simulator to begin logging.</div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {statusTab === "multiplayer" && (
+              <div className="multiplayer-status" style={{ textAlign: "left" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "2rem" }}>
+                  <div style={{ background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #444" }}>
+                    <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>YOUR PUBLIC UDP ADDRESS (STUN)</h4>
+                    <div style={{ fontSize: "1.4rem", fontFamily: "monospace", fontWeight: "bold" }}>
+                      {multiplayerInfo?.publicAddress || "Discovering..."}
+                    </div>
+                  </div>
+                  <div style={{ background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #444" }}>
+                    <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>ACTIVE MULTIPLAYER PEERS / HUBS</h4>
+                    <div style={{ fontSize: "1.4rem", fontWeight: "bold" }}>
+                      {multiplayerInfo?.peers.length || 0} active
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
-                  {Object.entries(metrics).map(([key, value]) => (
-                    <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
-                      <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{METRIC_LABELS[key] || key}:</span>
-                      <span style={{ float: "right", fontFamily: "monospace" }}>
-                        {typeof value === "number" ? value.toFixed(2) : String(value)}
-                      </span>
+
+                {multiplayerInfo && multiplayerInfo.peers.length > 0 && (
+                  <div style={{ marginBottom: "2rem" }}>
+                    <h4 style={{ color: "#888", borderBottom: "1px solid #333", paddingBottom: "4px", marginBottom: "12px" }}>Peer Connections</h4>
+                    <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                      {multiplayerInfo.peers.map((peer, idx) => (
+                        <div key={idx} style={{ background: "#333", padding: "4px 10px", borderRadius: "4px", fontFamily: "monospace", fontSize: "0.9rem" }}>
+                          🔗 {peer}
+                        </div>
+                      ))}
                     </div>
+                  </div>
+                )}
+
+                <div>
+                  <h3 style={{ marginBottom: "1rem" }}>Tracked Players & Traffic ({multiplayerInfo?.trackedAircrafts.length || 0})</h3>
+                  {!multiplayerInfo || multiplayerInfo.trackedAircrafts.length === 0 ? (
+                    <div style={{ background: "#2a2a2a", padding: "2.5rem", borderRadius: "8px", textAlign: "center", border: "1px dashed #444" }}>
+                      <span style={{ fontSize: "2rem" }}>✈️</span>
+                      <p style={{ color: "#888", marginTop: "10px", marginBottom: 0 }}>
+                        No multiplayer traffic detected. Other players flying with ButterLog will appear here as we receive their live UDP telemetry.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mp-grid">
+                      {multiplayerInfo.trackedAircrafts.map((ac) => {
+                        const isStale = ac.lastSeenSecondsAgo > 5;
+                        const isCritical = ac.lastSeenSecondsAgo > 10;
+                        const lastSeenClass = isCritical ? "critical" : isStale ? "warn" : "";
+                        
+                        return (
+                          <div key={ac.id} className="mp-card">
+                            <div className="mp-card-header">
+                              <span className="mp-callsign">{ac.id}</span>
+                              <span className={`mp-last-seen ${lastSeenClass}`}>
+                                {ac.lastSeenSecondsAgo === 0 ? "just now" : `${ac.lastSeenSecondsAgo}s ago`}
+                              </span>
+                            </div>
+                            <div className="mp-spec-grid">
+                              <div>
+                                <span className="mp-label">Aircraft:</span>
+                                <div style={{ fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.aircraft}>{ac.aircraft}</div>
+                              </div>
+                              <div>
+                                <span className="mp-label">ATC Model:</span>
+                                <div style={{ fontWeight: "600" }}>{ac.atcModel || "Unknown"}</div>
+                              </div>
+                              <div style={{ gridColumn: "span 2" }}>
+                                <span className="mp-label">Engine/Class:</span>
+                                <div style={{ color: "#aaa" }}>
+                                  {ac.numEngines}x {ac.engineType} {ac.category}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mp-telemetry-box">
+                              <span className="mp-label">LAT:</span>
+                              <span className="mp-value">{ac.latitude.toFixed(5)}</span>
+                              
+                              <span className="mp-label">LON:</span>
+                              <span className="mp-value">{ac.longitude.toFixed(5)}</span>
+                              
+                              <span className="mp-label">ALT MSL:</span>
+                              <span className="mp-value">{Math.round(ac.gpsAltitudeMsl)} ft</span>
+                              
+                              <span className="mp-label">ALT AGL:</span>
+                              <span className="mp-value">{Math.round(ac.indicatedAltitude)} ft</span>
+                              
+                              <span className="mp-label">SPEED:</span>
+                              <span className="mp-value">{Math.round(ac.groundSpeed)} kt</span>
+                              
+                              <span className="mp-label">HDG/TRK:</span>
+                              <span className="mp-value">{Math.round(ac.heading)}° / {Math.round(ac.track)}°</span>
+                              
+                              <span className="mp-label">PITCH/ROLL:</span>
+                              <span className="mp-value">{ac.pitchAngle.toFixed(1)}° / {ac.rollAngle.toFixed(1)}°</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {statusTab === "logs" && (
+              <div className="logs-container" style={{ textAlign: "left" }}>
+                <h3>Backend Logs</h3>
+                <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "400px", overflowY: "auto" }}>
+                  {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
+                  {logs.map((log, index) => (
+                    <div key={index} style={{ fontFamily: "monospace", fontSize: "0.9rem", color: "#4caf50", marginBottom: "4px" }}>{log}</div>
                   ))}
                 </div>
               </div>
             )}
-
-            {!flightOngoing && simConnected && (
-              <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
-                <div style={{ fontSize: "1.2rem", color: "#4caf50", fontWeight: "bold", marginBottom: "0.5rem" }}>{getSimNameDisplay()} CONNECTED</div>
-                <div style={{ color: "#888" }}>Waiting for flight movement to start logging...</div>
-              </div>
-            )}
-
-            {!simConnected && (
-              <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
-                <div style={{ fontSize: "1.2rem", color: "#f44336", fontWeight: "bold", marginBottom: "0.5rem" }}>DISCONNECTED</div>
-                <div style={{ color: "#888" }}>Start your flight simulator to begin logging.</div>
-              </div>
-            )}
-
-            <div className="logs-container" style={{ marginTop: "2rem", textAlign: "left" }}>
-              <h3>Backend Logs</h3>
-              <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "200px", overflowY: "auto" }}>
-                {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
-                {logs.map((log, index) => (
-                  <div key={index} style={{ fontFamily: "monospace", fontSize: "0.9rem", color: "#4caf50" }}>{log}</div>
-                ))}
-              </div>
-            </div>
           </div>
         );
     }
