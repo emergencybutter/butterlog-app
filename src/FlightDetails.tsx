@@ -870,14 +870,16 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                     <p style={{ color: "#888", margin: "5px 0" }}>{flight.startTime} ({flight.durationMinutes} min)</p>
                 </div>
                 <div>
-                    <button
-                        onClick={handleShare}
-                        disabled={sharing}
-                        style={{ marginRight: "10px", backgroundColor: shareUrl ? "#89b4fa" : "#cba6f7", color: "#11111b" }}
-                        title={shareUrl ? "Click to copy share URL" : "Upload and share this flight"}
-                    >
-                        {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
-                    </button>
+                    {!isCurrentFlight && (
+                        <button
+                            onClick={handleShare}
+                            disabled={sharing}
+                            style={{ marginRight: "10px", backgroundColor: shareUrl ? "#89b4fa" : "#cba6f7", color: "#11111b" }}
+                            title={shareUrl ? "Click to copy share URL" : "Upload and share this flight"}
+                        >
+                            {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
+                        </button>
+                    )}
                     <button
                         onClick={handleExport}
                         disabled={exporting}

@@ -61,14 +61,34 @@ fn extract_xplane_string(value: &Value) -> Option<String> {
 async fn fetch_xplane_dataref_string(client: &reqwest::Client, rest_url: &str, name: &str) -> Option<String> {
     let resp = client.get(rest_url).query(&[("filter[name]", name)]).send().await.ok()?;
     let json = resp.json::<Value>().await.ok()?;
-    let val_ref = json["data"].as_array()?.first()?.get("value")?;
+    let item = json["data"].as_array()?.first()?;
+    let id = item.get("id")?;
+    let id_str = if id.is_string() {
+        id.as_str()?.to_string()
+    } else {
+        id.as_i64()?.to_string()
+    };
+    let val_url = format!("{}/{}/value", rest_url, id_str);
+    let val_resp = client.get(&val_url).send().await.ok()?;
+    let val_json = val_resp.json::<Value>().await.ok()?;
+    let val_ref = val_json.get("data")?;
     extract_xplane_string(val_ref)
 }
 
 async fn fetch_xplane_dataref_double(client: &reqwest::Client, rest_url: &str, name: &str) -> Option<f64> {
     let resp = client.get(rest_url).query(&[("filter[name]", name)]).send().await.ok()?;
     let json = resp.json::<Value>().await.ok()?;
-    let val_ref = json["data"].as_array()?.first()?.get("value")?;
+    let item = json["data"].as_array()?.first()?;
+    let id = item.get("id")?;
+    let id_str = if id.is_string() {
+        id.as_str()?.to_string()
+    } else {
+        id.as_i64()?.to_string()
+    };
+    let val_url = format!("{}/{}/value", rest_url, id_str);
+    let val_resp = client.get(&val_url).send().await.ok()?;
+    let val_json = val_resp.json::<Value>().await.ok()?;
+    let val_ref = val_json.get("data")?;
     if let Some(arr) = val_ref.as_array() {
         arr.first()?.as_f64()
     } else {
