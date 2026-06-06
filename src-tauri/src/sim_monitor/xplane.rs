@@ -346,14 +346,14 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/position/latitude") { m.latitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/longitude") { m.longitude = v; updated = true; }
                         
-                        // Check for teleportation (> 1nm jump)
+                        // Check for teleportation (> 3nm jump)
                         if updated && m.latitude != 0.0 && m.longitude != 0.0 {
                             if let Some((l_lat, l_lon)) = last_pos {
                                 let d_lat = (m.latitude - l_lat).abs() * 60.0; // 1 deg lat = 60nm
                                 let d_lon = (m.longitude - l_lon).abs() * 60.0 * l_lat.to_radians().cos();
                                 let dist_sq = d_lat * d_lat + d_lon * d_lon;
                                 
-                                if dist_sq > 1.0 && flight_ongoing {
+                                if dist_sq > 9.0 && flight_ongoing {
                                     crate::append_log(&app, format!("[X-Plane] Position jump detected ({:.2}nm). Resetting flight.", dist_sq.sqrt()));
                                     ws_stream.close(None).await.ok();
                                     return Ok(()); // Loop in start() will restart discovery and new flight
