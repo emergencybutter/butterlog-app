@@ -435,7 +435,8 @@ impl XPlaneMonitor {
 
                         // Autopilot
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/autopilot_on") {
-                            m.autopilot_active = if (v - 2.0).abs() < 0.1 { 1.0 } else { 0.0 };
+                            // autopilot_on is a boolean dataref (0/1), so any truthy value means engaged.
+                            m.autopilot_active = if v > 0.5 { 1.0 } else { 0.0 };
                             updated = true;
                         }
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = v; updated = true; }
