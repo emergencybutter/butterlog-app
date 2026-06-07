@@ -317,7 +317,21 @@ impl FlightEvent {
                 score -= (g - 1.2) * 50.0;
             }
         }
-        
+
+        // Penalize the touchdown descent rate. Nothing below 300 fpm; a gentle
+        // slope from 300-500 fpm (only -10 by 500 fpm), then a steep slope beyond
+        // 500 fpm so genuinely hard landings are punished. touchdown_fpm is the
+        // (negative) vertical speed at touchdown, so use its magnitude.
+        if let Some(fpm) = self.touchdown_fpm {
+            let rate = fpm.abs();
+            if rate > 300.0 {
+                score -= (rate.min(500.0) - 300.0) * 0.05; // up to -10 at 500 fpm
+                if rate > 500.0 {
+                    score -= (rate - 500.0) * 0.2; // -0.2 per fpm beyond 500
+                }
+            }
+        }
+
         Some(score)
     }
 }
