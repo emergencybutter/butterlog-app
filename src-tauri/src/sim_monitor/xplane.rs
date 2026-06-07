@@ -144,7 +144,7 @@ impl XPlaneMonitor {
             "sim/flightmodel/position/y_agl",
             "sim/flightmodel/position/mag_psi",
             "sim/cockpit2/fuel/fuel_quantity",
-            "sim/flightmodel/forces/g_nrm",
+            "sim/flightmodel/forces/g_nrml",
             "sim/aircraft/view/acf_ui_name",
             "sim/cockpit2/gauges/indicators/altitude_ft_pilot",
             "sim/cockpit/misc/barometer_setting",
@@ -389,7 +389,7 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/position/mag_psi") { m.heading = v; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 0) { m.fuel_quantity_left = v * 2.20462 * 0.1498; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 1) { m.fuel_quantity_right = v * 2.20462 * 0.1498; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.normal_acceleration = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrml") { m.normal_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/gauges/indicators/altitude_ft_pilot") { m.indicated_altitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit/misc/barometer_setting") { m.altimeter_setting = v; updated = true; }
                         if let Some(v) = get_path_double("sim/weather/temperature_ambient_c") { m.outside_air_temp = v; updated = true; }
@@ -456,7 +456,7 @@ impl XPlaneMonitor {
                         // GPS / TAS / G-force / Alt
                         if let Some(v) = get_path_double("sim/flightmodel2/position/ellipsoid_height") { m.gps_altitude_wgs84 = v * 3.28084; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/true_airspeed") { m.true_airspeed = v * 1.94384; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrm") { m.gforce = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrml") { m.gforce = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel2/position/pressure_altitude") {
                             m.pressure_altitude = v;
                             m.density_altitude = v + 120.0 * (m.outside_air_temp - (15.0 - 1.98 * (v / 1000.0)));
