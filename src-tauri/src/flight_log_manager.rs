@@ -603,7 +603,10 @@ pub fn try_find_resume_flight(
 
                     let alt_diff = (current_metrics.gps_altitude_msl - last_m.gps_altitude_msl).abs();
 
-                    if dist > 0.0 && dist <= 10.0 && alt_diff > 0.0 && alt_diff <= 1000.0 {
+                    // No lower bound on dist/alt_diff: a pause freezes the aircraft in
+                    // place, so a reconnect at the identical position must still resume the
+                    // same flight rather than spawn a new log.
+                    if dist <= 10.0 && alt_diff <= 1000.0 {
                         crate::append_log(app, format!("[Resumption] Found match: {}. Dist: {:.1}nm, Alt Diff: {:.0}ft", summary.filename, dist, alt_diff));
                         return Some(path);
                     }
