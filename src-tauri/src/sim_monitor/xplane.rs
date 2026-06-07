@@ -713,6 +713,7 @@ impl XPlaneMonitor {
                                                     threshold_dist_ft: None,
                                                     vs_variance: None,
                                                     ias_variance: None,
+                                                    approach_stability: None,
                                                     heading: None,
                                                 };
                                                 if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {

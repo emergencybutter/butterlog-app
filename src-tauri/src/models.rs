@@ -292,6 +292,9 @@ pub struct FlightEvent {
     pub threshold_dist_ft: Option<f64>,
     pub vs_variance: Option<f64>,
     pub ias_variance: Option<f64>,
+    // Combined 0-100 approach stability score (steadiness of G, roll and speed
+    // over the minute before touchdown). Higher is more stable.
+    pub approach_stability: Option<f64>,
     pub heading: Option<f64>,
 }
 

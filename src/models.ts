@@ -82,6 +82,7 @@ export interface FlightEvent {
   thresholdDistFt?: number;
   vsVariance?: number;
   iasVariance?: number;
+  approachStability?: number;
 }
 
 export interface FlightLogRow {

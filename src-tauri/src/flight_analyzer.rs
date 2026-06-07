@@ -340,6 +340,7 @@ impl FlightAnalyzer {
             threshold_dist_ft: dist,
             vs_variance: None,
             ias_variance: None,
+            approach_stability: None,
             heading: hdg,
         });
     }
@@ -441,6 +442,9 @@ impl FlightAnalyzer {
                     landing.vs_variance = Some(vs_var);
                     landing.ias_variance = Some(ias_var);
                 }
+                if let Some(stability) = self.calculate_approach_stability(conn, &ts) {
+                    self.events[idx].approach_stability = Some(stability);
+                }
             }
         }
     }
@@ -483,8 +487,73 @@ impl FlightAnalyzer {
         
         let ias_mean = ias_data.iter().sum::<f64>() / ias_data.len() as f64;
         let ias_var = ias_data.iter().map(|v| (v - ias_mean).powi(2)).sum::<f64>() / ias_data.len() as f64;
-        
+
         Some((vs_var, ias_var))
+    }
+
+    /// Approach stability: how steady G-force, roll and speed were over the
+    /// minute before touchdown. The final 5 seconds (flare/touchdown) are
+    /// excluded so the deliberate flare doesn't count against the approach.
+    /// Returns a 0-100 score where higher is more stable.
+    fn calculate_approach_stability(&self, conn: &Connection, landing_ts: &str) -> Option<f64> {
+        let landing_dt = chrono::NaiveDateTime::parse_from_str(
+            landing_ts.split('.').next().unwrap_or(landing_ts),
+            "%Y-%m-%d %H:%M:%S",
+        ).ok()?;
+
+        // Window: [landing - 60s, landing - 5s]
+        let start_ts = (landing_dt - chrono::Duration::seconds(60)).format("%Y-%m-%d %H:%M:%S").to_string();
+        let end_ts = (landing_dt - chrono::Duration::seconds(5)).format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let mut stmt = conn.prepare(
+            "SELECT gforce, normal_acceleration, roll_angle, indicated_airspeed FROM metrics
+             WHERE timestamp >= ?1 AND timestamp <= ?2"
+        ).ok()?;
+
+        let rows = stmt.query_map(params![start_ts, end_ts], |row| {
+            Ok((
+                row.get::<_, f64>(0)?,
+                row.get::<_, f64>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, f64>(3)?,
+            ))
+        }).ok()?;
+
+        let mut g_data = Vec::new();
+        let mut roll_data = Vec::new();
+        let mut speed_data = Vec::new();
+        for row in rows {
+            if let Ok((gforce, normal_accel, roll, ias)) = row {
+                // Mirror the landing-G logic: prefer gforce, fall back to normal accel.
+                let g = if gforce != 0.0 { gforce } else { normal_accel };
+                g_data.push(g);
+                roll_data.push(roll);
+                speed_data.push(ias);
+            }
+        }
+
+        if g_data.len() < 5 { return None; }
+
+        let std_dev = |data: &[f64]| -> f64 {
+            let mean = data.iter().sum::<f64>() / data.len() as f64;
+            let var = data.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / data.len() as f64;
+            var.sqrt()
+        };
+
+        // Standard deviation of each channel, normalized against a tolerance that
+        // represents a comfortably stable approach (term == 1.0 at tolerance).
+        const G_TOLERANCE: f64 = 0.10;    // G
+        const ROLL_TOLERANCE: f64 = 5.0;  // degrees
+        const SPEED_TOLERANCE: f64 = 5.0; // knots
+
+        let g_term = std_dev(&g_data) / G_TOLERANCE;
+        let roll_term = std_dev(&roll_data) / ROLL_TOLERANCE;
+        let speed_term = std_dev(&speed_data) / SPEED_TOLERANCE;
+
+        let instability = (g_term + roll_term + speed_term) / 3.0;
+
+        // Map to 0-100: rock-steady -> 100, at tolerance on average -> 50.
+        Some(100.0 / (1.0 + instability))
     }
 }
 

@@ -1079,6 +1079,19 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                             </div>
                             <div style={{ color: "#888", fontSize: "0.8rem", marginTop: "5px", letterSpacing: "1px" }}>TOTAL SCORE</div>
                         </div>
+                        {landingEvent.approachStability !== undefined && (
+                            <div style={{ textAlign: "center", minWidth: "120px" }}>
+                                <div style={{
+                                    fontSize: "3.5rem",
+                                    fontWeight: "bold",
+                                    color: landingEvent.approachStability >= 75 ? "#4caf50" :
+                                           landingEvent.approachStability >= 50 ? "#ff9800" : "#f44336"
+                                }}>
+                                    {Math.round(landingEvent.approachStability)}
+                                </div>
+                                <div style={{ color: "#888", fontSize: "0.8rem", marginTop: "5px", letterSpacing: "1px" }}>APPROACH STABILITY</div>
+                            </div>
+                        )}
                         <div style={{ flex: 1, minWidth: "300px" }}>
                             <div style={{ marginBottom: "20px" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
