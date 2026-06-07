@@ -363,6 +363,14 @@ impl FlightAnalyzer {
     }
 
     pub fn find_end_icao(&self, db: &AirportsDatabase) -> String {
+        // Before takeoff the rolling end-coordinate buffer only holds points at
+        // the departure field, so resolving an arrival here would surface the
+        // departure airport as a bogus destination. Report the destination as
+        // "Unknown" (distinct from the in-flight "Airborne" state) until the
+        // aircraft has actually departed.
+        if self.takeoff_timestamp.is_none() {
+            return "Unknown".to_string();
+        }
         if !self.last_on_ground && !self.landed && self.current_phase != FlightPhase::Parked && self.current_phase != FlightPhase::TaxiOut {
             return "Airborne".to_string();
         }
@@ -412,7 +420,7 @@ impl FlightAnalyzer {
     // Refactored to be called by the monitor which has all DBs
     pub fn finalize_landing_performance(&mut self, airports_db: &AirportsDatabase, runways_db: &RunwaysDatabase, conn: Option<&Connection>) {
         let end_icao = self.find_end_icao(airports_db);
-        if end_icao == "XXXX" || end_icao == "Airborne" { return; }
+        if end_icao == "XXXX" || end_icao == "Airborne" || end_icao == "Unknown" { return; }
 
         if let Some(idx) = self.events.iter().position(|e| e.event_type == "landing") {
             let lat = self.events[idx].latitude;

@@ -1265,7 +1265,7 @@ fn save_imported_flight(
         )?;
     }
 
-    let is_completed = start_icao != "Airborne" && end_icao != "Airborne";
+    let is_completed = start_icao != "Airborne" && end_icao != "Airborne" && end_icao != "Unknown";
     if let Err(e) = update_aircraft_stats(
         app,
         aircraft_title,

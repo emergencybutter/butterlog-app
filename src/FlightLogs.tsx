@@ -102,7 +102,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
     const filteredSummaries = summaries.filter(s => {
         const isCurrent = currentFlightId && s.filename.replace(".db", "") === currentFlightId;
         if (showIncomplete || isCurrent) return true;
-        return s.startIcao !== "Airborne" && s.endIcao !== "Airborne";
+        return s.startIcao !== "Airborne" && s.endIcao !== "Airborne" && s.endIcao !== "Unknown";
     });
 
     const renderProgressBar = (current: number, total: number, color: string = "#4caf50", height: string = "8px") => (
