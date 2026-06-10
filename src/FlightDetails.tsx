@@ -12,9 +12,6 @@ import { LandingScorecard } from "./flight-details/LandingScorecard";
 import { ScreenshotGallery } from "./flight-details/ScreenshotGallery";
 import { FlightCharts, ChartRow, EventMark } from "./flight-details/FlightCharts";
 
-// Max rows kept in state for the live rolling window (~1 hour at 1 Hz)
-const MAX_LIVE_ROWS = 3600;
-
 function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
@@ -33,9 +30,8 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
     const [notesSaving, setNotesSaving] = useState(false);
     const [notesStatus, setNotesStatus] = useState<string | null>(null);
 
-    // Refs for incremental live fetch — not state so they don't cause re-renders
+    // Ref for incremental live fetch — not state so it doesn't cause re-renders
     const lastTimestamp = useRef<string | null>(null);
-    const initialDataRef = useRef<FlightLogRow[]>([]); // full initial load, used for departure trajectory
 
     const isCurrentFlight = useMemo(() => {
         return currentFlightId && flight.filename.replace(".db", "") === currentFlightId;
@@ -65,7 +61,6 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
         ]).then(async ([flightData, startRwys, endRwys, scrs, config, rId]) => {
             if (!active) return;
             setData(flightData);
-            initialDataRef.current = flightData;
             lastTimestamp.current = flightData.length > 0 ? flightData[flightData.length - 1].timestamp : null;
             setStartRunways(startRwys);
             setEndRunways(endRwys);
@@ -130,10 +125,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                     if (!active) return;
                     if (newRows.length > 0) {
                         lastTimestamp.current = newRows[newRows.length - 1].timestamp;
-                        setData(prev => {
-                            const combined = [...prev, ...newRows];
-                            return combined.length > MAX_LIVE_ROWS ? combined.slice(-MAX_LIVE_ROWS) : combined;
-                        });
+                        setData(prev => [...prev, ...newRows]);
                     }
                     setScreenshots(scrs);
                 }).finally(() => {
@@ -174,12 +166,9 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
     };
 
     const { departureTrajectory, arrivalTrajectory } = useMemo(() => {
-        // For departure, use the full initial snapshot so takeoff rows are never evicted by the cap
-        const depData = (isCurrentFlight && initialDataRef.current.length > 0)
-            ? initialDataRef.current
-            : data;
+        const depData = data;
 
-        if (depData.length === 0 && data.length === 0)
+        if (data.length === 0)
             return { departureTrajectory: [], arrivalTrajectory: [] };
 
         const findClosestIn = (rows: FlightLogRow[], timestamp: string) => {
@@ -233,7 +222,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
         );
 
         return { departureTrajectory, arrivalTrajectory };
-    }, [data, flight.events, isCurrentFlight]);
+    }, [data, flight.events]);
 
     const chartData = useMemo<ChartRow[]>(() => {
         if (data.length === 0) return [];
