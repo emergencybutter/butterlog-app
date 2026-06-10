@@ -22,7 +22,7 @@ pub fn get_custom_service_url() -> Option<String> {
 use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use config::{Config, ConfigManager};
 use flight_log_manager::{
@@ -402,6 +402,38 @@ fn get_runways(
     Ok(state.find_for_ident(&ident))
 }
 
+/// Bring the main window to the foreground, rebuilding it first if it was
+/// destroyed on close. We close (not hide) the window so its WebView2 process
+/// is released while the app lives in the tray; reopening recreates it from the
+/// configured window definition in tauri.conf.json.
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let cfg = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .cloned();
+    match cfg {
+        Some(cfg) => match tauri::WebviewWindowBuilder::from_config(app, &cfg) {
+            Ok(builder) => {
+                if let Err(e) = builder.build() {
+                    eprintln!("Failed to rebuild main window: {e}");
+                }
+            }
+            Err(e) => eprintln!("Failed to prepare main window config: {e}"),
+        },
+        None => eprintln!("No 'main' window configured to rebuild"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
@@ -494,20 +526,13 @@ pub fn run() {
                         app.exit(0);
                     }
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(app);
                     }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::DoubleClick { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
@@ -610,18 +635,15 @@ pub fn run() {
             let _ = xplane_monitor.start(app.app_handle().clone(), None);
 
             if config.start_minimized {
+                // Destroy (rather than hide) the window so its WebView2 process
+                // isn't held in memory while we sit in the tray. It is rebuilt
+                // on demand by show_main_window when the user reopens it.
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
+                    let _ = window.close();
                 }
             }
 
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-            }
         })
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -657,6 +679,17 @@ pub fn run() {
             screenshot_manager::get_screenshots_for_flight,
             screenshot_manager::get_random_screenshot_for_aircraft
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app, event| {
+            // Closing the window destroys it to release WebView2 memory, which
+            // leaves zero windows and would normally exit the app. A `None` exit
+            // code marks that window-driven exit, so keep running in the tray;
+            // an explicit code (the Quit menu's app.exit(0)) is allowed through.
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
