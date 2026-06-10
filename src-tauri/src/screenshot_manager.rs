@@ -490,20 +490,13 @@ pub async fn perform_screenshot_upload(
     flight_id: String,
 ) -> Result<String, String> {
     let remote_id = get_remote_id_internal(&app, &flight_id).await?.ok_or("Flight not synced with remote server (no remote ID)")?;
-    
+
     let config = app.state::<ConfigManager>().get_config();
-    if !config.enable_webhook || config.webhook_url.is_empty() {
-        return Err("Webhook service is not enabled or URL is missing".to_string());
+    if !config.enable_webhook {
+        return Err("Sync with the ButterLog service is not enabled".to_string());
     }
-
-    let mut base_url = config.webhook_url.clone();
-    if base_url.ends_with('/') {
-        base_url.pop();
-    }
-
-    if let Some(custom_url) = crate::get_custom_service_url() {
-        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
-    }
+    let (base_url, api_token) = config.api_auth()
+        .ok_or("Not logged in to the ButterLog service")?;
 
     // Reading, decoding, and WebP-encoding a 4K screenshot is heavy blocking
     // work; run it off the async runtime threads.
@@ -564,6 +557,7 @@ pub async fn perform_screenshot_upload(
     let form = reqwest::multipart::Form::new().part("screenshot", part);
 
     let res = client.post(&url)
+        .bearer_auth(&api_token)
         .multipart(form)
         .send()
         .await

@@ -38,22 +38,13 @@ impl WebhookManager {
         }
     }
 
-    fn get_base_url(&self, app: &AppHandle) -> Option<String> {
+    /// API base + bearer token, or None when sync is disabled or logged out.
+    fn get_api_auth(&self, app: &AppHandle) -> Option<(String, String)> {
         let config = app.state::<crate::config::ConfigManager>().get_config();
-        if !config.enable_webhook || config.webhook_url.is_empty() {
+        if !config.enable_webhook {
             return None;
         }
-        
-        let mut url = config.webhook_url.clone();
-        if url.ends_with('/') {
-            url.pop();
-        }
-        
-        if let Some(custom_url) = crate::get_custom_service_url() {
-            url = url.replace("https://butterlog.flyvoyager.net", &custom_url);
-        }
-        
-        Some(url)
+        config.api_auth()
     }
 
     pub fn reset(&self) {
@@ -71,8 +62,8 @@ impl WebhookManager {
         summary: &WebhookFlightSummary,
         force_update: bool
     ) {
-        let base_url = match self.get_base_url(app) {
-            Some(url) => url,
+        let (base_url, api_token) = match self.get_api_auth(app) {
+            Some(auth) => auth,
             None => return,
         };
 
@@ -145,7 +136,7 @@ impl WebhookManager {
                     "udp_address": udp_address
                 });
 
-                match self.client.put(&url).json(&body).send().await {
+                match self.client.put(&url).bearer_auth(&api_token).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
                             *self.last_update_time.lock() = Some(now);
@@ -178,7 +169,7 @@ impl WebhookManager {
                     "udp_address": udp_address
                 });
 
-                match self.client.post(&url).json(&body).send().await {
+                match self.client.post(&url).bearer_auth(&api_token).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {

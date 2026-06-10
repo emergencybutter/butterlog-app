@@ -519,7 +519,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
             lastTimestamp.current = flightData.length > 0 ? flightData[flightData.length - 1].timestamp : null;
             setStartRunways(startRwys);
             setEndRunways(endRwys);
-            setWebhookEnabled(config.enableWebhook && !!config.webhookUrl);
+            setWebhookEnabled(config.enableWebhook && !!config.apiToken);
             setRemoteId(rId);
 
             // For completed flights, retroactively scan for missed screenshots

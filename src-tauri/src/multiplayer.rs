@@ -238,11 +238,13 @@ impl MultiplayerManager {
                 
                 let config = ping_app.state::<ConfigManager>().get_config();
                 
-                // Only ping if features are enabled and logged in (webhook_url present)
+                // Only ping if features are enabled and logged in
                 let features_enabled = config.inject_butterlog_traffic || config.enable_multiplayer_hubs;
-                if !features_enabled || config.webhook_url.is_empty() {
-                    continue;
-                }
+                let api_auth = config.api_auth();
+                let (api_base, api_token) = match api_auth {
+                    Some(auth) if features_enabled => auth,
+                    _ => continue,
+                };
                 
                 // Only ping if connected to a simulator
                 let monitor = ping_app.state::<UnifiedMonitor>();
@@ -255,12 +257,12 @@ impl MultiplayerManager {
                 let public_addr = ping_multiplayer.get_public_address();
                 let public_addr_str = public_addr.map(|a| a.to_string());
                 
-                let url = format!("{}/multiplayer/ping", config.webhook_url);
+                let url = format!("{}/multiplayer/ping", api_base);
                 let body = serde_json::json!({
                     "udp_address": public_addr_str
                 });
-                
-                match client.post(&url).json(&body).send().await {
+
+                match client.post(&url).bearer_auth(&api_token).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
                             #[derive(serde::Deserialize)]

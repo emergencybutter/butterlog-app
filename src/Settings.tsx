@@ -11,7 +11,8 @@ interface Config {
     screenshotRegex: string;
     autoUploadScreenshots: boolean;
     enableWebhook: boolean;
-    webhookUrl: string;
+    serviceUrl: string;
+    apiToken: string;
     openAtLogin: boolean;
     startMinimized: boolean;
     enableMultiplayerHubs: boolean;
@@ -24,23 +25,18 @@ export function Settings() {
     const [status, setStatus] = useState<string>("");
     const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
-    const isLoggedIn = !!(config && config.webhookUrl && config.webhookUrl.startsWith("https://butterlog.flyvoyager.net/api/v0/users/") && config.webhookUrl.replace("https://butterlog.flyvoyager.net/api/v0/users/", "").trim().length > 0);
+    const isLoggedIn = !!(config && config.apiToken && config.apiToken.trim().length > 0);
 
     const handleDiscordLogin = async () => {
         setLoginLoading(true);
         setStatus("Opening browser for Discord login...");
         try {
-            const token = await invoke<string>("start_discord_login");
+            await invoke<string>("start_discord_login");
+            // The backend saved the token and service URL; reload the config
+            // so this view reflects the logged-in state.
+            const cfg = await invoke<Config>("get_config");
+            setConfig(prev => prev ? { ...cfg, openAtLogin: prev.openAtLogin } : cfg);
             setStatus("Successfully authenticated with ButterLog service!");
-            if (config) {
-                const next = {
-                    ...config,
-                    webhookUrl: `https://butterlog.flyvoyager.net/api/v0/users/${token}`,
-                    enableWebhook: true
-                };
-                setConfig(next);
-                await invoke("set_config", { config: next });
-            }
         } catch (err) {
             setStatus("Authentication failed: " + err);
         } finally {
@@ -54,7 +50,7 @@ export function Settings() {
         try {
             const updatedConfig = {
                 ...config,
-                webhookUrl: "",
+                apiToken: "",
                 enableWebhook: false,
                 injectButterlogTraffic: false,
                 enableMultiplayerHubs: false

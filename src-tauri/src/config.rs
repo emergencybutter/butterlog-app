@@ -19,12 +19,56 @@ pub struct Config {
     pub screenshot_regex: String,
     pub auto_upload_screenshots: bool,
     pub enable_webhook: bool,
+    // Legacy combined field ({service}/api/v0/users/{token}); split into
+    // service_url + api_token on load and no longer written back.
+    #[serde(default, skip_serializing)]
     pub webhook_url: String,
+    #[serde(default = "default_service_url")]
+    pub service_url: String,
+    #[serde(default)]
+    pub api_token: String,
     pub open_at_login: bool,
     pub start_minimized: bool,
     pub enable_multiplayer_hubs: bool,
     pub inject_butterlog_traffic: bool,
     pub auto_share_flights: bool,
+}
+
+pub fn default_service_url() -> String {
+    "https://butterlog.flyvoyager.net".to_string()
+}
+
+/// Split a legacy webhook URL ({service}/api/v0/users/{token}) into
+/// (service_url, api_token), or None if it doesn't match that shape.
+fn split_legacy_webhook_url(url: &str) -> Option<(String, String)> {
+    let legacy = url.trim_end_matches('/');
+    let (base, token) = legacy.rsplit_once("/api/v0/users/")?;
+    if base.is_empty() || token.is_empty() {
+        return None;
+    }
+    Some((base.to_string(), token.to_string()))
+}
+
+impl Config {
+    /// Service API base (`{service}/api/v0`) and bearer token, or None when
+    /// not logged in. A `--service-url` CLI override takes precedence over the
+    /// saved service URL.
+    pub fn api_auth(&self) -> Option<(String, String)> {
+        if self.api_token.is_empty() {
+            return None;
+        }
+        let mut base = crate::get_custom_service_url().unwrap_or_else(|| {
+            if self.service_url.is_empty() {
+                default_service_url()
+            } else {
+                self.service_url.clone()
+            }
+        });
+        while base.ends_with('/') {
+            base.pop();
+        }
+        Some((format!("{}/api/v0", base), self.api_token.clone()))
+    }
 }
 
 fn find_steam_screenshot_dirs() -> Vec<PathBuf> {
@@ -101,6 +145,8 @@ impl Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
+            service_url: default_service_url(),
+            api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
             enable_multiplayer_hubs: false,
@@ -122,6 +168,8 @@ impl Default for Config {
             auto_upload_screenshots: false,
             enable_webhook: false,
             webhook_url: "".to_string(),
+            service_url: default_service_url(),
+            api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
             enable_multiplayer_hubs: false,
@@ -200,13 +248,30 @@ impl ConfigManager {
             config.log_directory = Config::default_with_app_handle(app).log_directory;
         }
 
+        // Migrate the legacy webhook_url ({service}/api/v0/users/{token}) into
+        // the split service_url + api_token fields.
+        let mut migrated = false;
+        if config.api_token.is_empty() && !config.webhook_url.is_empty() {
+            if let Some((base, token)) = split_legacy_webhook_url(&config.webhook_url) {
+                config.service_url = base;
+                config.api_token = token;
+                crate::append_log(app, "Migrated legacy webhook URL to service_url + api_token".to_string());
+            }
+            config.webhook_url = String::new();
+            migrated = true;
+        }
+        if config.service_url.is_empty() {
+            config.service_url = default_service_url();
+        }
+
         let manager = Self {
             config: Mutex::new(config),
             config_path,
         };
 
-        // Save defaults if it's a new config
-        if !manager.config_path.exists() {
+        // Save defaults for a new config, and persist the webhook_url migration
+        // (webhook_url is skip_serializing, so saving removes it from the file).
+        if !manager.config_path.exists() || migrated {
             let _ = manager.save();
         }
 
@@ -242,9 +307,38 @@ mod tests {
         let config = Config::default();
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: Config = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(config.screenshot_regex, deserialized.screenshot_regex);
         assert_eq!(config.open_at_login, deserialized.open_at_login);
+        // The legacy field is read-only: accepted on load, never written back.
+        assert!(!json.contains("webhookUrl"));
+    }
+
+    #[test]
+    fn test_split_legacy_webhook_url() {
+        assert_eq!(
+            split_legacy_webhook_url("https://butterlog.flyvoyager.net/api/v0/users/tok123"),
+            Some(("https://butterlog.flyvoyager.net".to_string(), "tok123".to_string()))
+        );
+        assert_eq!(
+            split_legacy_webhook_url("http://localhost:8080/api/v0/users/tok123/"),
+            Some(("http://localhost:8080".to_string(), "tok123".to_string()))
+        );
+        assert_eq!(split_legacy_webhook_url("https://example.com/api/v0/users/"), None);
+        assert_eq!(split_legacy_webhook_url("https://example.com/other"), None);
+        assert_eq!(split_legacy_webhook_url(""), None);
+    }
+
+    #[test]
+    fn test_api_auth() {
+        let mut config = Config::default();
+        assert!(config.api_auth().is_none(), "no token means logged out");
+
+        config.api_token = "tok".to_string();
+        config.service_url = "https://example.com/".to_string();
+        let (base, token) = config.api_auth().expect("logged in");
+        assert_eq!(base, "https://example.com/api/v0");
+        assert_eq!(token, "tok");
     }
 
     #[test]

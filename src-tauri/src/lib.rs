@@ -98,11 +98,12 @@ pub(crate) fn force_logout(app: &AppHandle, reason: &str) {
 
     // Already logged out — nothing to do (also stops concurrent 401s from
     // emitting repeated events).
-    if config.webhook_url.is_empty() && !config.enable_webhook {
+    if config.api_token.is_empty() && !config.enable_webhook {
         return;
     }
 
     let new_config = Config {
+        api_token: String::new(),
         webhook_url: String::new(),
         enable_webhook: false,
         ..config
@@ -359,7 +360,8 @@ async fn start_discord_login(app: AppHandle) -> Result<String, String> {
             // login (matters when running against a --service-url dev instance).
             let state = app.state::<ConfigManager>();
             let mut current_config = state.get_config();
-            current_config.webhook_url = format!("{}/api/v0/users/{}", base_service_url, token);
+            current_config.api_token = token.clone();
+            current_config.service_url = base_service_url;
             current_config.enable_webhook = true;
             state.update_config(current_config).map_err(|e| format!("Failed to save config: {}", e))?;
             Ok(token)

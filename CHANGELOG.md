@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- API authentication moved from token-in-URL to the `Authorization: Bearer` header; the service token and service URL are now stored as separate `apiToken`/`serviceUrl` config fields (existing configs migrate automatically on startup).
 - Multiplayer UDP listener now drops telemetry packets from senders that are not in the peer list provided by the service, preventing unsolicited traffic injection.
 - Status polling is paused while the window is hidden in the tray and slowed to 1s when no flight is being logged (200ms while logging).
 - Backend and UI log buffers are capped at 2000 lines so long tray sessions no longer grow memory unbounded.

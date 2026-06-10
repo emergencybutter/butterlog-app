@@ -834,17 +834,10 @@ pub async fn set_flight_notes(app: AppHandle, filename: String, notes: String) -
     // Mirror to the service when connected and the flight exists remotely.
     if let Some(id) = remote_id {
         let config = app.state::<ConfigManager>().get_config();
-        if config.enable_webhook && !config.webhook_url.is_empty() {
-            let mut base_url = config.webhook_url.clone();
-            if base_url.ends_with('/') {
-                base_url.pop();
-            }
-            if let Some(custom_url) = crate::get_custom_service_url() {
-                base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
-            }
+        if let Some((base_url, api_token)) = config.api_auth().filter(|_| config.enable_webhook) {
             let url = format!("{}/flights/{}/notes", base_url, id);
             let client = reqwest::Client::new();
-            match client.put(&url).json(&serde_json::json!({ "notes": notes })).send().await {
+            match client.put(&url).bearer_auth(&api_token).json(&serde_json::json!({ "notes": notes })).send().await {
                 Ok(res) if res.status().as_u16() == 401 => {
                     crate::force_logout(&app, "service rejected token during notes update");
                 }
@@ -1434,15 +1427,8 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     }
 
     let config = app.state::<crate::config::ConfigManager>().get_config();
-    if config.webhook_url.is_empty() {
-        return Err("Not connected to ButterLog service. Log in first.".to_string());
-    }
-
-    let mut base_url = config.webhook_url.clone();
-    if base_url.ends_with('/') { base_url.pop(); }
-    if let Some(custom_url) = crate::get_custom_service_url() {
-        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
-    }
+    let (base_url, api_token) = config.api_auth()
+        .ok_or("Not connected to ButterLog service. Log in first.")?;
 
     // Parse flight summary
     let summary = parse_db_file(app, &path).ok_or("Failed to parse flight summary")?;
@@ -1530,6 +1516,7 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     let upload_url = format!("{}/flights/share", base_url);
     let client = reqwest::Client::new();
     let res = client.post(&upload_url)
+        .bearer_auth(&api_token)
         .header("Content-Type", "application/octet-stream")
         .body(compressed)
         .send()
@@ -1682,19 +1669,13 @@ pub async fn delete_flight_share(app: AppHandle, filename: String) -> Result<(),
         .to_string();
 
     let config = app.state::<crate::config::ConfigManager>().get_config();
-    if config.webhook_url.is_empty() {
-        return Err("Not connected to ButterLog service".to_string());
-    }
-
-    let mut base_url = config.webhook_url.clone();
-    if base_url.ends_with('/') { base_url.pop(); }
-    if let Some(custom_url) = crate::get_custom_service_url() {
-        base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
-    }
+    let (base_url, api_token) = config.api_auth()
+        .ok_or("Not connected to ButterLog service")?;
 
     let delete_url = format!("{}/flights/share/{}", base_url, share_id);
     let res = reqwest::Client::new()
         .delete(&delete_url)
+        .bearer_auth(&api_token)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
