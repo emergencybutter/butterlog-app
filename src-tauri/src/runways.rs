@@ -5,9 +5,13 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 pub struct Runway {
+    // JSON (and therefore Tauri's invoke) carries these as plain numbers
+    #[ts(type = "number")]
     pub id: i64,
+    #[ts(type = "number")]
     pub airport_ref: i64,
     pub airport_ident: String,
     pub length_ft: Option<i32>,

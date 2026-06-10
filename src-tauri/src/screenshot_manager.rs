@@ -7,9 +7,12 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, Config as No
 use std::time::{Duration, UNIX_EPOCH};
 use crate::config::ConfigManager;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct Screenshot {
+    // JSON (and therefore Tauri's invoke) carries this as a plain number
+    #[ts(type = "number")]
     pub id: i64,
     pub flight_id: String,
     pub aircraft_title: String,

@@ -55,7 +55,8 @@ struct TrackedAircraft {
     current_metrics: FlightMetrics,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct TrackedAircraftDebugInfo {
     pub id: String,
@@ -65,6 +66,8 @@ pub struct TrackedAircraftDebugInfo {
     pub category: String,
     pub num_engines: i32,
     pub engine_type: String,
+    // JSON (and therefore Tauri's invoke) carries this as a plain number
+    #[ts(type = "number")]
     pub last_seen_seconds_ago: u64,
     pub latitude: f64,
     pub longitude: f64,
@@ -77,7 +80,8 @@ pub struct TrackedAircraftDebugInfo {
     pub roll_angle: f64,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct MultiplayerDebugInfo {
     pub public_address: Option<String>,

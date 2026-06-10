@@ -119,8 +119,8 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
     const isProcessing = importing;
 
     return (
-        <div className="logs-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div className="logs-view page page-narrow">
+            <div className="view-header" style={{ marginBottom: "1rem" }}>
                 <h2>Flight History</h2>
                 <button 
                     onClick={handleImport} 

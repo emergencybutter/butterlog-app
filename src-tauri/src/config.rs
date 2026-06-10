@@ -6,7 +6,8 @@ use parking_lot::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     pub log_directory: Option<PathBuf>,
@@ -14,6 +15,7 @@ pub struct Config {
     pub screenshot_directories: Vec<PathBuf>,
     // Legacy single-dir field kept for migration from old configs
     #[serde(skip_serializing, default)]
+    #[ts(skip)]
     pub screenshot_directory: Option<PathBuf>,
     pub screenshot_regex_enabled: bool,
     pub screenshot_regex: String,
@@ -22,6 +24,7 @@ pub struct Config {
     // Legacy combined field ({service}/api/v0/users/{token}); split into
     // service_url + api_token on load and no longer written back.
     #[serde(default, skip_serializing)]
+    #[ts(skip)]
     pub webhook_url: String,
     #[serde(default = "default_service_url")]
     pub service_url: String,

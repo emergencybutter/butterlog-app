@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(default)]
 pub struct FlightMetrics {
     #[serde(rename = "Latitude")]
@@ -278,7 +280,8 @@ pub struct WebhookFlightSummary {
     pub landing_threshold_dist_ft: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct FlightEvent {
     pub timestamp: String,

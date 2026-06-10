@@ -3,22 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-
-interface Config {
-    logDirectory: string | null;
-    screenshotDirectories: string[];
-    screenshotRegexEnabled: boolean;
-    screenshotRegex: string;
-    autoUploadScreenshots: boolean;
-    enableWebhook: boolean;
-    serviceUrl: string;
-    apiToken: string;
-    openAtLogin: boolean;
-    startMinimized: boolean;
-    enableMultiplayerHubs: boolean;
-    injectButterlogTraffic: boolean;
-    autoShareFlights: boolean;
-}
+import { Config } from "./models";
 
 export function Settings() {
     const [config, setConfig] = useState<Config | null>(null);
@@ -137,15 +122,15 @@ export function Settings() {
     if (!config) return <div>Loading settings...</div>;
 
     return (
-        <div className="settings-page" style={{ textAlign: "left", padding: "1rem", maxWidth: "800px", margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+        <div className="settings-page page page-narrow">
+            <div className="view-header">
                 <h2>Settings</h2>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
                 <section>
                     <h4>App Behavior</h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div className="settings-stack">
                         <div className="setting-control">
                             <label>
                                 <input 
@@ -171,7 +156,7 @@ export function Settings() {
 
                 <section>
                     <h4>Directories</h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div className="settings-stack">
                         <div className="setting-input-group">
                             <label>Exported log directory:</label>
                             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem" }}>
@@ -189,13 +174,13 @@ export function Settings() {
                                         const dir = await pickDirectory();
                                         if (dir) handleChange("logDirectory", dir);
                                     }}
-                                    style={{ backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem", whiteSpace: "nowrap" }}
+                                    className="btn-ghost-purple"
                                 >Browse…</button>
                                 {config.logDirectory && (
                                     <button
                                         onClick={() => handleChange("logDirectory", null)}
                                         title="Reset to default"
-                                        style={{ backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)", padding: "0.3rem 0.7rem" }}
+                                        className="btn-ghost-red"
                                     >✕</button>
                                 )}
                             </div>
@@ -222,11 +207,11 @@ export function Settings() {
                                                     handleChange("screenshotDirectories", dirs);
                                                 }
                                             }}
-                                            style={{ backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem", whiteSpace: "nowrap" }}
+                                            className="btn-ghost-purple"
                                         >Browse…</button>
                                         <button
                                             onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
-                                            style={{ backgroundColor: "rgba(243,139,168,0.15)", color: "#f38ba8", border: "1px solid rgba(243,139,168,0.3)", padding: "0.3rem 0.7rem" }}
+                                            className="btn-ghost-red"
                                         >✕</button>
                                     </div>
                                 ))}
@@ -237,7 +222,7 @@ export function Settings() {
                                             handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), dir]);
                                         }
                                     }}
-                                    style={{ alignSelf: "flex-start", backgroundColor: "rgba(203,166,247,0.15)", color: "#cba6f7", border: "1px solid rgba(203,166,247,0.3)", padding: "0.3rem 0.8rem" }}
+                                    className="btn-ghost-purple" style={{ alignSelf: "flex-start" }}
                                 >+ Add directory</button>
                             </div>
                         </div>
@@ -246,7 +231,7 @@ export function Settings() {
 
                 <section>
                     <h4>Screenshots</h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div className="settings-stack">
                         <div className="setting-control">
                             <label>
                                 <input
@@ -286,7 +271,7 @@ export function Settings() {
 
                 <section>
                     <h4>Multiplayer</h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div className="settings-stack">
                         <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
                             <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
                                 <input
@@ -298,7 +283,7 @@ export function Settings() {
                                 <span>Inject traffic from other butterlog users</span>
                             </label>
                             {!isLoggedIn && (
-                                <span style={{ fontSize: "0.75rem", color: "#f38ba8", marginLeft: "28px", display: "block", marginTop: "2px" }}>
+                                <span className="setting-hint">
                                     Requires connection to ButterLog service.
                                 </span>
                             )}
@@ -366,63 +351,14 @@ export function Settings() {
                             </div>
                             
                             {isLoggedIn ? (
-                                <button 
-                                    onClick={handleDiscordLogout} 
-                                    style={{ 
-                                        backgroundColor: "rgba(243, 139, 168, 0.1)", 
-                                        color: "#f38ba8", 
-                                        border: "1px solid rgba(243, 139, 168, 0.2)", 
-                                        padding: "0.65rem 1.25rem", 
-                                        borderRadius: "8px",
-                                        fontWeight: "bold",
-                                        cursor: "pointer",
-                                        transition: "all 0.2s ease-in-out",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "0.5rem"
-                                    }}
-                                    onMouseOver={(e) => {
-                                        e.currentTarget.style.backgroundColor = "rgba(243, 139, 168, 0.2)";
-                                        e.currentTarget.style.borderColor = "rgba(243, 139, 168, 0.35)";
-                                    }}
-                                    onMouseOut={(e) => {
-                                        e.currentTarget.style.backgroundColor = "rgba(243, 139, 168, 0.1)";
-                                        e.currentTarget.style.borderColor = "rgba(243, 139, 168, 0.2)";
-                                    }}
-                                >
+                                <button onClick={handleDiscordLogout} className="btn-logout">
                                     Log Out
                                 </button>
                             ) : (
-                                <button 
-                                    onClick={handleDiscordLogin} 
+                                <button
+                                    onClick={handleDiscordLogin}
                                     disabled={loginLoading}
-                                    style={{ 
-                                        backgroundColor: "#5865F2", 
-                                        color: "white", 
-                                        border: "none", 
-                                        padding: "0.65rem 1.25rem", 
-                                        borderRadius: "8px",
-                                        fontWeight: "bold",
-                                        cursor: loginLoading ? "not-allowed" : "pointer",
-                                        opacity: loginLoading ? 0.7 : 1,
-                                        transition: "all 0.2s ease-in-out",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "0.5rem",
-                                        boxShadow: "0 4px 14px rgba(88, 101, 242, 0.3)"
-                                    }}
-                                    onMouseOver={(e) => {
-                                        if (!loginLoading) {
-                                            e.currentTarget.style.backgroundColor = "#4752C4";
-                                            e.currentTarget.style.transform = "translateY(-1px)";
-                                        }
-                                    }}
-                                    onMouseOut={(e) => {
-                                        if (!loginLoading) {
-                                            e.currentTarget.style.backgroundColor = "#5865F2";
-                                            e.currentTarget.style.transform = "translateY(0)";
-                                        }
-                                    }}
+                                    className="btn-discord"
                                 >
                                     {loginLoading ? (
                                         <>
@@ -449,7 +385,7 @@ export function Settings() {
                                 <span>Automatically share each completed flight</span>
                             </label>
                             {!isLoggedIn && (
-                                <span style={{ fontSize: "0.75rem", color: "#f38ba8", marginLeft: "28px", display: "block", marginTop: "2px" }}>
+                                <span className="setting-hint">
                                     Requires connection to ButterLog service.
                                 </span>
                             )}

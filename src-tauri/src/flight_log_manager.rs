@@ -9,7 +9,8 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct AircraftStats {
     pub aircraft_type: String,
@@ -230,7 +231,8 @@ pub fn insert_sqlite_row(
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct FlightSummary {
     pub filename: String,
@@ -240,7 +242,10 @@ pub struct FlightSummary {
     pub end_airport_name: String,
     pub start_time: String,
     pub end_time: String,
+    // JSON (and therefore Tauri's invoke) carries these as plain numbers
+    #[ts(type = "number")]
     pub duration_minutes: i64,
+    #[ts(type = "number")]
     pub file_size_bytes: u64,
     pub aircraft_title: String,
     pub atc_model: String,
@@ -254,7 +259,8 @@ pub struct FlightSummary {
     pub notes: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct FlightLogRow {
     pub timestamp: String,

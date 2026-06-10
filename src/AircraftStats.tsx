@@ -1,17 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { FlightSummary, Screenshot } from "./models";
-
-interface AircraftStats {
-    aircraftType: string;
-    totalHoursAll: number;
-    totalFuelAll: number;
-    totalFlightsAll: number;
-    totalHoursCompleted: number;
-    totalFuelCompleted: number;
-    totalFlightsCompleted: number;
-    lastAirport: string;
-}
+import { FlightSummary, Screenshot, AircraftStats as AircraftStatsRow } from "./models";
 
 function AircraftThumbnail({ title }: { title: string }) {
     const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
@@ -54,7 +43,7 @@ function AircraftThumbnail({ title }: { title: string }) {
 }
 
 export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSummary) => void }) {
-    const [stats, setStats] = useState<AircraftStats[]>([]);
+    const [stats, setStats] = useState<AircraftStatsRow[]>([]);
     const [flights, setFlights] = useState<FlightSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState<"all" | "completed">("all");
@@ -63,7 +52,7 @@ export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSumm
     useEffect(() => {
         setLoading(true);
         Promise.all([
-            invoke<AircraftStats[]>("get_aircraft_stats"),
+            invoke<AircraftStatsRow[]>("get_aircraft_stats"),
             invoke<FlightSummary[]>("get_flight_summaries")
         ])
             .then(([s, f]) => {
@@ -90,8 +79,8 @@ export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSumm
     if (loading) return <div>Loading aircraft statistics...</div>;
 
     return (
-        <div className="stats-view" style={{ textAlign: "left", padding: "1rem", maxWidth: "1200px", margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+        <div className="stats-view page page-wide">
+            <div className="view-header">
                 <h2>Aircraft Statistics</h2>
                 <div style={{ display: "flex", gap: "10px", background: "#2a2a2a", padding: "4px", borderRadius: "8px" }}>
                     <button 

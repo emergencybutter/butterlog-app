@@ -8,7 +8,7 @@ import { Settings } from "./Settings";
 import { FlightLogs } from "./FlightLogs";
 import { FlightDetails } from "./FlightDetails";
 import { AircraftStats } from "./AircraftStats";
-import { FlightMetrics, FlightSummary } from "./models";
+import { FlightMetrics, FlightSummary, MultiplayerDebugInfo } from "./models";
 import "./App.css";
 
 const METRIC_LABELS: Record<string, string> = {
@@ -131,32 +131,6 @@ const Icons = {
     </svg>
   )
 };
-
-interface TrackedAircraftDebugInfo {
-  id: string;
-  aircraft: string;
-  atcModel: string;
-  objectClass: string;
-  category: string;
-  numEngines: number;
-  engineType: string;
-  lastSeenSecondsAgo: number;
-  latitude: number;
-  longitude: number;
-  gpsAltitudeMsl: number;
-  indicatedAltitude: number;
-  groundSpeed: number;
-  heading: number;
-  track: number;
-  pitchAngle: number;
-  rollAngle: number;
-}
-
-interface MultiplayerDebugInfo {
-  publicAddress: string | null;
-  peers: string[];
-  trackedAircrafts: TrackedAircraftDebugInfo[];
-}
 
 function App() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -363,15 +337,15 @@ function App() {
                 )}
 
                 {!flightOngoing && simConnected && (
-                  <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
-                    <div style={{ fontSize: "1.2rem", color: "#4caf50", fontWeight: "bold", marginBottom: "0.5rem" }}>{getSimNameDisplay()} CONNECTED</div>
+                  <div className="status-box">
+                    <div className="status-box-title" style={{ color: "#4caf50" }}>{getSimNameDisplay()} CONNECTED</div>
                     <div style={{ color: "#888" }}>Waiting for flight movement to start logging...</div>
                   </div>
                 )}
 
                 {!simConnected && (
-                  <div style={{ background: "#2a2a2a", padding: "2rem", borderRadius: "8px", textAlign: "center", marginBottom: "2rem" }}>
-                    <div style={{ fontSize: "1.2rem", color: "#f44336", fontWeight: "bold", marginBottom: "0.5rem" }}>DISCONNECTED</div>
+                  <div className="status-box">
+                    <div className="status-box-title" style={{ color: "#f44336" }}>DISCONNECTED</div>
                     <div style={{ color: "#888" }}>Start your flight simulator to begin logging.</div>
                   </div>
                 )}
@@ -381,13 +355,13 @@ function App() {
             {statusTab === "multiplayer" && (
               <div className="multiplayer-status" style={{ textAlign: "left" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "2rem" }}>
-                  <div style={{ background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #444" }}>
+                  <div className="panel" style={{ border: "1px solid #444" }}>
                     <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>YOUR PUBLIC UDP ADDRESS (STUN)</h4>
                     <div style={{ fontSize: "1.4rem", fontFamily: "monospace", fontWeight: "bold" }}>
                       {multiplayerInfo?.publicAddress || "Discovering..."}
                     </div>
                   </div>
-                  <div style={{ background: "#2a2a2a", padding: "1.5rem", borderRadius: "8px", border: "1px solid #444" }}>
+                  <div className="panel" style={{ border: "1px solid #444" }}>
                     <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>ACTIVE MULTIPLAYER PEERS / HUBS</h4>
                     <div style={{ fontSize: "1.4rem", fontWeight: "bold" }}>
                       {multiplayerInfo?.peers.length || 0} active
