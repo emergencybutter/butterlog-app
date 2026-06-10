@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
@@ -81,6 +81,9 @@ const METRIC_LABELS: Record<string, string> = {
   VPLwas: "VPL WAAS (m)",
   sim_on_ground: "On Ground",
 };
+
+// Cap the in-memory log buffer; the app often runs for days in the tray.
+const MAX_UI_LOG_LINES = 2000;
 
 const getWindComponent = (speed: number, dir: number, hdg: number) => {
   if (speed < 0.5) return "WND CALM";
@@ -169,6 +172,9 @@ function App() {
   const [statusTab, setStatusTab] = useState<"simulator" | "multiplayer" | "logs">("simulator");
   const [multiplayerInfo, setMultiplayerInfo] = useState<MultiplayerDebugInfo | null>(null);
   const [copiedLogs, setCopiedLogs] = useState(false);
+  // Refs read inside the poll interval so the closure sees current values.
+  const flightOngoingRef = useRef(false);
+  const pollFailedRef = useRef(false);
 
   const handleBackToHistory = useCallback(() => {
     setView("history");
@@ -215,7 +221,10 @@ function App() {
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
 
     const unlistenLogs = listen<string>("log-update", (event) => {
-      setLogs((prevLogs) => [...prevLogs, event.payload]);
+      setLogs((prevLogs) => {
+        const next = [...prevLogs, event.payload];
+        return next.length > MAX_UI_LOG_LINES ? next.slice(-MAX_UI_LOG_LINES) : next;
+      });
     });
 
     const unlistenPhase = listen<string>("flight-phase-change", (event) => {
@@ -227,7 +236,13 @@ function App() {
       setAuthNotice("Your ButterLog session expired. Reconnect with Discord in Settings to resume syncing and traffic injection.");
     });
 
+    // Poll backend status: 200ms while a flight is being logged, 1s otherwise,
+    // and not at all while the window is hidden in the tray.
+    let pollTick = 0;
     const interval = window.setInterval(async () => {
+      pollTick++;
+      if (document.hidden) return;
+      if (!flightOngoingRef.current && pollTick % 5 !== 0) return;
       try {
         const [m, connected, ongoing, sims, fid, mpInfo] = await Promise.all([
           invoke<FlightMetrics>("get_metrics"),
@@ -243,7 +258,15 @@ function App() {
         setConnectedSims(sims);
         setCurrentFlightId(fid);
         setMultiplayerInfo(mpInfo);
-      } catch (e) { }
+        flightOngoingRef.current = ongoing;
+        pollFailedRef.current = false;
+      } catch (e) {
+        // Log the first failure instead of spamming on every tick.
+        if (!pollFailedRef.current) {
+          pollFailedRef.current = true;
+          console.error("Backend status poll failed:", e);
+        }
+      }
     }, 200);
 
     return () => {

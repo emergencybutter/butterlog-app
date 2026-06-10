@@ -58,21 +58,21 @@ impl UnifiedMonitor {
         m.push(monitor);
     }
 
+    /// The currently connected monitor, or None when no simulator is running.
+    /// (Start/stop commands iterate get_all_monitors instead of relying on this.)
     pub fn get_connected_monitor(&self) -> Option<Arc<dyn SimMonitor>> {
         let monitors = self.monitors.lock();
-        for m in monitors.iter() {
-            if m.is_connected() {
-                return Some(m.clone());
-            }
-        }
-        // Fallback to first one if none connected, for start/stop commands
-        monitors.first().cloned()
+        monitors.iter().find(|m| m.is_connected()).cloned()
     }
 
     pub fn get_all_monitors(&self) -> Vec<Arc<dyn SimMonitor>> {
         self.monitors.lock().clone()
     }
 }
+
+/// Maximum number of log lines kept in memory; the app runs for days in the
+/// tray, so the buffer must not grow unbounded.
+const MAX_LOG_LINES: usize = 2000;
 
 pub(crate) fn append_log(app: &AppHandle, message: String) {
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -81,6 +81,10 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
     let state = app.state::<LogState>();
     let mut logs = state.0.lock();
     logs.push(formatted.clone());
+    if logs.len() > MAX_LOG_LINES {
+        let excess = logs.len() - MAX_LOG_LINES;
+        logs.drain(..excess);
+    }
     let _ = app.emit("log-update", formatted);
 }
 
@@ -234,22 +238,24 @@ async fn get_remote_id(app: AppHandle, filename: String) -> Result<Option<i64>, 
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     let path = log_dir.join(&filename);
-    
+
     if !path.exists() {
         return Ok(None);
     }
 
-    let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
-    let res: Option<String> = conn.query_row(
-        "SELECT value FROM summary WHERE key = 'remote_id'",
-        [],
-        |r| r.get(0)
-    ).optional().map_err(|e| e.to_string())?;
+    // SQLite access is blocking; keep it off the async runtime threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
+        let res: Option<String> = conn.query_row(
+            "SELECT value FROM summary WHERE key = 'remote_id'",
+            [],
+            |r| r.get(0)
+        ).optional().map_err(|e| e.to_string())?;
 
-    if let Some(id_str) = res {
-        return Ok(id_str.parse::<i64>().ok());
-    }
-    Ok(None)
+        Ok(res.and_then(|id_str| id_str.parse::<i64>().ok()))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -349,10 +355,11 @@ async fn start_discord_login(app: AppHandle) -> Result<String, String> {
     
     match tokio::time::timeout(std::time::Duration::from_secs(120), listen_future).await {
         Ok(Ok(token)) => {
-            // Save to configuration
+            // Save to configuration, pointing at whichever service performed the
+            // login (matters when running against a --service-url dev instance).
             let state = app.state::<ConfigManager>();
             let mut current_config = state.get_config();
-            current_config.webhook_url = format!("https://butterlog.flyvoyager.net/api/v0/users/{}", token);
+            current_config.webhook_url = format!("{}/api/v0/users/{}", base_service_url, token);
             current_config.enable_webhook = true;
             state.update_config(current_config).map_err(|e| format!("Failed to save config: {}", e))?;
             Ok(token)

@@ -503,6 +503,12 @@ pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics
     })
 }
 
+/// Cache of parsed flight summaries keyed by path, invalidated by file mtime.
+/// scan_logs runs on every history refresh; without this every flight DB would
+/// be re-parsed each time.
+static SUMMARY_CACHE: parking_lot::Mutex<Option<std::collections::HashMap<PathBuf, (std::time::SystemTime, FlightSummary)>>> =
+    parking_lot::Mutex::new(None);
+
 pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     crate::append_log(&app, format!("[Logs] Scanning logs."));
     let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
@@ -517,17 +523,41 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     let entries_vec: Vec<_> = entries.filter_map(|e| e.ok()).collect();
     let total = entries_vec.len();
 
+    let mut cache_guard = SUMMARY_CACHE.lock();
+    let cache = cache_guard.get_or_insert_with(std::collections::HashMap::new);
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
     for (i, entry) in entries_vec.into_iter().enumerate() {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("db") {
             let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
-            if let Some(summary) = parse_db_file(&app, &path) {
+            let mtime = entry.metadata().and_then(|m| m.modified()).ok();
+            seen.insert(path.clone());
+
+            let cached = mtime.and_then(|mt| {
+                cache.get(&path).filter(|(cached_mt, _)| *cached_mt == mt).map(|(_, s)| s.clone())
+            });
+
+            if let Some(mut summary) = cached {
+                // Screenshot count lives in screenshots.db, which can change
+                // without touching the flight DB's mtime — always refresh it.
+                if let Some(mgr) = app.try_state::<crate::screenshot_manager::ScreenshotManager>() {
+                    summary.screenshot_count = mgr
+                        .get_screenshots_for_flight(&filename.replace(".db", ""))
+                        .map(|s| s.len())
+                        .unwrap_or(summary.screenshot_count);
+                }
+                summaries.push(summary);
+            } else if let Some(summary) = parse_db_file(&app, &path) {
+                if let Some(mt) = mtime {
+                    cache.insert(path.clone(), (mt, summary.clone()));
+                }
                 summaries.push(summary);
             } else {
                 crate::append_log(&app, format!("[Debug] Failed to parse log file: {}", filename));
             }
         }
-        
+
         // Emit progress every 5 files or at the end
         if (i + 1) % 5 == 0 || (i + 1) == total {
             let _ = app.emit("scan-progress", serde_json::json!({
@@ -536,6 +566,10 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
             }));
         }
     }
+
+    // Drop cache entries for files that no longer exist
+    cache.retain(|path, _| seen.contains(path));
+    drop(cache_guard);
 
     // Sort by start time descending
     summaries.sort_by(|a, b| b.start_time.cmp(&a.start_time));
@@ -834,13 +868,12 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
     let internal_log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
 
     let config = app.state::<ConfigManager>().get_config();
-    let export_dir = config.log_directory.clone().unwrap_or_else(|| {
-        UserDirs::new()
-            .unwrap()
-            .document_dir()
-            .unwrap()
-            .join("butterlog")
-    });
+    let export_dir = match config.log_directory.clone() {
+        Some(dir) => dir,
+        None => UserDirs::new()
+            .and_then(|dirs| dirs.document_dir().map(|p| p.join("butterlog")))
+            .ok_or_else(|| "No export directory configured and the Documents folder could not be located".to_string())?,
+    };
 
     if !export_dir.exists() {
         fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
@@ -1153,7 +1186,10 @@ fn save_imported_flight(
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
     fs::create_dir_all(&log_dir)?;
 
-    let first_ts = &rows.first().unwrap().timestamp;
+    let first_ts = &rows
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Imported CSV contained no data rows"))?
+        .timestamp;
     // Standardize timestamp for filename: 2026-04-20 12:34:56 -> 20260420_123456
     let filename_ts = first_ts.replace('-', "").replace(':', "").replace(' ', "_");
     let temp_filename = format!("butterlog_import_{}.db", filename_ts);
@@ -1307,7 +1343,8 @@ fn save_imported_flight(
         crate::append_log(app, format!("Failed to scan screenshots: {}", e));
     }
 
-    Ok(parse_db_file(app, &path).unwrap())
+    parse_db_file(app, &path)
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse the imported flight summary"))
 }
 
 // ── Share feature ──────────────────────────────────────────────────────────────

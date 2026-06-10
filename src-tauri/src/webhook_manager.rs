@@ -98,21 +98,26 @@ impl WebhookManager {
         let mut current_id = self.current_remote_id.lock().clone();
         let last_time = self.last_update_time.lock().clone();
 
-        // 1. Try to recover ID from DB if memory is empty
+        // 1. Try to recover ID from DB if memory is empty (blocking SQLite work
+        // runs off the async runtime threads)
         if current_id.is_none() && !summary.log_path.is_empty() {
-            if let Ok(conn) = Connection::open(&summary.log_path) {
+            let log_path = summary.log_path.clone();
+            let recovered = tauri::async_runtime::spawn_blocking(move || {
+                let conn = Connection::open(&log_path).ok()?;
                 let existing: Option<String> = conn.query_row(
                     "SELECT value FROM summary WHERE key = 'remote_id'",
                     [],
                     |r| r.get(0)
                 ).optional().unwrap_or(None);
+                existing.and_then(|id_str| id_str.parse::<i64>().ok())
+            })
+            .await
+            .ok()
+            .flatten();
 
-                if let Some(id_str) = existing {
-                    if let Ok(id) = id_str.parse::<i64>() {
-                        current_id = Some(id);
-                        *self.current_remote_id.lock() = Some(id);
-                    }
-                }
+            if let Some(id) = recovered {
+                current_id = Some(id);
+                *self.current_remote_id.lock() = Some(id);
             }
         }
 
@@ -187,15 +192,21 @@ impl WebhookManager {
                                     }
                                 }
                                 
-                                // 2. Persist new ID to DB
+                                // 2. Persist new ID to DB (off the async runtime)
                                 if !summary.log_path.is_empty() {
-                                    if let Ok(conn) = Connection::open(&summary.log_path) {
-                                        if let Err(e) = conn.execute(
+                                    let log_path = summary.log_path.clone();
+                                    let id_str = data.id.to_string();
+                                    let persist = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+                                        let conn = Connection::open(&log_path).map_err(|e| e.to_string())?;
+                                        conn.execute(
                                             "INSERT OR REPLACE INTO summary (key, value) VALUES ('remote_id', ?1)",
-                                            params![data.id.to_string()],
-                                        ) {
-                                            crate::append_log(app, format!("[Webhook] Error writing to DB: {}", e));
-                                        }
+                                            params![id_str],
+                                        ).map_err(|e| e.to_string())?;
+                                        Ok(())
+                                    })
+                                    .await;
+                                    if let Ok(Err(e)) | Err(e) = persist.map_err(|e| e.to_string()) {
+                                        crate::append_log(app, format!("[Webhook] Error writing to DB: {}", e));
                                     }
                                 }
                                 

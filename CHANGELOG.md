@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Multiplayer UDP listener now drops telemetry packets from senders that are not in the peer list provided by the service, preventing unsolicited traffic injection.
+- Status polling is paused while the window is hidden in the tray and slowed to 1s when no flight is being logged (200ms while logging).
+- Backend and UI log buffers are capped at 2000 lines so long tray sessions no longer grow memory unbounded.
+- Flight history scanning caches parsed summaries by file modification time instead of re-parsing every flight database on each refresh.
+- Blocking SQLite/file/image work in webhook sync, screenshot upload, and `get_remote_id` now runs on blocking threads instead of the async runtime.
+- Discord login stores the webhook URL using the active service URL (respects `--service-url`).
+
+### Fixed
+- Replaced several `unwrap()` panics in CSV import/export and flight summary parsing with proper error messages.
+- `get_metrics`/`get_current_flight_id` no longer fall back to a disconnected monitor when no simulator is connected.
+
 ### Added
 - Approach stability score: variance of G-force, roll and indicated airspeed over the minute before touchdown (excluding the final 5 seconds of flare/touchdown), combined into a 0-100 score and displayed next to the landing score in the Landing Scorecard.
 - Support for fetching ATC Model and ATC ID (tail number) for both MSFS (SimConnect) and X-Plane (Web REST API) connections.

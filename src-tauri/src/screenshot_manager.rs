@@ -505,45 +505,53 @@ pub async fn perform_screenshot_upload(
         base_url = base_url.replace("https://butterlog.flyvoyager.net", &custom_url);
     }
 
-    // Get screenshot path
-    let sc_manager = app.state::<ScreenshotManager>();
-    let screenshot = {
-        let conn = Connection::open(&sc_manager.db_path).map_err(|e| e.to_string())?;
-        conn.query_row(
-            "SELECT path FROM screenshots WHERE id = ?1",
-            rusqlite::params![screenshot_id],
-            |r| r.get::<_, String>(0)
-        ).map_err(|e| format!("Screenshot not found in database: {}", e))?
-    };
+    // Reading, decoding, and WebP-encoding a 4K screenshot is heavy blocking
+    // work; run it off the async runtime threads.
+    let db_path = app.state::<ScreenshotManager>().db_path.clone();
+    let (webp_vec, file_name) = tauri::async_runtime::spawn_blocking(move || -> Result<(Vec<u8>, String), String> {
+        // Get screenshot path
+        let screenshot = {
+            let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+            conn.query_row(
+                "SELECT path FROM screenshots WHERE id = ?1",
+                rusqlite::params![screenshot_id],
+                |r| r.get::<_, String>(0)
+            ).map_err(|e| format!("Screenshot not found in database: {}", e))?
+        };
 
-    let path = std::path::PathBuf::from(&screenshot);
-    if !path.exists() {
-        return Err(format!("Screenshot file not found at {:?}", path));
-    }
+        let path = std::path::PathBuf::from(&screenshot);
+        if !path.exists() {
+            return Err(format!("Screenshot file not found at {:?}", path));
+        }
 
-    let file_bytes = std::fs::read(&path).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
+        let file_bytes = std::fs::read(&path).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
 
-    // Load and process image: resize if larger than 1600px width or height, keeping aspect ratio
-    let img = image::load_from_memory(&file_bytes).map_err(|e| format!("Failed to parse screenshot image: {}", e))?;
-    let (width, height) = (img.width(), img.height());
-    let resized_img = if width > 1600 || height > 1600 {
-        img.resize(1600, 1600, image::imageops::FilterType::Triangle)
-    } else {
-        img
-    };
+        // Load and process image: resize if larger than 1600px width or height, keeping aspect ratio
+        let img = image::load_from_memory(&file_bytes).map_err(|e| format!("Failed to parse screenshot image: {}", e))?;
+        let (width, height) = (img.width(), img.height());
+        let resized_img = if width > 1600 || height > 1600 {
+            img.resize(1600, 1600, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        };
 
-    // Convert to WebP and compress (lossy encoding, quality 80.0)
-    let webp_vec = {
-        let webp_encoder = webp::Encoder::from_image(&resized_img)
-            .map_err(|e| format!("Failed to initialize WebP encoder: {:?}", e))?;
-        let webp_bytes = webp_encoder.encode(80.0);
-        webp_bytes.to_vec()
-    };
+        // Convert to WebP and compress (lossy encoding, quality 80.0)
+        let webp_vec = {
+            let webp_encoder = webp::Encoder::from_image(&resized_img)
+                .map_err(|e| format!("Failed to initialize WebP encoder: {:?}", e))?;
+            let webp_bytes = webp_encoder.encode(80.0);
+            webp_bytes.to_vec()
+        };
 
-    // Prepare filename with .webp extension
-    let mut path_webp = path.clone();
-    path_webp.set_extension("webp");
-    let file_name = path_webp.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.webp").to_string();
+        // Prepare filename with .webp extension
+        let mut path_webp = path.clone();
+        path_webp.set_extension("webp");
+        let file_name = path_webp.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.webp").to_string();
+
+        Ok((webp_vec, file_name))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
 
     let client = reqwest::Client::new();
     let url = format!("{}/flights/{}/screenshots", base_url, remote_id);
@@ -580,7 +588,7 @@ pub async fn perform_screenshot_upload(
 
     // Mark as uploaded in DB, storing the public URL for use in shares
     let url = data.url.as_deref().unwrap_or("");
-    sc_manager.mark_as_uploaded(screenshot_id, &data.hash, url)?;
+    app.state::<ScreenshotManager>().mark_as_uploaded(screenshot_id, &data.hash, url)?;
 
     crate::append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
 

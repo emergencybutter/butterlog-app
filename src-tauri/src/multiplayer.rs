@@ -374,6 +374,27 @@ impl MultiplayerManager {
                                     pos += attr_len + pad;
                                 }
                             } else {
+                                // Telemetry is only accepted from peers the service
+                                // told us about: our public address is discoverable,
+                                // so unsolicited senders must not be able to inject
+                                // fake traffic into the simulator.
+                                let is_known_peer = recv_multiplayer.peers.lock().contains(&addr);
+                                if !is_known_peer {
+                                    let now = std::time::Instant::now();
+                                    let mut last_log = recv_multiplayer.last_received_log.lock();
+                                    let should_log = match *last_log {
+                                        Some(t) if now.duration_since(t).as_secs() < 60 => false,
+                                        _ => {
+                                            *last_log = Some(now);
+                                            true
+                                        }
+                                    };
+                                    if should_log {
+                                        crate::append_log(&recv_app, format!("[Multiplayer RECV] Dropped packet from unknown sender {}", addr));
+                                    }
+                                    continue;
+                                }
+
                                 // Parse as JSON payload
                                 if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(data) {
                                     if let (Some(aircraft), Some(metrics_val)) = (payload["aircraft"].as_str(), payload.get("metrics")) {
