@@ -1212,6 +1212,12 @@ impl SimConnectMonitor {
                     }
                 }
                 last_update_times.remove(&id);
+                // Drop the per-peer bookkeeping too, otherwise these maps grow
+                // unbounded as peers come and go over a long-running session: the
+                // log-throttle timestamp, and any spawn request still awaiting an
+                // assigned-object-id ack (the aircraft timed out before it spawned).
+                last_ai_log.remove(&id);
+                pending_requests.retain(|_, peer| peer != &id);
             }
 
             // Check if we haven't received telemetry updates from MSFS for 60 seconds
