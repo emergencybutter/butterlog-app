@@ -1,11 +1,11 @@
 {
-  "version": "0.3.11",
-  "notes": "Butterlog v0.3.11 Release\nFixed memory leaks (SimConnect reconnect and MSFS traffic tracking), reclaim memory when minimized to the tray, and render the full flight history in flight details.",
-  "pub_date": "2026-06-11T00:56:29Z",
+  "version": "0.3.12",
+  "notes": "Butterlog v0.3.12 Release\nFixed a memory leak that grew while Microsoft Flight Simulator was not running (SimConnect reconnect).",
+  "pub_date": "2026-06-11T01:52:22Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG5tODFXdDdXYUZPZ3J6YXEyUjUyZEhXTkpwd2pSaHE5eEwwcTBlUXdibm9iSGg1QXRDWnB4d2xpeG5ZN0FPM1ZaSk1Mc1ZQYjVFQjdhUis2cUNXendRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMTM5Mzg5CWZpbGU6YnV0dGVybG9nXzAuMy4xMV94NjQtc2V0dXAuZXhlCit1VnBMcFk5N0dNMHE3WldZQUJWQ0ZMemdaeUR6eElkbEhyYXBlOUtaa0Y3b2xiUFZ5bkdtSUlxTUtpTzJMNUlrbSs0YUJFLzJCNmFhNERpam9NT0R3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.11_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGc2QW0rRWgxT05oR2VsNDZxeEdkbVVOZXNQanlPZkRiTkVPQ1Jjbm1FNUgyUUpGSHl3QUtUVVY0dkdKdnNBdmp6WGJNSjUxV0ltS0FCYU14blB6UlFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMTQyNzQyCWZpbGU6YnV0dGVybG9nXzAuMy4xMl94NjQtc2V0dXAuZXhlClk0a3dWTERNRlk3NzBVVm5ObE9HNm80K2tncWdzR0xpY0xKc2FhT2RaMTFlZXZ4Z24vc1pydzhFMk5NMDNOa3FOQVZEelptOWxUeWdEMUlUanZtUENRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.12_x64-setup.exe"
     }
   }
 }
