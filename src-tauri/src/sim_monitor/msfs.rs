@@ -1505,6 +1505,29 @@ fn find_best_multiplayer_model(
     "Cessna Skyhawk G1000".to_string()
 }
 
+/// True when the MSFS SimConnect server pipe is present in the named-pipe
+/// namespace. Calling SimConnect_Open while the sim is down leaks a client
+/// inside the SDK that we can't free, so we probe `\\.\pipe\` first and only
+/// attempt to connect when MSFS is actually running. Cheap and dependency-free.
+///
+/// The pipe is named `Microsoft Flight Simulator\SimConnect` (the default pipe
+/// SimConnect_Open connects to); we match on "flight simulator" specifically so
+/// an unrelated `Custom\SimConnect` pipe from another app doesn't read as MSFS.
+fn simconnect_pipe_present() -> bool {
+    match std::fs::read_dir(r"\\.\pipe\") {
+        Ok(entries) => entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .contains("flight simulator")
+        }),
+        // If the pipe namespace can't be read, fall back to attempting the
+        // connection rather than never connecting.
+        Err(_) => true,
+    }
+}
+
 impl SimMonitor for SimConnectMonitor {
     fn id(&self) -> &'static str { "msfs" }
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -1526,10 +1549,25 @@ impl SimMonitor for SimConnectMonitor {
             let app = app.clone();
             let available_aircraft = available_aircraft.clone();
             let available_helicopters = available_helicopters.clone();
-            move || loop {
+            move || {
+                // Each failed SimConnect_Open leaks a client inside the MSFS SDK
+                // that we can't reclaim (open returns no handle to close). To avoid
+                // that we only call open() when a SimConnect pipe actually exists;
+                // the exponential backoff then covers the brief window where the
+                // pipe is up but the sim isn't ready to accept the connection yet.
+                let max_backoff = Duration::from_secs(30);
+                let mut backoff = Duration::from_secs(1);
+                loop {
                 if !*running_clone.lock() { break; }
+                if !simconnect_pipe_present() {
+                    // Sim not running: skip open() entirely so we don't leak, and
+                    // poll the pipe namespace again shortly.
+                    thread::sleep(Duration::from_secs(2));
+                    continue;
+                }
                 match SimConnect::open("ButterLogV2") {
                     Ok(sc) => {
+                        backoff = Duration::from_secs(1);
                         crate::append_log(&app, "Successfully connected to MSFS.".to_string());
                         { let mut connected = connected_clone.lock(); *connected = true; }
                         
@@ -1565,9 +1603,12 @@ impl SimMonitor for SimConnectMonitor {
                         { let mut info = aircraft_info.lock(); *info = AircraftInfo::default(); }
                         { let mut fid = current_flight_id.lock(); *fid = "".to_string(); }
                     }
-                    Err(_) => {}
+                    Err(_) => {
+                        backoff = (backoff * 2).min(max_backoff);
+                    }
                 }
-                thread::sleep(Duration::from_secs(1));
+                thread::sleep(backoff);
+                }
             }
         });
         Ok(())
