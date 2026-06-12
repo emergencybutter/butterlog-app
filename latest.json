@@ -1,11 +1,11 @@
 {
-  "version": "0.3.12",
-  "notes": "Butterlog v0.3.12 Release\nFixed a memory leak that grew while Microsoft Flight Simulator was not running (SimConnect reconnect).",
-  "pub_date": "2026-06-11T01:52:22Z",
+  "version": "0.3.13",
+  "notes": "Butterlog v0.3.13 Release\nFixed multiplayer public UDP address getting stuck on 'Discovering' on IPv6-capable networks, improved Settings reliability, and refreshed the app theme.",
+  "pub_date": "2026-06-12T00:55:33Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGc2QW0rRWgxT05oR2VsNDZxeEdkbVVOZXNQanlPZkRiTkVPQ1Jjbm1FNUgyUUpGSHl3QUtUVVY0dkdKdnNBdmp6WGJNSjUxV0ltS0FCYU14blB6UlFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMTQyNzQyCWZpbGU6YnV0dGVybG9nXzAuMy4xMl94NjQtc2V0dXAuZXhlClk0a3dWTERNRlk3NzBVVm5ObE9HNm80K2tncWdzR0xpY0xKc2FhT2RaMTFlZXZ4Z24vc1pydzhFMk5NMDNOa3FOQVZEelptOWxUeWdEMUlUanZtUENRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.12_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHZWbGRVZ1dMQkdlSkVhUTJ2RWpycDliVHllb2ZwSkpFZWFVNU8rTjFpS05MM3lnZ0NMcTRCMERrdFd6YUtlbENPUStlR2ZWQXllUGVHZG4yOTJ1U1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjI1NzMzCWZpbGU6YnV0dGVybG9nXzAuMy4xM194NjQtc2V0dXAuZXhlCnJ4V2lnL1pGZWg0c2tKWTl4YWN5SUJEdmtPV0NYVjlWbTZHb25TRkRTT0llYzJZZ0dZSjFGMGdlN1c5ZW4rTTNPdTVOZUt2QSs4Smd1dGRTQVJsZ0N3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.13_x64-setup.exe"
     }
   }
 }
