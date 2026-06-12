@@ -383,8 +383,8 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
             {shareToast && (
                 <div style={{
                     position: "fixed", bottom: "2rem", left: "50%", transform: "translateX(-50%)",
-                    background: "#1e1e2e", border: "1px solid #cba6f7", borderRadius: "10px",
-                    padding: "0.75rem 1.5rem", color: "#cdd6f4", fontSize: "0.95rem",
+                    background: "#14181a", border: "1px solid var(--bl-line-amber)", borderRadius: "6px",
+                    padding: "0.75rem 1.5rem", color: "var(--bl-paper)", fontSize: "0.95rem",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 9999,
                     animation: "fadeInUp 0.2s ease"
                 }}>
@@ -408,7 +408,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                         <button
                             onClick={handleShare}
                             disabled={sharing}
-                            style={{ marginRight: "10px", backgroundColor: shareUrl ? "#89b4fa" : "#cba6f7", color: "#11111b" }}
+                            style={{ marginRight: "10px", backgroundColor: shareUrl ? "#36e3c6" : "#ffb000", color: "#11111b" }}
                             title={shareUrl ? "Click to copy share URL" : "Upload and share this flight"}
                         >
                             {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}

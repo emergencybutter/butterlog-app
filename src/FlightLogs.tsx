@@ -106,7 +106,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
     });
 
     const renderProgressBar = (current: number, total: number, color: string = "#4caf50", height: string = "8px") => (
-        <div style={{ width: "100%", height, background: "#1a1a1a", borderRadius: "4px", overflow: "hidden" }}>
+        <div style={{ width: "100%", height, background: "#0e1113", borderRadius: "4px", overflow: "hidden" }}>
             <div style={{ 
                 width: `${Math.min(100, (current / (total || 1)) * 100)}%`, 
                 height: "100%", 
@@ -135,7 +135,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                 <div style={{ 
                     marginTop: "2rem",
                     padding: "3rem",
-                    background: "#2a2a2a",
+                    background: "#14181a",
                     borderRadius: "12px",
                     border: "1px solid #444",
                     textAlign: "center",
@@ -156,7 +156,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                         {renderProgressBar(batchStatus?.completedFiles || 0, batchStatus?.totalFiles || 1)}
                     </div>
 
-                    <div style={{ padding: "1.5rem", background: "#1a1a1a", borderRadius: "8px", border: "1px solid #333", textAlign: "left" }}>
+                    <div style={{ padding: "1.5rem", background: "#0e1113", borderRadius: "8px", border: "1px solid #333", textAlign: "left" }}>
                         <div style={{ fontSize: "0.8rem", color: "#4db8ff", fontWeight: "bold", marginBottom: "10px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                             CURRENT: {batchStatus?.currentFileName}
                         </div>
@@ -200,7 +200,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                                 const isCurrent = currentFlightId && s.filename.replace(".db", "") === currentFlightId;
                                 return (
                                 <div key={s.filename} style={{ 
-                                    background: isCurrent ? "#1b3a24" : "#2a2a2a", 
+                                    background: isCurrent ? "#1b3a24" : "#14181a", 
                                     borderRadius: "8px", 
                                     overflow: "hidden", 
                                     border: isCurrent ? "1px solid #4caf50" : "1px solid #444",
@@ -256,7 +256,7 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                                     </div>
                                     
                                     {expandedIndex === i && (
-                                        <div style={{ padding: "1rem", borderTop: isCurrent ? "1px solid #2e5c3e" : "1px solid #444", background: isCurrent ? "#122618" : "#1a1a1a", fontSize: "0.9rem" }}>
+                                        <div style={{ padding: "1rem", borderTop: isCurrent ? "1px solid #2e5c3e" : "1px solid #444", background: isCurrent ? "#122618" : "#0e1113", fontSize: "0.9rem" }}>
                                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
                                                 <div>
                                                     <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Departure:</span> {s.startTime}</p>

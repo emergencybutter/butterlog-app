@@ -15,7 +15,7 @@ function AircraftThumbnail({ title }: { title: string }) {
         <div style={{ 
             width: "150px", 
             height: "100px", 
-            background: "#2a2a2a", 
+            background: "#14181a", 
             borderRadius: "4px", 
             display: "flex", 
             alignItems: "center", 
@@ -82,7 +82,7 @@ export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSumm
         <div className="stats-view page page-wide">
             <div className="view-header">
                 <h2>Aircraft Statistics</h2>
-                <div style={{ display: "flex", gap: "10px", background: "#2a2a2a", padding: "4px", borderRadius: "8px" }}>
+                <div style={{ display: "flex", gap: "10px", background: "#14181a", padding: "4px", borderRadius: "8px" }}>
                     <button 
                         onClick={() => setViewMode("all")}
                         style={{ 
@@ -113,9 +113,9 @@ export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSumm
             {stats.length === 0 ? (
                 <p style={{ textAlign: "center", color: "#888" }}>No aircraft data tracked yet.</p>
             ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", background: "#1a1a1a", borderRadius: "8px", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", background: "#0e1113", borderRadius: "8px", overflow: "hidden" }}>
                     <thead>
-                        <tr style={{ background: "#2a2a2a", textAlign: "left" }}>
+                        <tr style={{ background: "#14181a", textAlign: "left" }}>
                             <th style={{ padding: "12px", width: "80px" }}></th>
                             <th style={{ padding: "12px" }}>Aircraft Type</th>
                             <th style={{ padding: "12px" }}>Flights</th>
@@ -156,7 +156,7 @@ export function AircraftStats({ onViewDetails }: { onViewDetails: (f: FlightSumm
                                                 <h4 style={{ margin: "0 0 10px 0", color: "#888", fontSize: "0.9rem" }}>Recent Flights</h4>
                                                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                                                     {(aircraftFlights[s.aircraftType] || []).map((f, fi) => (
-                                                        <div key={fi} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#1a1a1a", borderRadius: "4px", border: "1px solid #2a2a2a" }}>
+                                                        <div key={fi} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#0e1113", borderRadius: "4px", border: "1px solid #14181a" }}>
                                                             <div>
                                                                 <span style={{ fontWeight: "bold", marginRight: "15px" }}>{f.startTime.split(' ')[0]}</span>
                                                                 <span style={{ color: "#4db8ff", marginRight: "15px" }}>{f.startIcao} → {f.endIcao}</span>

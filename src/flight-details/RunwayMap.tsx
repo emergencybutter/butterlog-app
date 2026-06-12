@@ -63,7 +63,7 @@ export function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, sc
     }, [validRunways, trajectory]);
 
     if (!bounds) {
-        return <div style={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px", background: "#1a1a1a" }}>No map data for {icao}</div>;
+        return <div style={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #333", borderRadius: "8px", background: "#0e1113" }}>No map data for {icao}</div>;
     }
 
     const eventPoints = trajectory.filter(p => p.isEvent === 'takeoff' || p.isEvent === 'landing' || p.isEvent === 'autopilot_on' || p.isEvent === 'autopilot_off');

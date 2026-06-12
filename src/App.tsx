@@ -323,7 +323,7 @@ function App() {
                             PHASE: {currentPhase.toUpperCase()}
                         </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#2a2a2a", padding: "1rem", borderRadius: "8px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px", background: "#14181a", padding: "1rem", borderRadius: "8px" }}>
                       {Object.entries(metrics).map(([key, value]) => (
                         <div key={key} style={{ borderBottom: "1px solid #444", padding: "5px" }}>
                           <span style={{ fontWeight: "bold", fontSize: "0.8rem", color: "#888" }}>{METRIC_LABELS[key] || key}:</span>
@@ -372,7 +372,7 @@ function App() {
                 {multiplayerInfo && multiplayerInfo.peers.length > 0 && (
                   <div style={{ marginBottom: "2rem" }}>
                     <h4 style={{ color: "#888", borderBottom: "1px solid #333", paddingBottom: "4px", marginBottom: "12px" }}>Peer Connections</h4>
-                    <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ background: "#0e1113", padding: "1rem", borderRadius: "8px", display: "flex", flexWrap: "wrap", gap: "10px" }}>
                       {multiplayerInfo.peers.map((peer, idx) => (
                         <div key={idx} style={{ background: "#333", padding: "4px 10px", borderRadius: "4px", fontFamily: "monospace", fontSize: "0.9rem" }}>
                           🔗 {peer}
@@ -385,7 +385,7 @@ function App() {
                 <div>
                   <h3 style={{ marginBottom: "1rem" }}>Tracked Players & Traffic ({multiplayerInfo?.trackedAircrafts.length || 0})</h3>
                   {!multiplayerInfo || multiplayerInfo.trackedAircrafts.length === 0 ? (
-                    <div style={{ background: "#2a2a2a", padding: "2.5rem", borderRadius: "8px", textAlign: "center", border: "1px dashed #444" }}>
+                    <div style={{ background: "#14181a", padding: "2.5rem", borderRadius: "8px", textAlign: "center", border: "1px dashed #444" }}>
                       <span style={{ fontSize: "2rem" }}>✈️</span>
                       <p style={{ color: "#888", marginTop: "10px", marginBottom: 0 }}>
                         No multiplayer traffic detected. Other players flying with ButterLog will appear here as we receive their live UDP telemetry.
@@ -463,7 +463,7 @@ function App() {
                       display: "flex",
                       alignItems: "center",
                       gap: "6px",
-                      background: copiedLogs ? "#4caf50" : "#2a2a2a",
+                      background: copiedLogs ? "#4caf50" : "#14181a",
                       color: copiedLogs ? "white" : "#eee",
                       border: "1px solid #444",
                       padding: "6px 12px",
@@ -489,7 +489,7 @@ function App() {
                     )}
                   </button>
                 </div>
-                <div style={{ background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxHeight: "400px", overflowY: "auto" }}>
+                <div style={{ background: "#0e1113", padding: "1rem", borderRadius: "8px", maxHeight: "400px", overflowY: "auto" }}>
                   {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
                   {logs.map((log, index) => (
                     <div key={index} style={{ fontFamily: "monospace", fontSize: "0.9rem", color: "#4caf50", marginBottom: "4px" }}>{log}</div>

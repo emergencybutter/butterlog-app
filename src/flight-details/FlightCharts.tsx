@@ -36,7 +36,7 @@ function eventReferenceLines(marks: EventMark[], bold: boolean) {
     ));
 }
 
-const tooltipStyle = { background: '#2a2a2a', border: '1px solid #444' };
+const tooltipStyle = { background: '#14181a', border: '1px solid #444' };
 
 function ChartPanel({ title, height, children }: { title: string, height: number, children: React.ReactElement }) {
     return (
@@ -64,8 +64,8 @@ export function FlightCharts({ chartData, fullMarks, primaryMarks }: {
                 <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 0, bottom: 0 }}>
                     <defs>
                         <linearGradient id="colorAlt" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
-                            <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                            <stop offset="5%" stopColor="#ffb000" stopOpacity={0.8} />
+                            <stop offset="95%" stopColor="#ffb000" stopOpacity={0} />
                         </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -73,7 +73,7 @@ export function FlightCharts({ chartData, fullMarks, primaryMarks }: {
                     <YAxis stroke="#666" fontSize={12} tick={{ fill: '#666' }} />
                     <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#fff' }} />
                     {eventReferenceLines(fullMarks, true)}
-                    <Area type="monotone" dataKey="altitude" stroke="#8884d8" fillOpacity={1} fill="url(#colorAlt)" />
+                    <Area type="monotone" dataKey="altitude" stroke="#ffb000" fillOpacity={1} fill="url(#colorAlt)" />
                 </AreaChart>
             </ChartPanel>
 

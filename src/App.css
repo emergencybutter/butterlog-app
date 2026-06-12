@@ -4,14 +4,26 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #f6f6f6;
-  background-color: #1e1e1e;
+  color: var(--bl-paper);
+  background-color: #0a0c0d;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  /* Avionics design tokens (shared with the website/service) */
+  --bl-amber: #ffb000;
+  --bl-amber-bright: #ffc23d;
+  --bl-teal: #36e3c6;
+  --bl-paper: #eef1ea;
+  --bl-muted: #8b9794;
+  --bl-caution: #ff7a8a;
+  --bl-panel: #14181a;
+  --bl-line: rgba(225, 232, 220, 0.10);
+  --bl-line-amber: rgba(255, 176, 0, 0.42);
+  --bl-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
 }
 
 body {
@@ -44,12 +56,12 @@ body {
 
 .sidebar {
   width: 50px;
-  background-color: #333333;
+  background-color: #0e1113;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   padding: 0;
-  border-right: 1px solid #2b2b2b;
+  border-right: 1px solid var(--bl-line);
 }
 
 .sidebar-top, .sidebar-bottom {
@@ -74,8 +86,8 @@ body {
 }
 
 .sidebar-item.active {
-  color: #ffffff;
-  border-left: 2px solid #ffffff;
+  color: var(--bl-amber);
+  border-left: 2px solid var(--bl-amber);
 }
 
 .sidebar-item .icon {
@@ -88,7 +100,7 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 1.5rem;
-  background-color: #1e1e1e;
+  background-color: #0a0c0d;
 }
 
 .status-bar {
@@ -119,13 +131,13 @@ h1, h2, h3, h4 {
 input,
 button {
   border-radius: 4px;
-  border: 1px solid #444;
+  border: 1px solid var(--bl-line);
   padding: 0.6em 1.2em;
   font-size: 0.9em;
   font-weight: 500;
   font-family: inherit;
-  color: #ffffff;
-  background-color: #333;
+  color: var(--bl-paper);
+  background-color: #14181a;
   transition: border-color 0.25s, background-color 0.25s;
 }
 
@@ -134,17 +146,17 @@ button {
 }
 
 button:hover {
-  border-color: #4caf50;
-  background-color: #444;
+  border-color: var(--bl-line-amber);
+  background-color: #1b2023;
 }
 
 button:active {
-  background-color: #2a2a2a;
+  background-color: #14181a;
 }
 
 input:focus {
   outline: none;
-  border-color: #4caf50;
+  border-color: var(--bl-line-amber);
 }
 
 input {
@@ -160,7 +172,7 @@ input {
 }
 
 .setting-control:hover {
-  background-color: #2a2a2a;
+  background-color: #14181a;
 }
 
 .setting-control label {
@@ -176,6 +188,30 @@ input {
   height: 16px;
   margin: 0;
   cursor: pointer;
+  accent-color: var(--bl-amber);
+}
+
+.settings-page section h4 {
+  font-family: var(--bl-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--bl-teal);
+  border-bottom-color: var(--bl-line);
+}
+
+.settings-page .setting-input {
+  background-color: #161616;
+  border: 1px solid var(--bl-line);
+  border-radius: 4px;
+  color: var(--bl-paper);
+  padding: 0.5rem 0.6rem;
+}
+
+.settings-page .setting-input:focus {
+  outline: none;
+  border-color: var(--bl-line-amber);
+  box-shadow: 0 0 0 2px rgba(255, 176, 0, 0.12);
 }
 
 .setting-input-group {
@@ -201,7 +237,7 @@ section h4 {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: #0a0c0d;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -251,13 +287,13 @@ section h4 {
 
 .status-tab:hover {
   color: #eee;
-  background-color: #2a2a2a;
+  background-color: #14181a;
 }
 
 .status-tab.active {
   color: #11111b;
-  background-color: #cba6f7;
-  border-color: #cba6f7;
+  background-color: var(--bl-amber);
+  border-color: var(--bl-amber);
 }
 
 .mp-grid {
@@ -267,7 +303,7 @@ section h4 {
 }
 
 .mp-card {
-  background: #2a2a2a;
+  background: #14181a;
   padding: 1.2rem;
   border-radius: 8px;
   border: 1px solid #444;
@@ -286,7 +322,7 @@ section h4 {
 .mp-callsign {
   font-size: 1.2rem;
   font-weight: bold;
-  color: #cba6f7;
+  color: var(--bl-amber);
 }
 
 .mp-last-seen {
@@ -311,7 +347,7 @@ section h4 {
 }
 
 .mp-telemetry-box {
-  background: #1e1e1e;
+  background: #0a0c0d;
   padding: 0.8rem;
   border-radius: 6px;
   font-family: monospace;
@@ -354,20 +390,20 @@ section h4 {
 }
 
 .panel {
-  background: #2a2a2a;
+  background: #14181a;
   border-radius: 8px;
   padding: 1.5rem;
 }
 
 .panel-bordered {
-  background: #2a2a2a;
+  background: #14181a;
   border: 1px solid #333;
   border-radius: 8px;
   padding: 1.5rem;
 }
 
 .panel-dark {
-  background: #1a1a1a;
+  background: #0e1113;
   border: 1px solid #333;
   border-radius: 8px;
   padding: 1.5rem;
@@ -387,7 +423,7 @@ section h4 {
 }
 
 .stat-card {
-  background: #2a2a2a;
+  background: #14181a;
   padding: 1.5rem;
   border-radius: 8px;
   text-align: center;
@@ -418,7 +454,7 @@ section h4 {
 }
 
 .status-box {
-  background: #2a2a2a;
+  background: #14181a;
   padding: 2rem;
   border-radius: 8px;
   text-align: center;
@@ -432,17 +468,20 @@ section h4 {
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
-.btn-ghost-purple {
-  background-color: rgba(203, 166, 247, 0.15);
-  color: #cba6f7;
-  border: 1px solid rgba(203, 166, 247, 0.3);
-  padding: 0.3rem 0.8rem;
+.btn-ghost-amber {
+  background-color: rgba(255, 176, 0, 0.12);
+  color: var(--bl-amber);
+  border: 1px solid var(--bl-line-amber);
+  border-radius: 4px;
+  font-family: var(--bl-mono);
+  font-size: 0.78rem;
+  padding: 0.35rem 0.8rem;
   white-space: nowrap;
 }
 
-.btn-ghost-purple:hover {
-  background-color: rgba(203, 166, 247, 0.25);
-  border-color: rgba(203, 166, 247, 0.45);
+.btn-ghost-amber:hover {
+  background-color: rgba(255, 176, 0, 0.2);
+  border-color: rgba(255, 176, 0, 0.6);
 }
 
 .btn-ghost-red {
@@ -509,15 +548,102 @@ section h4 {
 
 .setting-hint {
   font-size: 0.75rem;
-  color: #f38ba8;
+  color: var(--bl-caution);
   margin-left: 28px;
   display: block;
   margin-top: 2px;
 }
 
+/* ── Settings: ButterLog service auth card ──────────────────────────── */
+.auth-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--bl-panel);
+  border: 1px solid var(--bl-line);
+  border-radius: 6px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-card.connected::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(54, 227, 198, 0.16) 0%, rgba(0, 0, 0, 0) 70%);
+  pointer-events: none;
+}
+
+.auth-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.auth-id {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.auth-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(88, 101, 242, 0.1);
+  border: 1px solid rgba(88, 101, 242, 0.25);
+}
+
+.auth-badge.connected {
+  background: rgba(54, 227, 198, 0.1);
+  border-color: rgba(54, 227, 198, 0.3);
+}
+
+.auth-title {
+  font-family: var(--bl-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--bl-paper);
+}
+
+.auth-title.connected {
+  color: var(--bl-teal);
+}
+
+.auth-sub {
+  font-size: 0.85rem;
+  color: var(--bl-muted);
+  margin-top: 3px;
+}
+
+.auth-row {
+  border-top: 1px solid var(--bl-line);
+  padding-top: 1rem;
+  margin-top: 0.25rem;
+}
+
+.auth-note {
+  font-size: 0.78rem;
+  color: var(--bl-muted);
+  margin: 0;
+  border-top: 1px solid var(--bl-line);
+  padding-top: 0.6rem;
+}
+
 /* ── Flight details ─────────────────────────────────────────────────── */
 .chart-panel {
-  background: #1a1a1a;
+  background: #0e1113;
   padding: 1.5rem;
   border-radius: 8px;
   border: 1px solid #333;
@@ -600,7 +726,7 @@ section h4 {
 
 .leaflet-control-attribution:hover {
   max-width: 600px;
-  background: #222 !important;
+  background: #101314 !important;
   padding: 0 10px !important;
 }
 
@@ -646,6 +772,6 @@ section h4 {
 }
 
 .leaflet-bar a.leaflet-disabled {
-  background-color: #222 !important;
+  background-color: #101314 !important;
   color: #555 !important;
 }

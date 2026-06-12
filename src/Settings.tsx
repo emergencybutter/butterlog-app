@@ -1,14 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { Config } from "./models";
+
+function isValidRegex(pattern: string): boolean {
+    try { new RegExp(pattern); return true; } catch { return false; }
+}
 
 export function Settings() {
     const [config, setConfig] = useState<Config | null>(null);
     const [status, setStatus] = useState<string>("");
     const [loginLoading, setLoginLoading] = useState<boolean>(false);
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isLoggedIn = !!(config && config.apiToken && config.apiToken.trim().length > 0);
 
@@ -31,15 +36,16 @@ export function Settings() {
 
     const handleDiscordLogout = async () => {
         if (!config) return;
+        const confirmed = await ask(
+            "Disconnect your Discord account from the ButterLog service? Your multiplayer and sharing preferences are kept and resume when you reconnect.",
+            { title: "Log Out", kind: "warning" }
+        );
+        if (!confirmed) return;
         setStatus("Logging out of ButterLog service...");
         try {
-            const updatedConfig = {
-                ...config,
-                apiToken: "",
-                enableWebhook: false,
-                injectButterlogTraffic: false,
-                enableMultiplayerHubs: false
-            };
+            // Mirror the backend's force_logout: clear only the credentials and
+            // leave traffic/sharing preferences intact so they resume on re-login.
+            const updatedConfig = { ...config, apiToken: "", enableWebhook: false };
             setConfig(updatedConfig);
             await invoke("set_config", { config: updatedConfig });
             setStatus("Logged out successfully.");
@@ -77,11 +83,7 @@ export function Settings() {
 
     const persist = async (next: Config) => {
         try {
-            const configToSave = {
-                ...next,
-                enableMultiplayerHubs: next.injectButterlogTraffic
-            };
-            await invoke("set_config", { config: configToSave });
+            await invoke("set_config", { config: next });
             setStatus("All changes saved");
             setTimeout(() => setStatus(""), 2000);
         } catch (err) {
@@ -91,28 +93,40 @@ export function Settings() {
 
     const handleChange = (key: keyof Config, value: any) => {
         if (!config) return;
+        // The two multiplayer flags are a single UI concept, so keep them in sync.
         const next: Config = key === "injectButterlogTraffic"
             ? { ...config, injectButterlogTraffic: value, enableMultiplayerHubs: value }
             : { ...config, [key]: value };
         setConfig(next);
-
-        // Autostart is managed by a plugin, toggle it alongside the saved flag
-        if (key === "openAtLogin") {
-            (async () => {
-                try {
-                    if (value) {
-                        await enable();
-                    } else {
-                        await disable();
-                    }
-                } catch (e) {
-                    console.error("Failed to update autostart:", e);
-                }
-            })();
-        }
-
         persist(next);
     };
+
+    // Text inputs save on a debounce so we don't write the config to disk (and
+    // flash "saved") on every keystroke.
+    const handleTextChange = (key: keyof Config, value: string) => {
+        if (!config) return;
+        const next: Config = { ...config, [key]: value };
+        setConfig(next);
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => persist(next), 400);
+    };
+
+    // Autostart is owned by the OS plugin; only persist the flag once the plugin
+    // call succeeds so the checkbox can't drift from the real autostart state.
+    const handleAutostartChange = async (value: boolean) => {
+        if (!config) return;
+        try {
+            if (value) await enable(); else await disable();
+        } catch (e) {
+            setStatus("Failed to update autostart: " + e);
+            return;
+        }
+        const next: Config = { ...config, openAtLogin: value };
+        setConfig(next);
+        persist(next);
+    };
+
+    useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
     const pickDirectory = async (): Promise<string | null> => {
         const selected = await open({ directory: true, multiple: false });
@@ -133,11 +147,11 @@ export function Settings() {
                     <div className="settings-stack">
                         <div className="setting-control">
                             <label>
-                                <input 
-                                    type="checkbox" 
-                                    checked={config.openAtLogin} 
-                                    onChange={(e) => handleChange("openAtLogin", e.target.checked)}
-                                /> 
+                                <input
+                                    type="checkbox"
+                                    checked={config.openAtLogin}
+                                    onChange={(e) => handleAutostartChange(e.target.checked)}
+                                />
                                 <span>Start automatically on login</span>
                             </label>
                         </div>
@@ -174,7 +188,7 @@ export function Settings() {
                                         const dir = await pickDirectory();
                                         if (dir) handleChange("logDirectory", dir);
                                     }}
-                                    className="btn-ghost-purple"
+                                    className="btn-ghost-amber"
                                 >Browse…</button>
                                 {config.logDirectory && (
                                     <button
@@ -207,7 +221,7 @@ export function Settings() {
                                                     handleChange("screenshotDirectories", dirs);
                                                 }
                                             }}
-                                            className="btn-ghost-purple"
+                                            className="btn-ghost-amber"
                                         >Browse…</button>
                                         <button
                                             onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
@@ -222,7 +236,7 @@ export function Settings() {
                                             handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), dir]);
                                         }
                                     }}
-                                    className="btn-ghost-purple" style={{ alignSelf: "flex-start" }}
+                                    className="btn-ghost-amber" style={{ alignSelf: "flex-start" }}
                                 >+ Add directory</button>
                             </div>
                         </div>
@@ -258,10 +272,13 @@ export function Settings() {
                                     type="text"
                                     className="setting-input"
                                     value={config.screenshotRegex}
-                                    onChange={(e) => handleChange("screenshotRegex", e.target.value)}
+                                    onChange={(e) => handleTextChange("screenshotRegex", e.target.value)}
                                     disabled={!config.screenshotRegexEnabled}
                                     placeholder="Only auto-upload files matching this regex"
                                 />
+                                {config.screenshotRegexEnabled && config.screenshotRegex && !isValidRegex(config.screenshotRegex) && (
+                                    <span className="setting-hint">Invalid regular expression — this filter won't match anything.</span>
+                                )}
                             </>
                         )}
                     </div>
@@ -292,44 +309,13 @@ export function Settings() {
                 </section>
 
                 <section>
-                    <h4>ButterLog Service Authentication</h4>
-                    <div style={{
-                        background: "rgba(255, 255, 255, 0.02)",
-                        border: "1px solid rgba(255, 255, 255, 0.08)",
-                        borderRadius: "12px",
-                        padding: "1.5rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "1rem",
-                        position: "relative",
-                        overflow: "hidden"
-                    }}>
-                        {isLoggedIn && (
-                            <div style={{
-                                position: "absolute",
-                                top: "-50%",
-                                right: "-50%",
-                                width: "200px",
-                                height: "200px",
-                                background: "radial-gradient(circle, rgba(166, 227, 161, 0.15) 0%, rgba(0,0,0,0) 70%)",
-                                pointerEvents: "none"
-                            }} />
-                        )}
-                        
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                                <div style={{
-                                    backgroundColor: isLoggedIn ? "rgba(166, 227, 161, 0.1)" : "rgba(88, 101, 242, 0.1)",
-                                    borderRadius: "50%",
-                                    width: "48px",
-                                    height: "48px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    border: isLoggedIn ? "1px solid rgba(166, 227, 161, 0.2)" : "1px solid rgba(88, 101, 242, 0.2)",
-                                }}>
+                    <h4>ButterLog Service</h4>
+                    <div className={`auth-card${isLoggedIn ? " connected" : ""}`}>
+                        <div className="auth-head">
+                            <div className="auth-id">
+                                <div className={`auth-badge${isLoggedIn ? " connected" : ""}`}>
                                     {isLoggedIn ? (
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a6e3a1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#36e3c6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                             <polyline points="20 6 9 17 4 12"></polyline>
                                         </svg>
                                     ) : (
@@ -339,17 +325,17 @@ export function Settings() {
                                     )}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: "bold", fontSize: "1rem", color: isLoggedIn ? "#a6e3a1" : "#cdd6f4" }}>
-                                        {isLoggedIn ? "Status: Connected" : "Status: Not Connected"}
+                                    <div className={`auth-title${isLoggedIn ? " connected" : ""}`}>
+                                        {isLoggedIn ? "Connected" : "Not Connected"}
                                     </div>
-                                    <div style={{ fontSize: "0.85rem", color: "#a6adc8", marginTop: "2px" }}>
-                                        {isLoggedIn 
-                                            ? "Your Discord account is linked to the ButterLog service." 
+                                    <div className="auth-sub">
+                                        {isLoggedIn
+                                            ? "Your Discord account is linked to the ButterLog service."
                                             : "Link your Discord account to sync logs and upload screenshots."}
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {isLoggedIn ? (
                                 <button onClick={handleDiscordLogout} className="btn-logout">
                                     Log Out
@@ -374,7 +360,7 @@ export function Settings() {
                                 </button>
                             )}
                         </div>
-                        <div className="setting-control" style={{ opacity: isLoggedIn ? 1 : 0.5, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                        <div className="setting-control auth-row" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
                             <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
                                 <input
                                     type="checkbox"
@@ -390,7 +376,7 @@ export function Settings() {
                                 </span>
                             )}
                         </div>
-                        <p style={{ fontSize: "0.8rem", color: "#888", margin: "0", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.5rem" }}>
+                        <p className="auth-note">
                             We use Discord to login to not make you create yet another account.
                         </p>
                     </div>
@@ -398,8 +384,8 @@ export function Settings() {
 
 
 
-                <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", color: "#a6adc8", fontSize: "0.85rem" }}>
-                    {status && <span style={{ color: status.startsWith("Error") ? "#f44336" : "#4caf50" }}>{status}</span>}
+                <div className="settings-status" aria-live="polite" style={{ marginTop: "1rem", minHeight: "1.2rem", fontSize: "0.85rem", fontFamily: "var(--bl-mono)", letterSpacing: "0.04em" }}>
+                    {status && <span style={{ color: /^(Error|Failed)/.test(status) ? "var(--bl-caution)" : "var(--bl-teal)" }}>{status}</span>}
                 </div>
             </div>
         </div>

@@ -32,7 +32,7 @@ export function NotesEditor({ notes, onChange, onSave, saving, dirty, status }: 
                 <button
                     onClick={onSave}
                     disabled={saving || !dirty}
-                    style={{ backgroundColor: dirty ? "#cba6f7" : "#45475a", color: "#11111b", opacity: saving ? 0.7 : 1 }}
+                    style={{ backgroundColor: dirty ? "#ffb000" : "#45475a", color: "#11111b", opacity: saving ? 0.7 : 1 }}
                 >
                     {saving ? "Saving..." : "Save Notes"}
                 </button>

@@ -14,7 +14,7 @@ export function ScreenshotGallery({ screenshots, canUpload, uploadingIds, onUplo
             <h3 style={{ color: "#888", marginBottom: "1rem" }}>Screenshots</h3>
             <div style={{ display: "flex", gap: "15px", overflowX: "auto", paddingBottom: "10px" }}>
                 {screenshots.map((s, i) => (
-                    <div key={i} style={{ flex: "0 0 auto", width: "280px", background: "#1a1a1a", borderRadius: "4px", overflow: "hidden", border: "1px solid #333", position: "relative" }}>
+                    <div key={i} style={{ flex: "0 0 auto", width: "280px", background: "#0e1113", borderRadius: "4px", overflow: "hidden", border: "1px solid #333", position: "relative" }}>
                         <img src={convertFileSrc(s.path)} alt="Flight Screenshot" style={{ width: "100%", height: "170px", objectFit: "cover" }} />
 
                         {canUpload && (
