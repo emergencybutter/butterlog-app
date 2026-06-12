@@ -537,12 +537,26 @@ impl MultiplayerManager {
                     request[8..20].copy_from_slice(&STUN_TX_ID);
                     
                     if cached_stun_addr.is_none() {
-                        if let Ok(mut addrs) = ("stun.l.google.com", 19302).to_socket_addrs() {
-                            cached_stun_addr = addrs.next();
+                        match ("stun.l.google.com", 19302).to_socket_addrs() {
+                            // The socket is bound IPv4 (0.0.0.0), so we must pick an
+                            // IPv4 STUN address — the resolver can return the AAAA
+                            // (IPv6) record first, and sending to it from an IPv4
+                            // socket fails, leaving the public address undiscovered.
+                            Ok(addrs) => {
+                                cached_stun_addr = addrs.into_iter().find(|a| a.is_ipv4());
+                                if cached_stun_addr.is_none() {
+                                    crate::append_log(&app, "[Multiplayer] STUN resolution returned no IPv4 address for stun.l.google.com".to_string());
+                                }
+                            }
+                            Err(e) => {
+                                crate::append_log(&app, format!("[Multiplayer] Failed to resolve STUN server: {}", e));
+                            }
                         }
                     }
                     if let Some(stun_addr) = cached_stun_addr {
-                        let _ = socket.send_to(&request, stun_addr);
+                        if let Err(e) = socket.send_to(&request, stun_addr) {
+                            crate::append_log(&app, format!("[Multiplayer] Failed to send STUN request to {}: {}", stun_addr, e));
+                        }
                     }
                     last_stun_query = now;
                 }
