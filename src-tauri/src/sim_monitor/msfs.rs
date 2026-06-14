@@ -197,6 +197,13 @@ impl SimConnectMonitor {
         let mut flight_ongoing = false;
         let mut departure_set = false;
 
+        // Build the ICAO word index once so each enumerated AI-aircraft title can be
+        // resolved to an ICAO type designator and logged (diagnostic for the matcher).
+        let icao_index = app
+            .try_state::<CharacteristicsDatabase>()
+            .as_deref()
+            .map(crate::icao_index::IcaoIndex::build);
+
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
         let mut max_metrics: Option<FlightMetrics> = None;
@@ -356,6 +363,7 @@ impl SimConnectMonitor {
                         for entry in entries {
                             let title = c_char_array_to_string(&entry.AircraftTitle);
                             if !title.is_empty() && !ac.contains(&title) {
+                                log_icao_index_match(app, icao_index.as_ref(), "aircraft", &title);
                                 ac.push(title);
                             }
                         }
@@ -367,6 +375,7 @@ impl SimConnectMonitor {
                         for entry in entries {
                             let title = c_char_array_to_string(&entry.AircraftTitle);
                             if !title.is_empty() && !hc.contains(&title) {
+                                log_icao_index_match(app, icao_index.as_ref(), "helicopter", &title);
                                 hc.push(title);
                             }
                         }
@@ -1245,6 +1254,27 @@ impl SimConnectMonitor {
             thread::sleep(Duration::from_millis(50));
         }
         Ok(())
+    }
+}
+
+/// Resolve an enumerated AI-aircraft title against the ICAO word index and log the
+/// result. Used at startup to validate the index against the locally installed models.
+fn log_icao_index_match(
+    app: &AppHandle,
+    index: Option<&crate::icao_index::IcaoIndex>,
+    kind: &str,
+    title: &str,
+) {
+    let Some(index) = index else { return };
+    match index.find(title) {
+        Some(m) => crate::append_log(
+            app,
+            format!("[MSFS Index] {} '{}' -> {} (score {:.2})", kind, title, m.icao, m.score),
+        ),
+        None => crate::append_log(
+            app,
+            format!("[MSFS Index] {} '{}' -> no ICAO match", kind, title),
+        ),
     }
 }
 
