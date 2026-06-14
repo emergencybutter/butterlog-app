@@ -220,6 +220,8 @@ impl FlightMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AircraftInfo {
     pub title: String,
+    /// Livery name (MSFS `LIVERY NAME` SimVar / X-Plane `acf_livery_path`). May be empty.
+    pub livery: String,
     pub atc_model: String,
     pub atc_id: String,
     pub object_class: String,
@@ -258,6 +260,8 @@ pub struct ClosestAirportInfo {
 pub struct WebhookFlightSummary {
     pub log_path: String,
     pub airframe_name: String,
+    #[serde(default)]
+    pub livery: String,
     pub atc_model: String,
     pub atc_id: String,
     pub simulator: String,

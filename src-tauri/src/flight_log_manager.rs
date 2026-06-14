@@ -248,6 +248,8 @@ pub struct FlightSummary {
     #[ts(type = "number")]
     pub file_size_bytes: u64,
     pub aircraft_title: String,
+    #[serde(default)]
+    pub livery: String,
     pub atc_model: String,
     pub atc_id: String,
     pub max_altitude: f64,
@@ -738,6 +740,14 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         |r| r.get::<_, String>(0),
     ).optional().ok().flatten().unwrap_or_default();
 
+    // Livery is optional and defaults to empty (not "Unknown") when absent — it can
+    // be blank in-sim and is missing entirely on flights logged before this field.
+    let livery = conn.query_row(
+        "SELECT value FROM summary WHERE key = 'livery'",
+        [],
+        |r| r.get::<_, String>(0),
+    ).optional().ok().flatten().unwrap_or_default();
+
     let mut stmt = conn
         .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
         .map_err(|e| {
@@ -794,6 +804,7 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         duration_minutes,
         file_size_bytes: metadata.len(),
         aircraft_title,
+        livery,
         atc_model,
         atc_id,
         max_altitude,

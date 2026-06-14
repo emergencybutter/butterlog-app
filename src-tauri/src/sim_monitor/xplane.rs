@@ -518,6 +518,8 @@ impl XPlaneMonitor {
                             let actual_title = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ui_name").await.unwrap_or_default();
                             let actual_atc_model = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ICAO").await.unwrap_or_default();
                             let actual_atc_id = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_tailnum").await.unwrap_or_default();
+                            // X-Plane's livery identifier; may be empty if the aircraft has no liveries.
+                            let actual_livery = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_livery_path").await.unwrap_or_default();
 
                             let class_val = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/view/acf_class").await.unwrap_or(0.0) as i32;
                             let (object_class, category) = match class_val {
@@ -552,6 +554,7 @@ impl XPlaneMonitor {
                                 
                                 last_known_title = actual_title.clone();
                                 aircraft_info.title = actual_title;
+                                aircraft_info.livery = actual_livery;
                                 aircraft_info.atc_model = actual_atc_model;
                                 aircraft_info.atc_id = actual_atc_id;
                                 aircraft_info.object_class = object_class;
@@ -624,15 +627,18 @@ impl XPlaneMonitor {
 
                             if !aircraft_info.title.is_empty() {
                                  let title_str = aircraft_info.title.clone();
+                                 let livery_str = aircraft_info.livery.clone();
                                  let atc_model_str = aircraft_info.atc_model.clone();
                                  let atc_id_str = aircraft_info.atc_id.clone();
                                  if let Some(ref conn) = db_conn {
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
+                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![livery_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
                                  }
                                  let mut info = aircraft_info_mutex.lock();
                                  info.title = title_str;
+                                 info.livery = livery_str;
                                  info.atc_model = atc_model_str;
                                  info.atc_id = atc_id_str;
                                  info.object_class = aircraft_info.object_class.clone();
@@ -772,6 +778,7 @@ impl XPlaneMonitor {
                                          let summary = WebhookFlightSummary {
                                              log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                              airframe_name: aircraft_info.title.clone(),
+                                             livery: aircraft_info.livery.clone(),
                                              atc_model: aircraft_info.atc_model.clone(),
                                              atc_id: aircraft_info.atc_id.clone(),
                                              simulator: "X-Plane".to_string(),
@@ -880,6 +887,7 @@ impl XPlaneMonitor {
                                              let summary = WebhookFlightSummary {
                                                  log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                  airframe_name: aircraft_info.title.clone(),
+                                                 livery: aircraft_info.livery.clone(),
                                                  atc_model: aircraft_info.atc_model.clone(),
                                                  atc_id: aircraft_info.atc_id.clone(),
                                                  simulator: "X-Plane".to_string(),
@@ -1024,6 +1032,7 @@ impl XPlaneMonitor {
                 let summary = WebhookFlightSummary {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                     airframe_name: aircraft_info.title.clone(),
+                    livery: aircraft_info.livery.clone(),
                     atc_model: aircraft_info.atc_model.clone(),
                     atc_id: aircraft_info.atc_id.clone(),
                     simulator: "X-Plane".to_string(),

@@ -158,6 +158,7 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "BRAKE PARKING POSITION", "bool")?;
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
+        sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "LIVERY NAME")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC MODEL")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "ATC ID")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "AIRCRAFT OBJECT CLASS")?;
@@ -480,6 +481,9 @@ impl SimConnectMonitor {
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![aircraft_info.livery]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
@@ -539,6 +543,7 @@ impl SimConnectMonitor {
                                      let summary = WebhookFlightSummary {
                                          log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                          airframe_name: aircraft_info.title.clone(),
+                                         livery: aircraft_info.livery.clone(),
                                          atc_model: aircraft_info.atc_model.clone(),
                                          atc_id: aircraft_info.atc_id.clone(),
                                          simulator: "MSFS".to_string(),
@@ -646,6 +651,7 @@ impl SimConnectMonitor {
                     #[derive(Debug, Clone, Copy)]
                     struct SimConnectAircraftInfo {
                         title: [u8; 256],
+                        livery: [u8; 256],
                         atc_model: [u8; 256],
                         atc_id: [u8; 256],
                         object_class: [u8; 256],
@@ -655,6 +661,7 @@ impl SimConnectMonitor {
                     }
                     if let Some(data) = msg.as_sim_object_data::<SimConnectAircraftInfo>() {
                         let title = String::from_utf8_lossy(&data.title).split('\0').next().unwrap_or("").trim().to_string();
+                        let livery = String::from_utf8_lossy(&data.livery).split('\0').next().unwrap_or("").trim().to_string();
                         let atc_model = String::from_utf8_lossy(&data.atc_model).split('\0').next().unwrap_or("").trim().to_string();
                         let atc_id = String::from_utf8_lossy(&data.atc_id).split('\0').next().unwrap_or("").trim().to_string();
                         let object_class = String::from_utf8_lossy(&data.object_class).split('\0').next().unwrap_or("").trim().to_string();
@@ -670,6 +677,7 @@ impl SimConnectMonitor {
 
                         if !title.is_empty() {
                             aircraft_info.title = title.clone();
+                            aircraft_info.livery = livery.clone();
                             aircraft_info.atc_model = atc_model.clone();
                             aircraft_info.atc_id = atc_id.clone();
                             aircraft_info.object_class = object_class.clone();
@@ -682,6 +690,9 @@ impl SimConnectMonitor {
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![livery.clone()]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
@@ -692,6 +703,7 @@ impl SimConnectMonitor {
 
                             let mut info = aircraft_info_mutex.lock();
                             info.title = title;
+                            info.livery = livery;
                             info.atc_model = atc_model;
                             info.atc_id = atc_id;
                             info.object_class = object_class;
@@ -794,6 +806,9 @@ impl SimConnectMonitor {
                                 // Set aircraft title if already known
                                 if !aircraft_info.title.is_empty() {
                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![aircraft_info.livery]) {
                                         crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                     }
                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
@@ -973,6 +988,7 @@ impl SimConnectMonitor {
                                         let summary = WebhookFlightSummary {
                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                             airframe_name: aircraft_info.title.clone(),
+                                            livery: aircraft_info.livery.clone(),
                                             atc_model: aircraft_info.atc_model.clone(),
                                             atc_id: aircraft_info.atc_id.clone(),
                                             simulator: "MSFS".to_string(),
@@ -1082,6 +1098,7 @@ impl SimConnectMonitor {
                                                 let summary = WebhookFlightSummary {
                                                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                     airframe_name: aircraft_info.title.clone(),
+                                                    livery: aircraft_info.livery.clone(),
                                                     atc_model: aircraft_info.atc_model.clone(),
                                                     atc_id: aircraft_info.atc_id.clone(),
                                                     simulator: "MSFS".to_string(),

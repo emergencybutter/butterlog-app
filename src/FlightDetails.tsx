@@ -12,6 +12,13 @@ import { LandingScorecard } from "./flight-details/LandingScorecard";
 import { ScreenshotGallery } from "./flight-details/ScreenshotGallery";
 import { FlightCharts, ChartRow, EventMark } from "./flight-details/FlightCharts";
 
+// Livery is the MSFS `LIVERY NAME` (a plain name) or the X-Plane `acf_livery_path`
+// (a folder path); show only the final path segment so X-Plane liveries read cleanly.
+function liveryDisplay(livery: string): string {
+    const segments = livery.split(/[/\\]/).filter(s => s.trim() !== "");
+    return segments.length > 0 ? segments[segments.length - 1] : livery;
+}
+
 function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { flight: FlightSummary, onBack: () => void, currentFlightId?: string }) {
     const [flight, setFlight] = useState<FlightSummary>(initialFlight);
     const [data, setData] = useState<FlightLogRow[]>([]);
@@ -397,6 +404,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                         {flight.aircraftTitle}
                         {flight.atcModel && flight.atcModel !== "Unknown" && flight.atcModel.trim() !== "" ? ` [${flight.atcModel}]` : ""}
                         {flight.atcId && flight.atcId !== "Unknown" && flight.atcId.trim() !== "" ? ` (${flight.atcId})` : ""}
+                        {flight.livery && flight.livery.trim() !== "" ? ` — ${liveryDisplay(flight.livery)}` : ""}
                     </div>
                     <h2 style={{ margin: 0 }}>
                         {flight.startIcao}{destination ? ` → ${destination}` : ''}
