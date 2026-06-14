@@ -40,7 +40,8 @@
     "resources": [
       "../public/airports.csv",
       "../public/runways.csv",
-      "../public/aircraft-characteristics.csv"
+      "../public/aircraft-characteristics.csv",
+      "../public/airlines.csv"
     ],
     "icon": [
       "icons/32x32.png",

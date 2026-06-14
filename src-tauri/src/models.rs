@@ -225,6 +225,9 @@ pub struct AircraftInfo {
     /// ICAO type designator resolved from the title + livery via the word index.
     /// May be empty when nothing matched. Distinct from `atc_model` (the sim's own claim).
     pub resolved_icao: String,
+    /// Operating airline name identified from the title + livery via the airline index.
+    /// May be empty when no operator was inferred.
+    pub resolved_airline: String,
     pub atc_model: String,
     pub atc_id: String,
     pub object_class: String,
@@ -267,6 +270,8 @@ pub struct WebhookFlightSummary {
     pub livery: String,
     #[serde(default)]
     pub resolved_icao: String,
+    #[serde(default)]
+    pub resolved_airline: String,
     pub atc_model: String,
     pub atc_id: String,
     pub simulator: String,
