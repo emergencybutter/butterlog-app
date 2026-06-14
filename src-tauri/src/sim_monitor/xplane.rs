@@ -96,6 +96,36 @@ async fn fetch_xplane_dataref_double(client: &reqwest::Client, rest_url: &str, n
     }
 }
 
+/// Fetch the aircraft identity (name, livery, type, engines) from X-Plane via REST.
+/// These string/config datarefs aren't subscribable, so each call is a one-shot read.
+/// `title` is empty when no aircraft is loaded yet.
+async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str) -> AircraftInfo {
+    let title = fetch_xplane_dataref_string(client, rest_url, "sim/aircraft/view/acf_ui_name").await.unwrap_or_default();
+    let atc_model = fetch_xplane_dataref_string(client, rest_url, "sim/aircraft/view/acf_ICAO").await.unwrap_or_default();
+    let atc_id = fetch_xplane_dataref_string(client, rest_url, "sim/aircraft/view/acf_tailnum").await.unwrap_or_default();
+    // X-Plane's livery identifier; may be empty if the aircraft has no liveries.
+    let livery = fetch_xplane_dataref_string(client, rest_url, "sim/aircraft/view/acf_livery_path").await.unwrap_or_default();
+
+    let class_val = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/view/acf_class").await.unwrap_or(0.0) as i32;
+    let (object_class, category) = match class_val {
+        1 => ("helicopter".to_string(), "helicopter".to_string()),
+        2 => ("glider".to_string(), "glider".to_string()),
+        _ => ("airplane".to_string(), "airplane".to_string()),
+    };
+
+    let num_engines = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/engine/acf_num_engines").await.unwrap_or(1.0) as i32;
+
+    let en_type_val = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/prop/acf_en_type").await.unwrap_or(0.0) as i32;
+    let engine_type = match en_type_val {
+        0 => "piston".to_string(),
+        1 => "turboprop".to_string(),
+        2 => "jet".to_string(),
+        _ => "unknown".to_string(),
+    };
+
+    AircraftInfo { title, livery, atc_model, atc_id, object_class, category, num_engines, engine_type }
+}
+
 
 pub struct XPlaneMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
@@ -311,6 +341,7 @@ impl XPlaneMonitor {
         let mut m = FlightMetrics::default();
         let mut last_pos: Option<(f64, f64)> = None;
         let mut last_known_title = String::new();
+        let mut last_identify_attempt: Option<std::time::Instant> = None;
         let mut last_parking_brake: Option<bool> = None;
         let mut departure_set = false;
 
@@ -501,6 +532,23 @@ impl XPlaneMonitor {
 
                         { let mut metrics_lock = metrics_mutex.lock(); *metrics_lock = m; }
 
+                        // While parked (no flight yet), try once a minute to identify the
+                        // aircraft (name + livery) so it's known up front — the aircraft may
+                        // still be loading right after connect. Stop once we have a title; the
+                        // movement block below refreshes it when the flight actually starts.
+                        if !flight_ongoing
+                            && aircraft_info.title.is_empty()
+                            && last_identify_attempt.map_or(true, |t| t.elapsed().as_secs() >= 60)
+                        {
+                            last_identify_attempt = Some(std::time::Instant::now());
+                            let identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
+                            if !identity.title.is_empty() {
+                                aircraft_info = identity.clone();
+                                { let mut info = aircraft_info_mutex.lock(); *info = identity; }
+                                crate::append_log(&app, format!("[X-Plane] Identified aircraft (pre-flight): {} [Model: {}, ID: {}, Livery: {}]", aircraft_info.title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery));
+                            }
+                        }
+
                         if !flight_ongoing && (m.is_on_ground < 0.5 || m.ground_speed > 10.0) {
                             if m.is_on_ground > 0.5 {
                                 crate::append_log(&app, "[X-Plane] Aircraft movement detected on ground (GS > 10.0). Starting fallback flight log.".to_string());
@@ -514,29 +562,9 @@ impl XPlaneMonitor {
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
                             last_parking_brake = None;
 
-                            // Fetch aircraft title once via REST (strings often not subscribable)
-                            let actual_title = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ui_name").await.unwrap_or_default();
-                            let actual_atc_model = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_ICAO").await.unwrap_or_default();
-                            let actual_atc_id = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_tailnum").await.unwrap_or_default();
-                            // X-Plane's livery identifier; may be empty if the aircraft has no liveries.
-                            let actual_livery = fetch_xplane_dataref_string(&client, &rest_url, "sim/aircraft/view/acf_livery_path").await.unwrap_or_default();
-
-                            let class_val = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/view/acf_class").await.unwrap_or(0.0) as i32;
-                            let (object_class, category) = match class_val {
-                                1 => ("helicopter".to_string(), "helicopter".to_string()),
-                                2 => ("glider".to_string(), "glider".to_string()),
-                                _ => ("airplane".to_string(), "airplane".to_string()),
-                            };
-
-                            let num_engines = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/engine/acf_num_engines").await.unwrap_or(1.0) as i32;
-
-                            let en_type_val = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/prop/acf_en_type").await.unwrap_or(0.0) as i32;
-                            let engine_type = match en_type_val {
-                                0 => "piston".to_string(),
-                                1 => "turboprop".to_string(),
-                                2 => "jet".to_string(),
-                                _ => "unknown".to_string(),
-                            };
+                            // Refresh aircraft identity on movement. Strings/config datarefs
+                            // aren't subscribable, so these are one-shot REST reads.
+                            let identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
 
                             if let Some(pmax) = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/engine/acf_pmax").await {
                                 if pmax > 0.0 {
@@ -544,24 +572,17 @@ impl XPlaneMonitor {
                                 }
                             }
 
-                            if !actual_title.is_empty() {
+                            if !identity.title.is_empty() {
                                 // Reset if aircraft name changes mid-flight
-                                if !last_known_title.is_empty() && last_known_title != actual_title {
-                                    crate::append_log(&app, format!("[X-Plane] Aircraft changed ({} -> {}). Resetting flight.", last_known_title, actual_title));
+                                if !last_known_title.is_empty() && last_known_title != identity.title {
+                                    crate::append_log(&app, format!("[X-Plane] Aircraft changed ({} -> {}). Resetting flight.", last_known_title, identity.title));
                                     ws_stream.close(None).await.ok();
                                     return Ok(());
                                 }
-                                
-                                last_known_title = actual_title.clone();
-                                aircraft_info.title = actual_title;
-                                aircraft_info.livery = actual_livery;
-                                aircraft_info.atc_model = actual_atc_model;
-                                aircraft_info.atc_id = actual_atc_id;
-                                aircraft_info.object_class = object_class;
-                                aircraft_info.category = category;
-                                aircraft_info.num_engines = num_engines;
-                                aircraft_info.engine_type = engine_type;
-                                crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.num_engines, aircraft_info.engine_type));
+
+                                last_known_title = identity.title.clone();
+                                aircraft_info = identity;
+                                crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Livery: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery, aircraft_info.num_engines, aircraft_info.engine_type));
                             }
 
                             // Resumption check — only when airborne

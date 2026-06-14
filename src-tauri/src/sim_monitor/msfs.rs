@@ -477,7 +477,7 @@ impl SimConnectMonitor {
 
                             // Set aircraft title if already known
                             if !aircraft_info.title.is_empty() {
-                                crate::append_log(app, format!("[MSFS] Set aircraft title: {}", aircraft_info.title));
+                                crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Livery: {}]", aircraft_info.title, aircraft_info.livery));
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![aircraft_info.title]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
@@ -686,7 +686,7 @@ impl SimConnectMonitor {
                             aircraft_info.engine_type = engine_type.clone();
                             
                             if let Some(ref conn) = db_conn {
-                                crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Model: {}, ID: {}]", title, atc_model, atc_id));
+                                crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Model: {}, ID: {}, Livery: {}]", title, atc_model, atc_id, livery));
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
