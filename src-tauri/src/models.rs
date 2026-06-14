@@ -222,6 +222,9 @@ pub struct AircraftInfo {
     pub title: String,
     /// Livery name (MSFS `LIVERY NAME` SimVar / X-Plane `acf_livery_path`). May be empty.
     pub livery: String,
+    /// ICAO type designator resolved from the title + livery via the word index.
+    /// May be empty when nothing matched. Distinct from `atc_model` (the sim's own claim).
+    pub resolved_icao: String,
     pub atc_model: String,
     pub atc_id: String,
     pub object_class: String,
@@ -262,6 +265,8 @@ pub struct WebhookFlightSummary {
     pub airframe_name: String,
     #[serde(default)]
     pub livery: String,
+    #[serde(default)]
+    pub resolved_icao: String,
     pub atc_model: String,
     pub atc_id: String,
     pub simulator: String,

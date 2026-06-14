@@ -250,6 +250,8 @@ pub struct FlightSummary {
     pub aircraft_title: String,
     #[serde(default)]
     pub livery: String,
+    #[serde(default)]
+    pub resolved_icao: String,
     pub atc_model: String,
     pub atc_id: String,
     pub max_altitude: f64,
@@ -748,6 +750,14 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         |r| r.get::<_, String>(0),
     ).optional().ok().flatten().unwrap_or_default();
 
+    // ICAO type resolved from title/livery via the word index; optional, empty when
+    // unmatched or for flights logged before this field existed.
+    let resolved_icao = conn.query_row(
+        "SELECT value FROM summary WHERE key = 'resolved_icao'",
+        [],
+        |r| r.get::<_, String>(0),
+    ).optional().ok().flatten().unwrap_or_default();
+
     let mut stmt = conn
         .prepare("SELECT MIN(timestamp), MAX(timestamp) FROM metrics")
         .map_err(|e| {
@@ -805,6 +815,7 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         file_size_bytes: metadata.len(),
         aircraft_title,
         livery,
+        resolved_icao,
         atc_model,
         atc_id,
         max_altitude,

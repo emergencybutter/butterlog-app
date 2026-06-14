@@ -493,6 +493,9 @@ impl SimConnectMonitor {
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![aircraft_info.livery]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('resolved_icao', ?1)", params![aircraft_info.resolved_icao]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
@@ -553,6 +556,7 @@ impl SimConnectMonitor {
                                          log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                          airframe_name: aircraft_info.title.clone(),
                                          livery: aircraft_info.livery.clone(),
+                                         resolved_icao: aircraft_info.resolved_icao.clone(),
                                          atc_model: aircraft_info.atc_model.clone(),
                                          atc_id: aircraft_info.atc_id.clone(),
                                          simulator: "MSFS".to_string(),
@@ -693,13 +697,29 @@ impl SimConnectMonitor {
                             aircraft_info.category = category.clone();
                             aircraft_info.num_engines = num_engines;
                             aircraft_info.engine_type = engine_type.clone();
-                            
+
+                            // Resolve an ICAO type from the title + livery via the word index.
+                            let resolved_icao = match icao_index.as_ref().and_then(|idx| idx.find(&format!("{} {}", title, livery))) {
+                                Some(m) => {
+                                    crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> {} (score {:.2})", title, livery, m.icao, m.score));
+                                    m.icao
+                                }
+                                None => {
+                                    crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> no ICAO match", title, livery));
+                                    String::new()
+                                }
+                            };
+                            aircraft_info.resolved_icao = resolved_icao.clone();
+
                             if let Some(ref conn) = db_conn {
                                 crate::append_log(app, format!("[MSFS] Set aircraft title: {} [Model: {}, ID: {}, Livery: {}]", title, atc_model, atc_id, livery));
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![livery.clone()]) {
+                                    crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                }
+                                if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('resolved_icao', ?1)", params![resolved_icao.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model.clone()]) {
@@ -713,6 +733,7 @@ impl SimConnectMonitor {
                             let mut info = aircraft_info_mutex.lock();
                             info.title = title;
                             info.livery = livery;
+                            info.resolved_icao = resolved_icao;
                             info.atc_model = atc_model;
                             info.atc_id = atc_id;
                             info.object_class = object_class;
@@ -818,6 +839,9 @@ impl SimConnectMonitor {
                                         crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                     }
                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![aircraft_info.livery]) {
+                                        crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
+                                    }
+                                    if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('resolved_icao', ?1)", params![aircraft_info.resolved_icao]) {
                                         crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                     }
                                     if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![aircraft_info.atc_model]) {
@@ -998,6 +1022,7 @@ impl SimConnectMonitor {
                                             log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                             airframe_name: aircraft_info.title.clone(),
                                             livery: aircraft_info.livery.clone(),
+                                            resolved_icao: aircraft_info.resolved_icao.clone(),
                                             atc_model: aircraft_info.atc_model.clone(),
                                             atc_id: aircraft_info.atc_id.clone(),
                                             simulator: "MSFS".to_string(),
@@ -1108,6 +1133,7 @@ impl SimConnectMonitor {
                                                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                     airframe_name: aircraft_info.title.clone(),
                                                     livery: aircraft_info.livery.clone(),
+                                                    resolved_icao: aircraft_info.resolved_icao.clone(),
                                                     atc_model: aircraft_info.atc_model.clone(),
                                                     atc_id: aircraft_info.atc_id.clone(),
                                                     simulator: "MSFS".to_string(),

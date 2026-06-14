@@ -123,7 +123,25 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
         _ => "unknown".to_string(),
     };
 
-    AircraftInfo { title, livery, atc_model, atc_id, object_class, category, num_engines, engine_type }
+    AircraftInfo { title, livery, resolved_icao: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
+}
+
+/// Resolve an ICAO type from the title + livery via the word index, set it on `identity`,
+/// and log the result. No-op when the index is unavailable.
+fn resolve_icao_from_index(
+    app: &AppHandle,
+    index: Option<&crate::icao_index::IcaoIndex>,
+    identity: &mut AircraftInfo,
+) {
+    let Some(index) = index else { return };
+    let query = format!("{} {}", identity.title, identity.livery);
+    match index.find(&query) {
+        Some(m) => {
+            crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> {} (score {:.2})", identity.title, identity.livery, m.icao, m.score));
+            identity.resolved_icao = m.icao;
+        }
+        None => crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> no ICAO match", identity.title, identity.livery)),
+    }
 }
 
 
@@ -341,6 +359,12 @@ impl XPlaneMonitor {
         let mut last_pos: Option<(f64, f64)> = None;
         let mut last_known_title = String::new();
         let mut last_identify_attempt: Option<std::time::Instant> = None;
+
+        // Word index for resolving an ICAO type from the title + livery; built once.
+        let icao_index = app
+            .try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>()
+            .as_deref()
+            .map(crate::icao_index::IcaoIndex::build);
         let mut last_parking_brake: Option<bool> = None;
         let mut departure_set = false;
 
@@ -540,8 +564,9 @@ impl XPlaneMonitor {
                             && last_identify_attempt.map_or(true, |t| t.elapsed().as_secs() >= 60)
                         {
                             last_identify_attempt = Some(std::time::Instant::now());
-                            let identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
+                            let mut identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
                             if !identity.title.is_empty() {
+                                resolve_icao_from_index(&app, icao_index.as_ref(), &mut identity);
                                 aircraft_info = identity.clone();
                                 { let mut info = aircraft_info_mutex.lock(); *info = identity; }
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft (pre-flight): {} [Model: {}, ID: {}, Livery: {}]", aircraft_info.title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery));
@@ -563,7 +588,7 @@ impl XPlaneMonitor {
 
                             // Refresh aircraft identity on movement. Strings/config datarefs
                             // aren't subscribable, so these are one-shot REST reads.
-                            let identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
+                            let mut identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
 
                             if let Some(pmax) = fetch_xplane_dataref_double(&client, &rest_url, "sim/aircraft/engine/acf_pmax").await {
                                 if pmax > 0.0 {
@@ -580,6 +605,7 @@ impl XPlaneMonitor {
                                 }
 
                                 last_known_title = identity.title.clone();
+                                resolve_icao_from_index(&app, icao_index.as_ref(), &mut identity);
                                 aircraft_info = identity;
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Livery: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery, aircraft_info.num_engines, aircraft_info.engine_type));
                             }
@@ -648,17 +674,20 @@ impl XPlaneMonitor {
                             if !aircraft_info.title.is_empty() {
                                  let title_str = aircraft_info.title.clone();
                                  let livery_str = aircraft_info.livery.clone();
+                                 let resolved_icao_str = aircraft_info.resolved_icao.clone();
                                  let atc_model_str = aircraft_info.atc_model.clone();
                                  let atc_id_str = aircraft_info.atc_id.clone();
                                  if let Some(ref conn) = db_conn {
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('aircraft_title', ?1)", params![title_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('livery', ?1)", params![livery_str.clone()]);
+                                     let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('resolved_icao', ?1)", params![resolved_icao_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_model', ?1)", params![atc_model_str.clone()]);
                                      let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id_str.clone()]);
                                  }
                                  let mut info = aircraft_info_mutex.lock();
                                  info.title = title_str;
                                  info.livery = livery_str;
+                                 info.resolved_icao = resolved_icao_str;
                                  info.atc_model = atc_model_str;
                                  info.atc_id = atc_id_str;
                                  info.object_class = aircraft_info.object_class.clone();
@@ -799,6 +828,7 @@ impl XPlaneMonitor {
                                              log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                              airframe_name: aircraft_info.title.clone(),
                                              livery: aircraft_info.livery.clone(),
+                                             resolved_icao: aircraft_info.resolved_icao.clone(),
                                              atc_model: aircraft_info.atc_model.clone(),
                                              atc_id: aircraft_info.atc_id.clone(),
                                              simulator: "X-Plane".to_string(),
@@ -908,6 +938,7 @@ impl XPlaneMonitor {
                                                  log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                                                  airframe_name: aircraft_info.title.clone(),
                                                  livery: aircraft_info.livery.clone(),
+                                                 resolved_icao: aircraft_info.resolved_icao.clone(),
                                                  atc_model: aircraft_info.atc_model.clone(),
                                                  atc_id: aircraft_info.atc_id.clone(),
                                                  simulator: "X-Plane".to_string(),
@@ -1053,6 +1084,7 @@ impl XPlaneMonitor {
                     log_path: current_log_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                     airframe_name: aircraft_info.title.clone(),
                     livery: aircraft_info.livery.clone(),
+                    resolved_icao: aircraft_info.resolved_icao.clone(),
                     atc_model: aircraft_info.atc_model.clone(),
                     atc_id: aircraft_info.atc_id.clone(),
                     simulator: "X-Plane".to_string(),
