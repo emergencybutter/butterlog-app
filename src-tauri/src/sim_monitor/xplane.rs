@@ -175,7 +175,6 @@ impl XPlaneMonitor {
             "sim/flightmodel/position/mag_psi",
             "sim/cockpit2/fuel/fuel_quantity",
             "sim/flightmodel/forces/g_nrml",
-            "sim/aircraft/view/acf_ui_name",
             "sim/cockpit2/gauges/indicators/altitude_ft_pilot",
             "sim/cockpit/misc/barometer_setting",
             "sim/weather/temperature_ambient_c",
