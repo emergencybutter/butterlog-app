@@ -1,5 +1,8 @@
 mod aircraft_characteristics;
 mod airports;
+// Not yet wired into a caller; the identity resolver will consume it.
+#[allow(dead_code)]
+mod icao_index;
 mod config;
 mod flight_analyzer;
 mod flight_log_manager;
