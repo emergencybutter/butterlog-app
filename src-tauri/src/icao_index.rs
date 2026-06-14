@@ -40,6 +40,14 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("dreamliner", "B788"),
     ("super hornet", "F18"),
     ("warthog", "A10"),
+    ("Long-EZ", "LGEZ"),
+    ("DR400", "DR40"),
+    ("Fox2", "FOX"),
+    ("UH-1H", "UH1"),
+    ("M500", "P46T"),
+    ("Sting", "TL20"),
+    ("C414AW", "C414"),
+    ("Vision", "SF50"),
 ];
 
 struct Posting {
