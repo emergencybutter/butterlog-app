@@ -11,9 +11,8 @@ The hard part: sender and receiver may be different sims with **disjoint model
 libraries and incompatible identity vocabularies**:
 
 - MSFS describes aircraft by installed **title** (e.g. `"Boeing 747-8i United"`) plus
-  ATC strings; liveries are usually *separate installed titles*.
-- X-Plane describes aircraft by **CSL `model_id`** plus a livery path; matching keys are
-  `(icao, airline, livery)`.
+  ATC strings; liveries are usually *separate installed titles* but sometimes there is a livery name too. Worse, these are free form string and there is no rigorous way to extract the type and the airline.
+- X-Plane describes aircraft by **CSL `package_name` + `model_id`**, `model_id` is of the format `{icao_type_designator}_{airline_icao}`.
 
 Today there are two independent matchers with duplicated, drifting heuristics:
 `find_best_multiplayer_model` in the app (MSFS path) and the CSL map cascade in
@@ -41,12 +40,13 @@ Two corollaries that drive the wire format:
 
 ```jsonc
 {
-  "v": 2,                          // schema version — P2P has mixed client versions
+   "v": 2,                          // schema version — P2P has mixed client versions
   "sim": "msfs" | "xplane",        // enables a same-sim exact-match fast path
   "native_model": "<title|csl_model_id>",   // used ONLY for the same-sim tier
+  "registration": "N12345",        // tail; soft signal
 
   // --- portable type identity (primary key) ---
-  "type_icao": "B738",             // MSFS ATC MODEL / XP acf_ICAO, validated
+  "type_icao": "B738",             // deduced from MSFS ATC MODEL or title / XP acf_ICAO, validated
 
   // --- fallback descriptor: consulted ONLY when type_icao is empty or
   //     unknown to the receiver's reference table ---
@@ -57,11 +57,12 @@ Two corollaries that drive the wire format:
   },
 
   // --- portable livery identity ---
-  "airline_icao": "UAL", "airline_iata": "UA", "airline_name": "United",
-  "livery_variant": "std",         // normalized scheme tag (see "Livery variants")
-  "livery_era": 2019,              // optional refresh year the scheme belongs to
-  "registration": "N12345",        // tail; soft signal
-  "livery_hint": "<raw sim livery>",   // same-sim only, never a cross-sim key
+  "livery": {
+   "airline_icao": "UAL",
+   "livery_variant": "std",         // normalized scheme tag (see "Livery variants")
+   "livery_era": 2019,              // optional refresh year the scheme belongs to
+   "livery_hint": "<raw sim livery>",   // same-sim only, never a cross-sim key
+  },
 
   "metrics": { /* telemetry */ }
 }
@@ -73,6 +74,14 @@ Two corollaries that drive the wire format:
 |-------|------------------|
 | `wtc` | Pure function of `type_icao`; receiver derives from its own table. Sending it risks cross-peer skew. When ICAO is unknown it can be approximated locally from `engine_type`+`num_engines`. |
 | `manufacturer` | Derivable from `type_icao`; only used for family/similarity matching, which the receiver does against its own table. |
+
+### `type_icao` and `airline_icao` determination
+
+When an title/aircraft name is detected, we try multiple avenue to guess its `type_icao` and `airline_icao`.
+First we look in a database that maps (aircraft title/name, livery name/path) -> (`type_icao`, `airline_icao`). Airline icao can be 'none'.
+If not found: We look in all the data we have, title, livery name (or livery path for xplane), `acf_ICAO`, `ATC MODEL`. We look for all valid icao types as well as all valid airlines. For airlines we have a map: airline name -> icao.
+
+If after this we fail to determine the type we log all the info and send it to the service.
 
 ### The `raw` fallback block
 
@@ -192,11 +201,7 @@ an older era gets the closest legacy scheme the receiver actually has.
 
 ## The MSFS-specific lever
 
-MSFS `ai_create_non_atc_aircraft` takes only a *title* — no separate livery selection.
-**But MSFS liveries are themselves separate installed titles** (e.g.
-`"Boeing 747-8i United"`). So tiers 1–2 still apply for MSFS by scoring
-`airline_icao` / `airline_name` against installed title strings — airline matching
-collapses into title matching rather than being lost.
+MSFS `ai_create_non_atc_aircraft_ex1` takes *title* and optional *livery*. These should come from the result of SimConnect_EnumerateSimObjectsAndLiveries.
 
 ## Shared reference tables (single source of truth)
 
