@@ -273,6 +273,7 @@ mod tests {
             ac("PC12", "PILATUS", "Pilatus PC-12", "Pilatus PC-12/45"),
             ac("BE10", "BEECH", "Beech King Air 100", "Beech 100 King Air"),
             ac("DR40", "ROBIN", "Robin Regent", "Robin Regent"),
+            ac("FOX", "DENNEY", "Kitfox", "Kitfox"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -330,6 +331,14 @@ mod tests {
         let idx = IcaoIndex::build(&test_db());
         // A glued "MAX8" suffix should pin the specific MAX variant, not an arbitrary 737.
         assert_eq!(top(&idx, "iFly 737-MAX8 Alaska Airlines N801AK (178Seat)"), "B38M");
+    }
+
+    #[test]
+    fn resolves_nickname_among_noise() {
+        let idx = IcaoIndex::build(&test_db());
+        // "Fox2" is a curated nickname for the Kitfox (FOX); the surrounding model/variant
+        // noise carries no competing type signal.
+        assert_eq!(top(&idx, "Fox2 KY56 (915 iS)"), "FOX");
     }
 
     #[test]
