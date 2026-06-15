@@ -402,7 +402,6 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                 <div>
                     <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: "5px" }}>
                         {flight.aircraftTitle}
-                        {flight.atcModel && flight.atcModel !== "Unknown" && flight.atcModel.trim() !== "" ? ` [${flight.atcModel}]` : ""}
                         {flight.atcId && flight.atcId !== "Unknown" && flight.atcId.trim() !== "" ? ` (${flight.atcId})` : ""}
                         {flight.livery && flight.livery.trim() !== "" ? ` — ${liveryDisplay(flight.livery)}` : ""}
                     </div>

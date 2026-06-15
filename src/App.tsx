@@ -411,10 +411,6 @@ function App() {
                                 <span className="mp-label">Aircraft:</span>
                                 <div style={{ fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.aircraft}>{ac.aircraft}</div>
                               </div>
-                              <div>
-                                <span className="mp-label">ATC Model:</span>
-                                <div style={{ fontWeight: "600" }}>{ac.atcModel || "Unknown"}</div>
-                              </div>
                               <div style={{ gridColumn: "span 2" }}>
                                 <span className="mp-label">Engine/Class:</span>
                                 <div style={{ color: "#aaa" }}>
