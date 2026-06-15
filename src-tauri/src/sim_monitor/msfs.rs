@@ -197,18 +197,13 @@ impl SimConnectMonitor {
         let mut flight_ongoing = false;
         let mut departure_set = false;
 
-        // Build the ICAO word index once so each enumerated AI-aircraft title can be
-        // resolved to an ICAO type designator and logged (diagnostic for the matcher).
-        let icao_index = app
-            .try_state::<CharacteristicsDatabase>()
-            .as_deref()
-            .map(crate::icao_index::IcaoIndex::build);
-
-        // Airline word index, used to identify operators from titles/liveries.
-        let airline_index = app
-            .try_state::<crate::airlines::AirlinesDatabase>()
-            .as_deref()
-            .map(crate::airline_index::AirlineIndex::build);
+        // Word indexes for resolving an ICAO type and operating airline from a title +
+        // livery. Their backing CSVs load on background threads at startup, so they may
+        // not be ready when monitoring begins; each is built lazily in the loop once its
+        // database appears (mirroring how airports/runways are read on demand). Until then
+        // resolution is disabled and the use-site logs the misses.
+        let mut icao_index: Option<crate::icao_index::IcaoIndex> = None;
+        let mut airline_index: Option<crate::airline_index::AirlineIndex> = None;
 
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
@@ -243,6 +238,28 @@ impl SimConnectMonitor {
         loop {
             if !*running.lock() {
                 break;
+            }
+
+            // Lazily build the word indexes once their databases finish loading, so a
+            // session that started before the background CSV load isn't stuck without
+            // type/airline resolution for its whole duration.
+            if icao_index.is_none() {
+                if let Some(db) = app.try_state::<CharacteristicsDatabase>() {
+                    crate::append_log(app, format!(
+                        "[MSFS] Aircraft characteristics ready ({} entries); building ICAO type index.",
+                        db.characteristics.len()
+                    ));
+                    icao_index = Some(crate::icao_index::IcaoIndex::build(&db));
+                }
+            }
+            if airline_index.is_none() {
+                if let Some(db) = app.try_state::<crate::airlines::AirlinesDatabase>() {
+                    crate::append_log(app, format!(
+                        "[MSFS] Airlines ready ({} entries); building airline index.",
+                        db.airlines.len()
+                    ));
+                    airline_index = Some(crate::airline_index::AirlineIndex::build(&db));
+                }
             }
 
             // Handle remote aircraft updates

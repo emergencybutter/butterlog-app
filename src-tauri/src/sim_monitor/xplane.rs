@@ -374,21 +374,39 @@ impl XPlaneMonitor {
         let mut last_known_title = String::new();
         let mut last_identify_attempt: Option<std::time::Instant> = None;
 
-        // Word indexes for resolving an ICAO type and operating airline from the
-        // title + livery; built once per connection.
-        let icao_index = app
-            .try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>()
-            .as_deref()
-            .map(crate::icao_index::IcaoIndex::build);
-        let airline_index = app
-            .try_state::<crate::airlines::AirlinesDatabase>()
-            .as_deref()
-            .map(crate::airline_index::AirlineIndex::build);
+        // Word indexes for resolving an ICAO type and operating airline from the title +
+        // livery. Their backing CSVs load on background threads at startup and may not be
+        // ready when the connection begins, so each is built lazily in the loop once its
+        // database appears (mirroring how airports/runways are read on demand).
+        let mut icao_index: Option<crate::icao_index::IcaoIndex> = None;
+        let mut airline_index: Option<crate::airline_index::AirlineIndex> = None;
         let mut last_parking_brake: Option<bool> = None;
         let mut departure_set = false;
 
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock() { break; }
+
+            // Lazily build the word indexes once their databases finish loading, so a
+            // connection that started before the background CSV load isn't stuck without
+            // type/airline resolution for its whole duration.
+            if icao_index.is_none() {
+                if let Some(db) = app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>() {
+                    crate::append_log(&app, format!(
+                        "[X-Plane] Aircraft characteristics ready ({} entries); building ICAO type index.",
+                        db.characteristics.len()
+                    ));
+                    icao_index = Some(crate::icao_index::IcaoIndex::build(&db));
+                }
+            }
+            if airline_index.is_none() {
+                if let Some(db) = app.try_state::<crate::airlines::AirlinesDatabase>() {
+                    crate::append_log(&app, format!(
+                        "[X-Plane] Airlines ready ({} entries); building airline index.",
+                        db.airlines.len()
+                    ));
+                    airline_index = Some(crate::airline_index::AirlineIndex::build(&db));
+                }
+            }
 
             match msg {
                 Ok(Message::Text(text)) => {
