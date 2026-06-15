@@ -41,14 +41,15 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("super hornet", "F18"),
     ("warthog", "A10"),
     ("Long-EZ", "LGEZ"),
-    ("DR400", "DR40"),
     ("Fox2", "FOX"),
     ("UH-1H", "UH1"),
     ("M500", "P46T"),
     ("Sting", "TL20"),
-    ("C414AW", "C414"),
     ("Vision", "SF50"),
 ];
+
+/// Shortest ICAO code length considered when matching a code as the prefix of a word.
+const MIN_CODE_PREFIX_LEN: usize = 3;
 
 struct Posting {
     icao: u32,
@@ -66,6 +67,8 @@ pub struct IcaoIndex {
     icaos: Vec<String>,
     postings: HashMap<String, Vec<Posting>>,
     idf: HashMap<String, f32>,
+    /// Lowercased set of all ICAO codes, for prefix matching against query words.
+    code_set: HashSet<String>,
 }
 
 /// Split a free string into normalized tokens: lowercased, broken on any non-alphanumeric
@@ -147,7 +150,43 @@ impl IcaoIndex {
             .map(|(token, plist)| (token.clone(), (1.0 + n / plist.len() as f32).ln()))
             .collect();
 
-        Self { icaos, postings, idf }
+        let code_set: HashSet<String> = by_code.keys().cloned().collect();
+
+        Self { icaos, postings, idf, code_set }
+    }
+
+    /// Accumulate IDF-weighted postings for one token, counting each token at most once.
+    fn accumulate(&self, token: &str, scores: &mut HashMap<u32, f32>, seen: &mut HashSet<String>) {
+        if !seen.insert(token.to_string()) {
+            return;
+        }
+        if let (Some(plist), Some(&idf)) = (self.postings.get(token), self.idf.get(token)) {
+            for posting in plist {
+                *scores.entry(posting.icao).or_insert(0.0) += idf * posting.weight;
+            }
+        }
+    }
+
+    /// If an ICAO code is an exact, *proper* prefix of `token` and the trailing suffix
+    /// does not contain a `neo`/`max` variant marker, return that code (the longest such).
+    /// e.g. `b738w` -> `b738`, `dr400` -> `dr40`; but `a320neo` / `b737max` -> `None`.
+    fn code_prefix_of(&self, token: &str) -> Option<String> {
+        if !token.is_ascii() {
+            return None;
+        }
+        let n = token.len();
+        // Code length `i` is a proper prefix (suffix non-empty), longest first.
+        for i in (MIN_CODE_PREFIX_LEN..n).rev() {
+            let prefix = &token[..i];
+            if self.code_set.contains(prefix) {
+                let suffix = &token[i..];
+                if suffix.contains("neo") || suffix.contains("max") {
+                    return None;
+                }
+                return Some(prefix.to_string());
+            }
+        }
+        None
     }
 
     /// Return up to `limit` ICAO candidates for `query`, best score first.
@@ -156,14 +195,11 @@ impl IcaoIndex {
         let mut seen: HashSet<String> = HashSet::new();
 
         for token in tokenize(query) {
-            // Count each distinct query token once.
-            if !seen.insert(token.clone()) {
-                continue;
-            }
-            if let (Some(plist), Some(&idf)) = (self.postings.get(&token), self.idf.get(&token)) {
-                for posting in plist {
-                    *scores.entry(posting.icao).or_insert(0.0) += idf * posting.weight;
-                }
+            self.accumulate(&token, &mut scores, &mut seen);
+            // A type code that is an exact prefix of the word (with a non-neo/max suffix)
+            // implies that exact type — credit it as if the code appeared verbatim.
+            if let Some(code) = self.code_prefix_of(&token) {
+                self.accumulate(&code, &mut scores, &mut seen);
             }
         }
 
@@ -217,8 +253,10 @@ mod tests {
             ac("B737", "BOEING", "Boeing 737-700", "Boeing B737-700"),
             ac("B744", "BOEING", "Boeing 747-400", "Boeing B747-400"),
             ac("C172", "CESSNA", "Cessna Skyhawk 172/Cutlass", "Cessna 172S Skyhawk SP"),
+            ac("C414", "CESSNA", "Cessna 414", "Cessna 414 Chancellor"),
             ac("PC12", "PILATUS", "Pilatus PC-12", "Pilatus PC-12/45"),
             ac("BE10", "BEECH", "Beech King Air 100", "Beech 100 King Air"),
+            ac("DR40", "ROBIN", "Robin Regent", "Robin Regent"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -260,6 +298,23 @@ mod tests {
     fn nickname_source() {
         let idx = IcaoIndex::build(&test_db());
         assert_eq!(top(&idx, "the queen, a jumbo jet"), "B744");
+    }
+
+    #[test]
+    fn code_as_prefix_of_word_implies_type() {
+        let idx = IcaoIndex::build(&test_db());
+        assert_eq!(top(&idx, "B738W"), "B738");      // winglets suffix
+        assert_eq!(top(&idx, "DR400"), "DR40");      // code DR40 is a prefix of dr400
+        assert_eq!(top(&idx, "C414AW"), "C414");     // suffix "aw"
+        assert_eq!(top(&idx, "PMDG B738BCF American"), "B738");
+    }
+
+    #[test]
+    fn neo_max_suffix_is_not_assumed() {
+        let idx = IcaoIndex::build(&test_db());
+        // A320neo is really A20N and B737MAX is B38M — don't infer the base type.
+        assert!(idx.find("A320neo").is_none());
+        assert!(idx.find("B737MAX").is_none());
     }
 
     #[test]
