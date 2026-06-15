@@ -386,3 +386,6 @@ TEX2,TEX2,RAYTHEON,Raytheon Texan 2,Raytheon T-6B,Turboprop,1,B,,,I,1A,103,,,33.
 TOBA,TOBA,SOCATA,Socata TB-10 Tobago,Socata TB-10 Tobago,Piston,1,A,,,I,1A,65,,,32.8,,25.4,9.9,6.5,6.5,8.4,"2,530","2,530",S,Light,"1,301.1",Fixed-wing,Small,I,F,F,F,,I,2,Yes,51,"1,566",,,,,,,,,,,,,,,,,
 V22,V22,BELL-BOEING,Bell V-22 Osprey,Bell-Boeing V-22 Osprey,Turboshaft,2,N/A,,,II,2A,N/A,,,45.8,,63.0,22.1,24.3,24.3,16.2,"60,500",N/A,D,Medium,"3,796.4",Tiltrotor,Large,G,E,D,D,38.1,II,N/A,Yes ,400,"17,294",,,,,,,,,,,,,,,,,
 WW24,WW24,IAI,IAI 1124 Westwind,IAI 1124 Westwind,Jet,2,C,,,I,1B,129,,,44.8,,52.3,15.8,23.0,23.0,12.0,"23,500","19,000",S,Medium,"3,140.0",Fixed-wing,Small+,H,F,E,E,,III,7,Yes,99,"14,137",,,,,,,,,,,,,,,,,
+CC19,CC19,CUBCRAFTERS,CubCrafters XCub,CubCrafters CC19-180 XCub,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+SREY,SREY,PROGRESSIVE AERODYNE,SeaRey,Progressive Aerodyne SeaRey,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Amphibian,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+C408,C408,CESSNA,Cessna 408 SkyCourier,Cessna 408 SkyCourier,Turboprop,2,,,,,,,,,,,,,,,,,,,Medium,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,

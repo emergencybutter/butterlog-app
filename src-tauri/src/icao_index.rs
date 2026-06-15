@@ -52,6 +52,15 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("MAX7", "B37M"),
     ("MAX8", "B38M"),
     ("MAX9", "B39M"),
+    // Other glued model/variant shorthands the model columns store split or under a
+    // different code, so the joined query token would otherwise match nothing: the ATR
+    // family ("ATR72" vs code AT72), the neo suffix (the code is A20N/A21N, not A320/A321),
+    // and the FlyByWire-style "A380X" marketing name.
+    ("ATR72", "AT72"),
+    ("ATR42", "AT42"),
+    ("A320neo", "A20N"),
+    ("A321neo", "A21N"),
+    ("A380X", "A388"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -92,10 +101,24 @@ fn tokenize(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
+        .map(strip_addon_prefix)
         .map(canonicalize)
         .filter(|t| t.len() >= 2 || t.chars().any(|c| c.is_ascii_digit()))
         .filter(|t| !ADDON_DEVELOPERS.contains(&t.as_str()))
         .collect()
+}
+
+/// Strip a leading add-on developer/studio name glued to a model token (e.g. a title
+/// "FenixA321" tokenizes to "fenixa321" -> "a321"), so the embedded type still resolves.
+/// Returns the token unchanged when it doesn't start with a known developer name, or is
+/// exactly one (those are dropped by the stopword filter instead).
+fn strip_addon_prefix(token: &str) -> &str {
+    for dev in ADDON_DEVELOPERS {
+        if token.len() > dev.len() && token.starts_with(dev) {
+            return &token[dev.len()..];
+        }
+    }
+    token
 }
 
 fn canonicalize(token: impl Into<String>) -> String {
@@ -264,8 +287,13 @@ mod tests {
         let rows = [
             ac("A320", "AIRBUS", "Airbus A320", "Airbus A320-231"),
             ac("A321", "AIRBUS", "Airbus A321", "Airbus A321-231"),
+            ac("A20N", "AIRBUS", "Airbus A320 Neo", "Airbus A320-271N"),
+            ac("A21N", "AIRBUS", "Airbus A321 Neo", "Airbus A321-251N"),
+            ac("A388", "AIRBUS", "Airbus A380-800", "Airbus A380-841"),
+            ac("AT72", "ATR", "ATR-72-201/202", "ATR 72-200"),
             ac("B738", "BOEING", "Boeing 737-800", "Boeing B737-800"),
             ac("B737", "BOEING", "Boeing 737-700", "Boeing B737-700"),
+            ac("B733", "BOEING", "Boeing 737-300", "Boeing B737-300"),
             ac("B38M", "BOEING", "Boeing 737 MAX 8", "Boeing B737-8 Max"),
             ac("B744", "BOEING", "Boeing 747-400", "Boeing B747-400"),
             ac("C172", "CESSNA", "Cessna Skyhawk 172/Cutlass", "Cessna 172S Skyhawk SP"),
@@ -274,6 +302,9 @@ mod tests {
             ac("BE10", "BEECH", "Beech King Air 100", "Beech 100 King Air"),
             ac("DR40", "ROBIN", "Robin Regent", "Robin Regent"),
             ac("FOX", "DENNEY", "Kitfox", "Kitfox"),
+            ac("CC19", "CUBCRAFTERS", "CubCrafters XCub", "CubCrafters CC19-180 XCub"),
+            ac("SREY", "PROGRESSIVE AERODYNE", "SeaRey", "Progressive Aerodyne SeaRey"),
+            ac("C408", "CESSNA", "Cessna 408 SkyCourier", "Cessna 408 SkyCourier"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -342,10 +373,42 @@ mod tests {
     }
 
     #[test]
-    fn neo_max_suffix_is_not_assumed() {
+    fn strips_developer_name_glued_to_model() {
         let idx = IcaoIndex::build(&test_db());
-        // A320neo is really A20N and B737MAX is B38M — don't infer the base type.
-        assert!(idx.find("A320neo").is_none());
+        // Add-on developer name fused to the model (no separator) still resolves the type.
+        assert_eq!(top(&idx, "FenixA320 IAE SL"), "A320");
+        assert_eq!(top(&idx, "FenixA321 IAE WF TC"), "A321");
+        assert_eq!(top(&idx, "FenixA321 IAE SL TC"), "A321");
+    }
+
+    #[test]
+    fn resolves_glued_variant_shorthands() {
+        let idx = IcaoIndex::build(&test_db());
+        // Joined model/variant forms whose tokens the data stores split or under another code.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft ATR72-200F"), "AT72");
+        assert_eq!(top(&idx, "Pride A380X"), "A388");
+        assert_eq!(top(&idx, "A320neo V2"), "A20N");
+        // A code that is a proper prefix of a token (with a benign suffix) still resolves.
+        assert_eq!(top(&idx, "FSLTL_FAIB_B733F_Clever_Cargo"), "B733");
+    }
+
+    #[test]
+    fn resolves_light_ga_types() {
+        let idx = IcaoIndex::build(&test_db());
+        // Light GA / experimental types resolve from a distinctive model word or the code.
+        assert_eq!(top(&idx, "XCub Passengers Skis"), "CC19");
+        assert_eq!(top(&idx, "SeaRey Elite Green (Factory Build)"), "SREY");
+        assert_eq!(top(&idx, "SeaRey Elite White (Factory Build)"), "SREY");
+        assert_eq!(top(&idx, "Microsoft PassiveAircraft C408 Passenger"), "C408");
+    }
+
+    #[test]
+    fn neo_and_max_variants_resolve_to_their_codes() {
+        let idx = IcaoIndex::build(&test_db());
+        // The neo variant has its own code; the glued form resolves to it (not base A320).
+        assert_eq!(top(&idx, "A320neo"), "A20N");
+        // ...but a bare "MAX" with no variant number stays unresolved (ambiguous between
+        // MAX 7/8/9), rather than being assumed to be the base 737.
         assert!(idx.find("B737MAX").is_none());
     }
 
