@@ -48,6 +48,14 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("Vision", "SF50"),
 ];
 
+/// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
+/// aircraft titles and livery paths but identify neither the aircraft type nor the operating
+/// airline. Dropped during tokenization for both the ICAO-type and airline indexes.
+pub const ADDON_DEVELOPERS: &[&str] = &[
+    "ifly", "blacksquare", "fsreborn", "pmdg", "fenix", "flightsimware",
+    "asobo", "fsltl", "passiveaircraft", "laminar",
+];
+
 /// Shortest ICAO code length considered when matching a code as the prefix of a word.
 const MIN_CODE_PREFIX_LEN: usize = 3;
 
@@ -80,6 +88,7 @@ fn tokenize(s: &str) -> Vec<String> {
         .filter(|t| !t.is_empty())
         .map(canonicalize)
         .filter(|t| t.len() >= 2 || t.chars().any(|c| c.is_ascii_digit()))
+        .filter(|t| !ADDON_DEVELOPERS.contains(&t.as_str()))
         .collect()
 }
 
@@ -321,5 +330,15 @@ mod tests {
     fn no_match_returns_none() {
         let idx = IcaoIndex::build(&test_db());
         assert!(idx.find("spaceship zzzqqq").is_none());
+    }
+
+    #[test]
+    fn ignores_addon_developer_names() {
+        let idx = IcaoIndex::build(&test_db());
+        // Add-on studio names in the title must not affect type resolution.
+        assert_eq!(top(&idx, "Fenix Airbus A320"), "A320");
+        assert_eq!(top(&idx, "iFly Boeing 737-800"), "B738");
+        // A title made up only of studio names carries no type signal.
+        assert!(idx.find("PassiveAircraft Laminar").is_none());
     }
 }
