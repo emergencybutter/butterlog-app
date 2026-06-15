@@ -266,6 +266,14 @@ export function FlightLogs({ onViewDetails, currentFlightId }: { onViewDetails: 
                                                         {s.atcModel && s.atcModel !== "Unknown" && s.atcModel.trim() !== "" ? ` [${s.atcModel}]` : ""}
                                                         {s.atcId && s.atcId !== "Unknown" && s.atcId.trim() !== "" ? ` (${s.atcId})` : ""}
                                                     </p>
+                                                    {(s.resolvedIcao?.trim() || s.resolvedAirline?.trim()) && (
+                                                        <p>
+                                                            <span style={{ color: isCurrent ? "#81c784" : "#888" }}>Deduced:</span>
+                                                            {s.resolvedIcao && s.resolvedIcao.trim() !== "" ? ` ${s.resolvedIcao}` : ""}
+                                                            {s.resolvedIcao?.trim() && s.resolvedAirline?.trim() ? " ·" : ""}
+                                                            {s.resolvedAirline && s.resolvedAirline.trim() !== "" ? ` ${s.resolvedAirline}` : ""}
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div>
                                                     <p><span style={{ color: isCurrent ? "#81c784" : "#888" }}>Max Altitude:</span> {s.maxAltitude.toFixed(0)} ft</p>

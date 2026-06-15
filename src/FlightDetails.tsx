@@ -406,6 +406,14 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                         {flight.atcId && flight.atcId !== "Unknown" && flight.atcId.trim() !== "" ? ` (${flight.atcId})` : ""}
                         {flight.livery && flight.livery.trim() !== "" ? ` — ${liveryDisplay(flight.livery)}` : ""}
                     </div>
+                    {(flight.resolvedIcao?.trim() || flight.resolvedAirline?.trim()) && (
+                        <div style={{ fontSize: "0.8rem", color: "#888", marginBottom: "5px" }}>
+                            Deduced:
+                            {flight.resolvedIcao && flight.resolvedIcao.trim() !== "" ? ` ${flight.resolvedIcao}` : ""}
+                            {flight.resolvedIcao?.trim() && flight.resolvedAirline?.trim() ? " ·" : ""}
+                            {flight.resolvedAirline && flight.resolvedAirline.trim() !== "" ? ` ${flight.resolvedAirline}` : ""}
+                        </div>
+                    )}
                     <h2 style={{ margin: 0 }}>
                         {flight.startIcao}{destination ? ` → ${destination}` : ''}
                     </h2>
