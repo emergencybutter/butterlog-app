@@ -46,6 +46,12 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("M500", "P46T"),
     ("Sting", "TL20"),
     ("Vision", "SF50"),
+    // Joined 737 MAX variant shorthands (e.g. a title "737-MAX8"): the model columns store
+    // "MAX" and "8" as separate tokens, so the glued form would otherwise match nothing
+    // distinctive and fall back to an arbitrary 737.
+    ("MAX7", "B37M"),
+    ("MAX8", "B38M"),
+    ("MAX9", "B39M"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -260,6 +266,7 @@ mod tests {
             ac("A321", "AIRBUS", "Airbus A321", "Airbus A321-231"),
             ac("B738", "BOEING", "Boeing 737-800", "Boeing B737-800"),
             ac("B737", "BOEING", "Boeing 737-700", "Boeing B737-700"),
+            ac("B38M", "BOEING", "Boeing 737 MAX 8", "Boeing B737-8 Max"),
             ac("B744", "BOEING", "Boeing 747-400", "Boeing B747-400"),
             ac("C172", "CESSNA", "Cessna Skyhawk 172/Cutlass", "Cessna 172S Skyhawk SP"),
             ac("C414", "CESSNA", "Cessna 414", "Cessna 414 Chancellor"),
@@ -316,6 +323,13 @@ mod tests {
         assert_eq!(top(&idx, "DR400"), "DR40");      // code DR40 is a prefix of dr400
         assert_eq!(top(&idx, "C414AW"), "C414");     // suffix "aw"
         assert_eq!(top(&idx, "PMDG B738BCF American"), "B738");
+    }
+
+    #[test]
+    fn resolves_joined_max_variant() {
+        let idx = IcaoIndex::build(&test_db());
+        // A glued "MAX8" suffix should pin the specific MAX variant, not an arbitrary 737.
+        assert_eq!(top(&idx, "iFly 737-MAX8 Alaska Airlines N801AK (178Seat)"), "B38M");
     }
 
     #[test]
