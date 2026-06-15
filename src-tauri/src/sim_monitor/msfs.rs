@@ -371,7 +371,7 @@ impl SimConnectMonitor {
                             let livery = c_char_array_to_string(&entry.LiveryName);
                             if !title.is_empty() && !ac.contains(&title) {
                                 log_icao_index_match(app, icao_index.as_ref(), "aircraft", &title);
-                                log_airline_index_match(app, airline_index.as_ref(), "aircraft", &title, &livery);
+                                log_airline_index_match(app, airline_index.as_ref(), "aircraft", &title, &livery, false);
                                 ac.push(title);
                             }
                         }
@@ -385,7 +385,7 @@ impl SimConnectMonitor {
                             let livery = c_char_array_to_string(&entry.LiveryName);
                             if !title.is_empty() && !hc.contains(&title) {
                                 log_icao_index_match(app, icao_index.as_ref(), "helicopter", &title);
-                                log_airline_index_match(app, airline_index.as_ref(), "helicopter", &title, &livery);
+                                log_airline_index_match(app, airline_index.as_ref(), "helicopter", &title, &livery, false);
                                 hc.push(title);
                             }
                         }
@@ -724,7 +724,7 @@ impl SimConnectMonitor {
                                 }
                             };
                             aircraft_info.resolved_icao = resolved_icao.clone();
-                            let resolved_airline = log_airline_index_match(app, airline_index.as_ref(), "current", &title, &livery);
+                            let resolved_airline = log_airline_index_match(app, airline_index.as_ref(), "current", &title, &livery, true);
                             aircraft_info.resolved_airline = resolved_airline.clone();
 
                             if let Some(ref conn) = db_conn {
@@ -1330,8 +1330,9 @@ impl SimConnectMonitor {
     }
 }
 
-/// Resolve an enumerated AI-aircraft title against the ICAO word index and log the
-/// result. Used at startup to validate the index against the locally installed models.
+/// Resolve an enumerated AI-aircraft title against the ICAO word index. Used at startup to
+/// validate the index against the locally installed models; only unresolved titles are
+/// logged, since resolved ones are the expected (and noisy) common case.
 fn log_icao_index_match(
     app: &AppHandle,
     index: Option<&crate::icao_index::IcaoIndex>,
@@ -1339,35 +1340,36 @@ fn log_icao_index_match(
     title: &str,
 ) {
     let Some(index) = index else { return };
-    match index.find(title) {
-        Some(m) => crate::append_log(
-            app,
-            format!("[MSFS Index] {} '{}' -> {} (score {:.2})", kind, title, m.icao, m.score),
-        ),
-        None => crate::append_log(
+    if index.find(title).is_none() {
+        crate::append_log(
             app,
             format!("[MSFS Index] {} '{}' -> no ICAO match", kind, title),
-        ),
+        );
     }
 }
 
-/// Identify the operating airline from a title + livery via the airline word index and
-/// log the result. Used for diagnostics on enumerated AI aircraft and the current one.
+/// Identify the operating airline from a title + livery via the airline word index, returning
+/// the matched airline name (empty when none). With `log_on_match` false only unresolved
+/// queries are logged — used for the AI-aircraft enumeration to avoid flooding the log with
+/// the (expected) resolved entries; the current aircraft passes true to log its match.
 fn log_airline_index_match(
     app: &AppHandle,
     index: Option<&crate::airline_index::AirlineIndex>,
     kind: &str,
     title: &str,
     livery: &str,
+    log_on_match: bool,
 ) -> String {
     let Some(index) = index else { return String::new() };
     let query = format!("{} {}", title, livery);
     match index.find(&query) {
         Some(m) => {
-            crate::append_log(
-                app,
-                format!("[MSFS Airline] {} '{}' [{}] -> {} {} (score {:.2})", kind, title, livery, m.icao, m.name, m.score),
-            );
+            if log_on_match {
+                crate::append_log(
+                    app,
+                    format!("[MSFS Airline] {} '{}' [{}] -> {} {} (score {:.2})", kind, title, livery, m.icao, m.name, m.score),
+                );
+            }
             m.name
         }
         None => {

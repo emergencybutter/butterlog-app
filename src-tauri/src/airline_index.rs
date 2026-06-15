@@ -14,6 +14,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::airlines::AirlinesDatabase;
+use crate::icao_index::ADDON_DEVELOPERS;
 
 const W_ICAO: f32 = 4.0;
 const W_CALLSIGN: f32 = 1.5;
@@ -53,8 +54,9 @@ pub struct AirlineIndex {
     names: Vec<String>,
     postings: HashMap<String, Vec<Posting>>,
     idf: HashMap<String, f32>,
-    /// Minimum score for `find` to accept a match, scaled to the table size so a match
-    /// must rest on at least a moderately distinctive word rather than common filler.
+    /// Minimum contribution a *single* token must reach for `find` to accept a match,
+    /// scaled to the table size so a match rests on at least one moderately distinctive
+    /// word rather than common filler or a pile of weak coincidental words.
     min_score: f32,
 }
 
@@ -65,6 +67,7 @@ fn tokenize(s: &str) -> Vec<String> {
         .map(|t| t.to_string())
         .filter(|t| t.len() >= 2 || t.chars().any(|c| c.is_ascii_digit()))
         .filter(|t| !STOPWORDS.contains(&t.as_str()))
+        .filter(|t| !ADDON_DEVELOPERS.contains(&t.as_str()))
         .collect()
 }
 
@@ -108,14 +111,20 @@ impl AirlineIndex {
             .map(|(token, plist)| (token.clone(), (1.0 + n / plist.len() as f32).ln()))
             .collect();
 
-        // 40% of a unique word's IDF: requires at least a moderately distinctive match.
-        let min_score = 0.4 * (1.0 + n).ln();
+        // 60% of a unique word's IDF: the single best supporting token must be at least
+        // this distinctive. Raised from 40% to cut false operators inferred from words
+        // shared by many airlines (e.g. generic "sky"/"wings"-type name fragments).
+        let min_score = 0.6 * (1.0 + n).ln();
 
         Self { icaos, names, postings, idf, min_score }
     }
 
-    pub fn candidates(&self, query: &str, limit: usize) -> Vec<AirlineMatch> {
-        let mut scores: HashMap<u32, f32> = HashMap::new();
+    /// Score `query` against every airline, returning `(airline_idx, summed_score,
+    /// best_single_token_score)`. The summed score ranks candidates; the best single-token
+    /// score is what `find` gates on so a match must rest on one genuinely distinctive word.
+    fn score(&self, query: &str) -> Vec<(u32, f32, f32)> {
+        let mut sums: HashMap<u32, f32> = HashMap::new();
+        let mut bests: HashMap<u32, f32> = HashMap::new();
         let mut seen: HashSet<String> = HashSet::new();
 
         for token in tokenize(query) {
@@ -124,14 +133,26 @@ impl AirlineIndex {
             }
             if let (Some(plist), Some(&idf)) = (self.postings.get(&token), self.idf.get(&token)) {
                 for posting in plist {
-                    *scores.entry(posting.airline).or_insert(0.0) += idf * posting.weight;
+                    let contrib = idf * posting.weight;
+                    *sums.entry(posting.airline).or_insert(0.0) += contrib;
+                    let best = bests.entry(posting.airline).or_insert(0.0);
+                    if contrib > *best {
+                        *best = contrib;
+                    }
                 }
             }
         }
 
-        let mut matches: Vec<AirlineMatch> = scores
+        sums.into_iter()
+            .map(|(idx, sum)| (idx, sum, bests[&idx]))
+            .collect()
+    }
+
+    pub fn candidates(&self, query: &str, limit: usize) -> Vec<AirlineMatch> {
+        let mut matches: Vec<AirlineMatch> = self
+            .score(query)
             .into_iter()
-            .map(|(idx, score)| AirlineMatch {
+            .map(|(idx, score, _best)| AirlineMatch {
                 icao: self.icaos[idx as usize].clone(),
                 name: self.names[idx as usize].clone(),
                 score,
@@ -147,12 +168,24 @@ impl AirlineIndex {
         matches
     }
 
-    /// Best airline match for `query`, or `None` if nothing scored above the threshold.
+    /// Best airline match for `query`, or `None` if no candidate is supported by a
+    /// sufficiently distinctive single word. Among candidates that clear that bar, the
+    /// highest summed score wins (ties broken by ICAO for determinism).
     pub fn find(&self, query: &str) -> Option<AirlineMatch> {
-        self.candidates(query, 1)
+        self.score(query)
             .into_iter()
-            .next()
-            .filter(|m| m.score >= self.min_score)
+            .filter(|&(_idx, _sum, best)| best >= self.min_score)
+            .max_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    // Smaller ICAO wins ties: invert so it sorts as the max.
+                    .then_with(|| self.icaos[b.0 as usize].cmp(&self.icaos[a.0 as usize]))
+            })
+            .map(|(idx, score, _best)| AirlineMatch {
+                icao: self.icaos[idx as usize].clone(),
+                name: self.names[idx as usize].clone(),
+                score,
+            })
     }
 }
 
@@ -203,5 +236,47 @@ mod tests {
         // Manufacturer + model only: no operator should be inferred.
         assert!(idx.find("Cessna 172 Skyhawk").is_none());
         assert!(idx.find("Airbus A320").is_none());
+    }
+
+    #[test]
+    fn weak_shared_words_do_not_sum_into_a_match() {
+        // Several airlines share a common, non-distinctive word; on its own it must not
+        // infer an operator even though multiple postings accumulate a summed score.
+        let db = AirlinesDatabase {
+            airlines: vec![
+                al("AAA", "Fly Aaa", "ALPHA"),
+                al("BBB", "Fly Bbb", "BRAVO"),
+                al("CCC", "Fly Ccc", "CHARLIE"),
+                al("DDD", "Fly Ddd", "DELTA"),
+                al("EEE", "Fly Eee", "ECHO"),
+                al("FFF", "Fly Fff", "FOXTROT"),
+            ],
+        };
+        let idx = AirlineIndex::build(&db);
+        // "fly" is shared by every airline -> low IDF -> must not clear the bar alone.
+        assert!(idx.find("Boeing 737 Fly").is_none());
+        // The distinctive name word still resolves its operator.
+        assert_eq!(top(&idx, "Boeing 737 Bbb"), "BBB");
+    }
+
+    #[test]
+    fn ignores_addon_developer_names() {
+        let idx = AirlineIndex::build(&test_db());
+        // A studio name beside a bare model must not infer an operator.
+        assert!(idx.find("Fenix Airbus A320").is_none());
+        assert!(idx.find("PMDG Boeing 737-800").is_none());
+        // A real operator alongside a studio name still resolves.
+        assert_eq!(top(&idx, "PMDG Boeing 737-800 Ryanair"), "RYR");
+    }
+
+    #[test]
+    fn general_aviation_title_has_no_airline() {
+        let idx = AirlineIndex::build(&test_db());
+        // A GA aircraft title (developer + model + registration) carries no operator.
+        assert!(idx.find("Black Square Baron 58 Professional N515MR").is_none());
+        // Model + avionics add-on, still no operator.
+        assert!(idx.find("Sting S4 Warmi GTN750").is_none());
+        // Ultralight with a parenthesised variant note, still no operator.
+        assert!(idx.find("Fox2 MicroFox (912 iS - Low n' Slow)").is_none());
     }
 }
