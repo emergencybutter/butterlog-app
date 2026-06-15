@@ -1266,6 +1266,28 @@ impl SimConnectMonitor {
                                     on_ground_since = None;
                                     stationary_since = None;
                                 }
+
+                                // Flight already finalized and the aircraft has now fully
+                                // stopped: end the session so the next movement starts a
+                                // brand-new flight log rather than appending the next leg
+                                // to the closed flight's DB.
+                                if auto_finalized && data.ground_speed.abs() < 1.0 {
+                                    crate::append_log(app, "[MSFS] Flight closed and aircraft stopped. Ending session; next movement starts a new log.".to_string());
+                                    flight_ongoing = false;
+                                    db_conn = None;
+                                    auto_finalized = false;
+                                    takeoff_time = None;
+                                    landing_time = None;
+                                    takeoff_snapshot = None;
+                                    landing_snapshot = None;
+                                    max_metrics = None;
+                                    on_ground_since = None;
+                                    stationary_since = None;
+                                    touchdown_time = None;
+                                    touchdown_update_done = false;
+                                    last_agl = 0.0;
+                                    last_parking_brake = None;
+                                }
                             }
                         }
                     }
