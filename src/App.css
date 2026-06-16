@@ -340,7 +340,7 @@ section h4 {
 
 .mp-spec-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   font-size: 0.85rem;
   margin-bottom: 0.8rem;

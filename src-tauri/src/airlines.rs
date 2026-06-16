@@ -39,4 +39,17 @@ impl AirlinesDatabase {
         }
         Ok(Self { airlines })
     }
+
+    /// Name of the airline with the given ICAO designator (case-insensitive), if known.
+    /// Used by a multiplayer receiver to turn the portable `airline_icao` from the wire
+    /// back into a name it can match against its own installed liveries / titles.
+    pub fn name_for_icao(&self, icao: &str) -> Option<&str> {
+        if icao.is_empty() {
+            return None;
+        }
+        self.airlines
+            .iter()
+            .find(|a| a.icao.eq_ignore_ascii_case(icao))
+            .map(|a| a.name.as_str())
+    }
 }

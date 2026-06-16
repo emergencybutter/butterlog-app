@@ -407,14 +407,40 @@ function App() {
                               </span>
                             </div>
                             <div className="mp-spec-grid">
-                              <div>
+                              <div style={{ gridColumn: "span 3" }}>
                                 <span className="mp-label">Aircraft:</span>
                                 <div style={{ fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.aircraft}>{ac.aircraft}</div>
                               </div>
-                              <div style={{ gridColumn: "span 2" }}>
+                              <div>
+                                <span className="mp-label">Deduced ICAO:</span>
+                                <div style={{ color: "#aaa" }} title={ac.atcModel ? `sim ATC MODEL: ${ac.atcModel}` : undefined}>
+                                  {ac.resolvedIcao || ac.atcModel || "—"}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="mp-label">Airline:</span>
+                                <div style={{ color: "#aaa", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.resolvedAirline}>
+                                  {ac.resolvedAirlineIcao
+                                    ? `${ac.resolvedAirlineIcao}${ac.resolvedAirline ? ` (${ac.resolvedAirline})` : ""}`
+                                    : "—"}
+                                </div>
+                              </div>
+                              <div>
                                 <span className="mp-label">Engine/Class:</span>
                                 <div style={{ color: "#aaa" }}>
                                   {ac.numEngines}x {ac.engineType} {ac.category}
+                                </div>
+                              </div>
+                              <div style={{ gridColumn: "span 3" }}>
+                                <span className="mp-label">Livery:</span>
+                                <div style={{ color: "#aaa", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.livery}>
+                                  {ac.livery || "—"}
+                                </div>
+                              </div>
+                              <div style={{ gridColumn: "span 3" }}>
+                                <span className="mp-label">Chosen model:</span>
+                                <div style={{ color: "#7fd1b9", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.chosenModel}>
+                                  {ac.chosenModel || "— (deferred to sim plugin)"}
                                 </div>
                               </div>
                             </div>

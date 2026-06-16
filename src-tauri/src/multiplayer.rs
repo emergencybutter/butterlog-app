@@ -42,12 +42,10 @@ fn interpolate_angle_signed(start: f64, target: f64, t: f64) -> f64 {
 
 struct TrackedAircraft {
     last_seen: std::time::Instant,
-    aircraft: String,
-    atc_model: String,
-    object_class: String,
-    category: String,
-    num_engines: i32,
-    engine_type: String,
+    identity: crate::sim_monitor::RemoteAircraftIdentity,
+    /// Local model the connected sim picked to represent this peer (the friend's
+    /// rendered aircraft), or `None` when the receiver defers selection (X-Plane plugin).
+    chosen_model: Option<String>,
     start_time: std::time::Instant,
     expected_duration: std::time::Duration,
     start_metrics: FlightMetrics,
@@ -62,6 +60,16 @@ pub struct TrackedAircraftDebugInfo {
     pub id: String,
     pub aircraft: String,
     pub atc_model: String,
+    /// ICAO type designator the sender deduced from its title + livery (may be empty).
+    pub resolved_icao: String,
+    /// Operating airline name (derived locally from `resolved_airline_icao`; may be empty).
+    pub resolved_airline: String,
+    /// Portable ICAO designator of the operating airline from the wire (may be empty).
+    pub resolved_airline_icao: String,
+    /// Raw sim livery string of the peer (may be empty).
+    pub livery: String,
+    /// Local model chosen to render this peer; empty when the receiver defers selection.
+    pub chosen_model: String,
     pub object_class: String,
     pub category: String,
     pub num_engines: i32,
@@ -136,12 +144,17 @@ impl MultiplayerManager {
                 let last_seen_seconds_ago = now.duration_since(ac.last_seen).as_secs();
                 TrackedAircraftDebugInfo {
                     id: id.clone(),
-                    aircraft: ac.aircraft.clone(),
-                    atc_model: ac.atc_model.clone(),
-                    object_class: ac.object_class.clone(),
-                    category: ac.category.clone(),
-                    num_engines: ac.num_engines,
-                    engine_type: ac.engine_type.clone(),
+                    aircraft: ac.identity.title.clone(),
+                    atc_model: ac.identity.atc_model.clone(),
+                    resolved_icao: ac.identity.resolved_icao.clone(),
+                    resolved_airline: ac.identity.resolved_airline.clone(),
+                    resolved_airline_icao: ac.identity.resolved_airline_icao.clone(),
+                    livery: ac.identity.livery.clone(),
+                    chosen_model: ac.chosen_model.clone().unwrap_or_default(),
+                    object_class: ac.identity.object_class.clone(),
+                    category: ac.identity.category.clone(),
+                    num_engines: ac.identity.num_engines,
+                    engine_type: ac.identity.engine_type.clone(),
                     last_seen_seconds_ago,
                     latitude: ac.current_metrics.latitude,
                     longitude: ac.current_metrics.longitude,
@@ -216,16 +229,7 @@ impl MultiplayerManager {
                             ac.current_metrics.pitch_angle = pitch;
                             ac.current_metrics.roll_angle = roll;
                             
-                            m.update_remote_aircraft(
-                                id,
-                                &ac.aircraft,
-                                &ac.atc_model,
-                                &ac.object_class,
-                                &ac.category,
-                                ac.num_engines,
-                                &ac.engine_type,
-                                &ac.current_metrics,
-                            );
+                            m.update_remote_aircraft(id, &ac.identity, &ac.current_metrics);
                         }
                     }
                 }
@@ -414,6 +418,29 @@ impl MultiplayerManager {
                                             let category = payload.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                             let num_engines = payload.get("num_engines").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                                             let engine_type = payload.get("engine_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            // Sender's deduced canonical identity (v2 payload; absent from older peers).
+                                            let resolved_icao = payload.get("resolved_icao").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            let resolved_airline_icao = payload.get("airline_icao").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            let livery = payload.get("livery").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                            // The wire carries the airline as a portable ICAO code; map it back to a
+                                            // name against our own table so we can match it in local livery titles.
+                                            let resolved_airline = recv_app
+                                                .try_state::<crate::airlines::AirlinesDatabase>()
+                                                .and_then(|db| db.name_for_icao(&resolved_airline_icao).map(|s| s.to_string()))
+                                                .unwrap_or_default();
+
+                                            let identity = crate::sim_monitor::RemoteAircraftIdentity {
+                                                title: aircraft.to_string(),
+                                                atc_model: atc_model.clone(),
+                                                resolved_icao,
+                                                resolved_airline,
+                                                resolved_airline_icao,
+                                                livery,
+                                                object_class,
+                                                category,
+                                                num_engines,
+                                                engine_type,
+                                            };
 
                                             let config = recv_app.state::<ConfigManager>().get_config();
                                             let monitor = recv_app.state::<UnifiedMonitor>();
@@ -442,9 +469,10 @@ impl MultiplayerManager {
                                                 }
                                             }
                                             
-                                            // Determine if we should process this aircraft
+                                            // Determine if we should process this aircraft.
+                                            let connected = monitor.get_connected_monitor();
                                             let mut should_process = false;
-                                            if let Some(m) = monitor.get_connected_monitor() {
+                                            if let Some(m) = connected.as_ref() {
                                                 if m.is_connected() {
                                                     if config.inject_butterlog_traffic {
                                                         let self_metrics = m.get_metrics();
@@ -467,32 +495,40 @@ impl MultiplayerManager {
 
                                             if should_process {
                                                 let now = std::time::Instant::now();
+                                                // The local model the connected sim would render for this peer.
+                                                // Resolving it scans every installed title, so only recompute when
+                                                // the peer's identity actually changes (not on every telemetry packet).
+                                                let choose = |id: &crate::sim_monitor::RemoteAircraftIdentity| -> Option<String> {
+                                                    let m = connected.as_ref()?;
+                                                    let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
+                                                        characteristics: std::collections::HashMap::new(),
+                                                    };
+                                                    let db_ref = recv_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
+                                                    let db = db_ref.as_deref().unwrap_or(&empty_db);
+                                                    m.choose_remote_model(id, db)
+                                                };
+
                                                 let mut tracked = recv_multiplayer.tracked_aircrafts.lock();
                                                 if let Some(ac) = tracked.get_mut(&addr.to_string()) {
                                                     let elapsed = now.duration_since(ac.last_seen);
                                                     let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
-                                                    
+
                                                     ac.start_metrics = ac.current_metrics;
                                                     ac.target_metrics = metrics;
                                                     ac.start_time = now;
                                                     ac.expected_duration = expected_duration;
                                                     ac.last_seen = now;
-                                                    
-                                                    ac.aircraft = aircraft.to_string();
-                                                    ac.atc_model = atc_model.clone();
-                                                    ac.object_class = object_class.clone();
-                                                    ac.category = category.clone();
-                                                    ac.num_engines = num_engines;
-                                                    ac.engine_type = engine_type.clone();
+
+                                                    if ac.identity != identity {
+                                                        ac.chosen_model = choose(&identity);
+                                                        ac.identity = identity;
+                                                    }
                                                 } else {
+                                                    let chosen_model = choose(&identity);
                                                     tracked.insert(addr.to_string(), TrackedAircraft {
                                                         last_seen: now,
-                                                        aircraft: aircraft.to_string(),
-                                                        atc_model: atc_model.clone(),
-                                                        object_class: object_class.clone(),
-                                                        category: category.clone(),
-                                                        num_engines,
-                                                        engine_type: engine_type.clone(),
+                                                        identity,
+                                                        chosen_model,
                                                         start_time: now,
                                                         expected_duration: Duration::from_millis(250),
                                                         start_metrics: metrics,
@@ -626,6 +662,12 @@ impl MultiplayerManager {
                         let payload = serde_json::json!({
                             "aircraft": aircraft.title,
                             "atc_model": aircraft.atc_model,
+                            // Deduced canonical identity so receivers can pick a good model + livery.
+                            // The airline is carried as a portable ICAO code; the receiver maps it
+                            // back to a name against its own table (names/livery paths aren't portable).
+                            "resolved_icao": aircraft.resolved_icao,
+                            "airline_icao": aircraft.resolved_airline_icao,
+                            "livery": aircraft.livery,
                             "object_class": aircraft.object_class,
                             "category": aircraft.category,
                             "num_engines": aircraft.num_engines,

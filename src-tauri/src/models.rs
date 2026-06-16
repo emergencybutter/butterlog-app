@@ -228,6 +228,10 @@ pub struct AircraftInfo {
     /// Operating airline name identified from the title + livery via the airline index.
     /// May be empty when no operator was inferred.
     pub resolved_airline: String,
+    /// ICAO designator of the identified operating airline (e.g. `UAL`). This is the
+    /// portable form sent over the multiplayer wire; the name above is for display only.
+    /// May be empty when no operator was inferred.
+    pub resolved_airline_icao: String,
     pub atc_model: String,
     pub atc_id: String,
     pub object_class: String,

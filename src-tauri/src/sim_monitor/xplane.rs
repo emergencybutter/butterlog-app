@@ -123,7 +123,7 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
         _ => "unknown".to_string(),
     };
 
-    AircraftInfo { title, livery, resolved_icao: String::new(), resolved_airline: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
+    AircraftInfo { title, livery, resolved_icao: String::new(), resolved_airline: String::new(), resolved_airline_icao: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
 }
 
 /// Resolve an ICAO type from the title + livery via the word index (setting it on
@@ -152,6 +152,7 @@ fn resolve_and_log(
             Some(m) => {
                 crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> {} {} (score {:.2})", identity.title, identity.livery, m.icao, m.name, m.score));
                 identity.resolved_airline = m.name;
+                identity.resolved_airline_icao = m.icao;
             }
             None => crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> no airline match", identity.title, identity.livery)),
         }
@@ -1259,12 +1260,7 @@ impl SimMonitor for XPlaneMonitor {
     fn update_remote_aircraft(
         &self,
         id: &str,
-        _title: &str,
-        atc_model: &str,
-        _object_class: &str,
-        _category: &str,
-        _num_engines: i32,
-        _engine_type: &str,
+        identity: &crate::sim_monitor::RemoteAircraftIdentity,
         metrics: &FlightMetrics,
     ) {
         static UDP_SOCKET: std::sync::OnceLock<std::net::UdpSocket> = std::sync::OnceLock::new();
@@ -1272,22 +1268,38 @@ impl SimMonitor for XPlaneMonitor {
             std::net::UdpSocket::bind("0.0.0.0:0").expect("Failed to bind UDP socket")
         });
 
-        // Parse airline from callsign/id if possible
-        let mut airline = None;
-        if id.len() >= 4 {
+        // Operating airline as an ICAO code: prefer the sender's deduced airline (which the
+        // plugin's livery/airline maps key on directly), falling back to the callsign prefix.
+        let mut airline = if identity.resolved_airline_icao.is_empty() {
+            None
+        } else {
+            Some(identity.resolved_airline_icao.to_uppercase())
+        };
+        if airline.is_none() && id.len() >= 4 {
             let first_3 = &id[..3];
             if first_3.chars().all(|c| c.is_ascii_alphabetic()) {
                 airline = Some(first_3.to_uppercase());
             }
         }
 
-        let icao = if atc_model.is_empty() { "A320" } else { atc_model };
+        // Prefer the sender's deduced ICAO type over its raw ATC MODEL claim (often empty
+        // or garbage on add-on/custom aircraft); fall back to a generic narrowbody.
+        let icao = if !identity.resolved_icao.is_empty() {
+            identity.resolved_icao.as_str()
+        } else if !identity.atc_model.is_empty() {
+            identity.atc_model.as_str()
+        } else {
+            "A320"
+        };
+        // The X-Plane plugin keys liveries on the CSL livery token, which won't line up
+        // with a raw MSFS livery string; only forward a same-sim hint.
+        let livery = if identity.livery.is_empty() { None } else { Some(identity.livery.as_str()) };
 
         let payload = serde_json::json!({
             "id": id,
             "icao": icao,
             "airline": airline,
-            "livery": None::<String>,
+            "livery": livery,
             "latitude": metrics.latitude,
             "longitude": metrics.longitude,
             "elevation": metrics.gps_altitude_msl * 0.3048, // convert feet to meters
