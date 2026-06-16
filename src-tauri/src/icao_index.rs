@@ -305,6 +305,7 @@ mod tests {
             ac("CC19", "CUBCRAFTERS", "CubCrafters XCub", "CubCrafters CC19-180 XCub"),
             ac("SREY", "PROGRESSIVE AERODYNE", "SeaRey", "Progressive Aerodyne SeaRey"),
             ac("C408", "CESSNA", "Cessna 408 SkyCourier", "Cessna 408 SkyCourier"),
+            ac("M600", "PIPER", "Piper M600", "Piper PA-46-600TP M600"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -326,6 +327,7 @@ mod tests {
         assert_eq!(top(&idx, "Cessna 172"), "C172");
         assert_eq!(top(&idx, "Pilatus PC-12"), "PC12");
         assert_eq!(top(&idx, "Beech King Air 100"), "BE10");
+        assert_eq!(top(&idx, "Piper M600 Firenze Interior"), "M600");
     }
 
     #[test]

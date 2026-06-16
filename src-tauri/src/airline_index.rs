@@ -278,5 +278,7 @@ mod tests {
         assert!(idx.find("Sting S4 Warmi GTN750").is_none());
         // Ultralight with a parenthesised variant note, still no operator.
         assert!(idx.find("Fox2 MicroFox (912 iS - Low n' Slow)").is_none());
+        // Piper M600 should not resolve to an airline
+        assert!(idx.find("Piper M600 Firenze Interior").is_none());
     }
 }
