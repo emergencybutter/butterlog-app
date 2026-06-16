@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Multiplayer telemetry now carries the sender's deduced ICAO type, operating airline and raw livery. Receivers use the deduced ICAO (instead of the unreliable raw ATC model) and the airline to pick a closer local model — including the matching livery title on MSFS, where liveries are separate titles.
 - The operating airline is carried on the multiplayer wire as a portable ICAO code (e.g. `UAL`) rather than a name: the X-Plane plugin can key its livery directly off it, and MSFS receivers map the code back to a name against their own table to match installed livery titles.
+- The app→X-Plane plugin protocol now ships an `on_ground` flag alongside each aircraft's position (peer-to-peer telemetry already carried it inside the metrics block). The X-Plane plugin uses it to clamp on-ground aircraft to the local terrain (via a terrain probe) instead of trusting the transmitted MSL altitude, so multiplayer traffic no longer floats above or sinks into the runway.
 
 ### Added
 - The Multiplayer Debugging tab now shows each tracked peer's deduced ICAO type, airline (ICAO code + name), livery, and the local model chosen to represent them.

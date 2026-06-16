@@ -1306,6 +1306,7 @@ impl SimMonitor for XPlaneMonitor {
             "pitch": metrics.pitch_angle as f32,
             "heading": metrics.heading as f32,
             "roll": metrics.roll_angle as f32,
+            "on_ground": metrics.is_on_ground > 0.5,
             "remove": false
         });
 
