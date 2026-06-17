@@ -58,6 +58,9 @@ struct TrackedAircraft {
 #[serde(rename_all = "camelCase")]
 pub struct TrackedAircraftDebugInfo {
     pub id: String,
+    /// Username of the peer this aircraft belongs to (from the service); empty
+    /// if the peer's name isn't known.
+    pub username: String,
     pub aircraft: String,
     pub atc_model: String,
     /// ICAO type designator the sender deduced from its title + livery (may be empty).
@@ -99,6 +102,9 @@ pub struct MultiplayerDebugInfo {
 
 pub struct MultiplayerManager {
     peers: Mutex<Vec<SocketAddr>>,
+    /// Maps a peer's address (as `addr.to_string()`) to its username, so the
+    /// debug UI can label peers and tracked aircraft by name instead of IP.
+    peer_names: Mutex<HashMap<String, String>>,
     public_address: Mutex<Option<SocketAddr>>,
     tracked_aircrafts: Mutex<HashMap<String, TrackedAircraft>>,
     last_received_log: Mutex<Option<std::time::Instant>>,
@@ -109,6 +115,7 @@ impl MultiplayerManager {
     pub fn new() -> Self {
         Self {
             peers: Mutex::new(Vec::new()),
+            peer_names: Mutex::new(HashMap::new()),
             public_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
             last_received_log: Mutex::new(None),
@@ -125,6 +132,11 @@ impl MultiplayerManager {
         *peers = new_peers;
     }
 
+    /// Replace the address -> username map from the service's peer details.
+    pub fn update_peer_names(&self, names: Vec<(String, String)>) {
+        *self.peer_names.lock() = names.into_iter().collect();
+    }
+
     pub fn get_public_address(&self) -> Option<SocketAddr> {
         *self.public_address.lock()
     }
@@ -132,11 +144,17 @@ impl MultiplayerManager {
     pub fn get_debug_info(&self) -> MultiplayerDebugInfo {
         let public_address = self.public_address.lock().map(|addr| addr.to_string());
         
+        let peer_names = self.peer_names.lock();
+
+        // Show the peer's username where known, falling back to the raw address.
         let peers = self.peers.lock()
             .iter()
-            .map(|addr| addr.to_string())
+            .map(|addr| {
+                let s = addr.to_string();
+                peer_names.get(&s).cloned().unwrap_or(s)
+            })
             .collect();
-            
+
         let now = std::time::Instant::now();
         let tracked_aircrafts = self.tracked_aircrafts.lock()
             .iter()
@@ -144,6 +162,7 @@ impl MultiplayerManager {
                 let last_seen_seconds_ago = now.duration_since(ac.last_seen).as_secs();
                 TrackedAircraftDebugInfo {
                     id: id.clone(),
+                    username: peer_names.get(id).cloned().unwrap_or_default(),
                     aircraft: ac.identity.title.clone(),
                     atc_model: ac.identity.atc_model.clone(),
                     resolved_icao: ac.identity.resolved_icao.clone(),
@@ -274,8 +293,15 @@ impl MultiplayerManager {
                     Ok(res) => {
                         if res.status().is_success() {
                             #[derive(serde::Deserialize)]
+                            struct PeerDetail {
+                                udp_address: String,
+                                username: String,
+                            }
+                            #[derive(serde::Deserialize)]
                             struct PingResponse {
                                 peers: Vec<String>,
+                                #[serde(default)]
+                                peer_details: Vec<PeerDetail>,
                             }
                             if let Ok(data) = res.json::<PingResponse>().await {
                                 let now = std::time::Instant::now();
@@ -289,6 +315,11 @@ impl MultiplayerManager {
                                 if should_log {
                                     crate::append_log(&ping_app, format!("[Multiplayer Ping] Active. Received {} peers from service", data.peers.len()));
                                 }
+                                let names = data.peer_details
+                                    .into_iter()
+                                    .map(|p| (p.udp_address, p.username))
+                                    .collect();
+                                ping_multiplayer.update_peer_names(names);
                                 ping_multiplayer.update_peers(data.peers);
                             }
                         } else if res.status().as_u16() == 401 {

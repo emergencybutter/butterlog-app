@@ -401,7 +401,7 @@ function App() {
                         return (
                           <div key={ac.id} className="mp-card">
                             <div className="mp-card-header">
-                              <span className="mp-callsign">{ac.id}</span>
+                              <span className="mp-callsign" title={ac.id}>{ac.username || ac.id}</span>
                               <span className={`mp-last-seen ${lastSeenClass}`}>
                                 {ac.lastSeenSecondsAgo === 0 ? "just now" : `${ac.lastSeenSecondsAgo}s ago`}
                               </span>
