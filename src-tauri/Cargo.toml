@@ -1,6 +1,6 @@
 [package]
 name = "butterlog"
-version = "0.3.13"
+version = "0.3.15"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
