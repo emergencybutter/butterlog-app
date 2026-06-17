@@ -1,7 +1,7 @@
 # Multiplayer Connectivity for Peers Behind the Same NAT
 
-> Status: **proposed** (not yet implemented). Tracks the design for adding LAN
-> host candidates to the multiplayer transport.
+> Status: **implemented**. LAN host candidates are published and used for
+> same-NAT peer selection across the app, service, and traffic simulator.
 
 ## Problem
 
@@ -68,15 +68,24 @@ Ping request (`MultiplayerPingRequest` in `handlers.rs`, ping body in `multiplay
 { "udp_address": "<public>", "local_udp_address": "<lan>" }
 ```
 
-Ping response returns both per peer:
+Response: `local_udp_address` is added to the existing `peer_details` array (which also
+carries `username`), so peers come back as flat records:
 
 ```jsonc
-{ "peers": [ { "public": "1.2.3.4:50001", "local": "192.168.1.20:50001" }, ... ] }
+{
+  "peers": ["1.2.3.4:50001", "..."],          // bare addresses, kept for old clients
+  "peer_details": [
+    { "udp_address": "1.2.3.4:50001",
+      "local_udp_address": "192.168.1.20:50001",
+      "username": "Alice" }
+  ]
+}
 ```
 
 Both the legacy path-token handler and the bearer handler call `multiplayer_ping_core`,
-so they get this for free. The field is additive; older clients that send only
-`udp_address` keep working (their `local` is simply absent).
+so they get this for free. The fields are additive: older clients that send only
+`udp_address` keep working (their `local_udp_address` is null), and a client talking to
+an older service falls back to the bare `peers` list.
 
 ### 3. Service / schema
 
@@ -121,18 +130,27 @@ source path — no duplicate aircraft.
 
 ## Compatibility & rollout
 
-- The `local_udp_address` request field and `local` response field are additive.
+- The `local_udp_address` request field and the `peer_details[].local_udp_address`
+  response field are additive.
 - Mixed-version peers degrade gracefully: if a peer didn't publish a local candidate,
-  fall back to its public address (today's behaviour).
+  fall back to its public address (today's behaviour); against an older service the
+  client falls back to the bare `peers` list.
 - The schema column is nullable; existing rows need no backfill.
+
+## Implementation
+
+- **Service:** migration `20260616000000_multiplayer_peer_local_address.sql`;
+  `MultiplayerPingRequest`/`PeerDetail` and `update_and_get_peers` in `handlers.rs`. The
+  upsert uses `COALESCE` so a caller without a local address (e.g. flight create/update)
+  doesn't wipe the stored one.
+- **App:** `multiplayer.rs` — `discover_local_address`, `local_address` on the manager,
+  `update_peers_from_candidates` (same-public-IP selection), and the ping body now
+  publishes `local_udp_address`.
+- **Simulator:** `traffic_simulator.rs` publishes a `local_udp_address` per mock client.
 
 ## Testing
 
-The simulator and app run on one machine/LAN, so the broken case is reproducible
-locally:
-
-- `traffic_simulator` already has `--local` to publish `127.0.0.1` addresses; extend it
-  to also publish a LAN host candidate.
-- Force the simulated **public** IP to match the app's public IP, and confirm the app
-  selects the **local** candidate and renders the aircraft (whereas the public-only path
-  would silently drop on a non-hairpinning router).
+The simulator and app run on one machine/LAN, so the case is reproducible locally: the
+simulator now publishes a LAN host candidate, and because it shares the app's public IP,
+the app selects the **local** candidate and renders the aircraft (whereas the public-only
+path would silently drop on a non-hairpinning router).

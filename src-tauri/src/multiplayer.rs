@@ -10,6 +10,17 @@ use crate::UnifiedMonitor;
 
 const STUN_TX_ID: [u8; 12] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0];
 
+/// Best-effort LAN address: the OS's chosen source IP toward a public host (no
+/// packet is actually sent by `connect` on a UDP socket), paired with the
+/// multiplayer socket's port. Used as a same-NAT (LAN) candidate.
+fn discover_local_address(bound: &UdpSocket) -> Option<SocketAddr> {
+    let port = bound.local_addr().ok()?.port();
+    let probe = UdpSocket::bind("0.0.0.0:0").ok()?;
+    probe.connect("8.8.8.8:80").ok()?;
+    let ip = probe.local_addr().ok()?.ip();
+    Some(SocketAddr::new(ip, port))
+}
+
 fn lerp(start: f64, target: f64, t: f64) -> f64 {
     start + (target - start) * t
 }
@@ -100,12 +111,26 @@ pub struct MultiplayerDebugInfo {
     pub tracked_aircrafts: Vec<TrackedAircraftDebugInfo>,
 }
 
+/// A peer as advertised by the service: its public (STUN) address, an optional
+/// LAN address, and the owner's username.
+#[derive(serde::Deserialize)]
+pub struct PeerCandidate {
+    pub udp_address: String,
+    #[serde(default)]
+    pub local_udp_address: Option<String>,
+    #[serde(default)]
+    pub username: String,
+}
+
 pub struct MultiplayerManager {
     peers: Mutex<Vec<SocketAddr>>,
     /// Maps a peer's address (as `addr.to_string()`) to its username, so the
     /// debug UI can label peers and tracked aircraft by name instead of IP.
     peer_names: Mutex<HashMap<String, String>>,
     public_address: Mutex<Option<SocketAddr>>,
+    /// Our own LAN address (LAN IP + the multiplayer socket's port), published so
+    /// peers behind the same NAT can reach us directly without router hairpinning.
+    local_address: Mutex<Option<SocketAddr>>,
     tracked_aircrafts: Mutex<HashMap<String, TrackedAircraft>>,
     last_received_log: Mutex<Option<std::time::Instant>>,
     last_emitted_log: Mutex<Option<std::time::Instant>>,
@@ -117,6 +142,7 @@ impl MultiplayerManager {
             peers: Mutex::new(Vec::new()),
             peer_names: Mutex::new(HashMap::new()),
             public_address: Mutex::new(None),
+            local_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
             last_received_log: Mutex::new(None),
             last_emitted_log: Mutex::new(None),
@@ -132,13 +158,37 @@ impl MultiplayerManager {
         *peers = new_peers;
     }
 
-    /// Replace the address -> username map from the service's peer details.
-    pub fn update_peer_names(&self, names: Vec<(String, String)>) {
-        *self.peer_names.lock() = names.into_iter().collect();
+    /// Resolve each advertised peer to a single reachable address and refresh the
+    /// peer list + username map. When a peer shares our public IP we're behind the
+    /// same NAT, so we target its LAN address instead of bouncing off the router
+    /// (many routers don't hairpin). The chosen address is what the receiver will
+    /// see as the packet source, so it doubles as the known-sender allowlist.
+    pub fn update_peers_from_candidates(&self, candidates: Vec<PeerCandidate>) {
+        let my_ip = self.public_address.lock().map(|a| a.ip());
+        let mut peers = Vec::new();
+        let mut names = HashMap::new();
+        for c in candidates {
+            let public: Option<SocketAddr> = c.udp_address.parse().ok();
+            let local: Option<SocketAddr> = c.local_udp_address.as_deref().and_then(|s| s.parse().ok());
+            let chosen = match (public, local, my_ip) {
+                (Some(p), Some(l), Some(ip)) if p.ip() == ip => l,
+                (Some(p), _, _) => p,
+                (None, Some(l), _) => l,
+                (None, None, _) => continue,
+            };
+            names.insert(chosen.to_string(), c.username);
+            peers.push(chosen);
+        }
+        *self.peers.lock() = peers;
+        *self.peer_names.lock() = names;
     }
 
     pub fn get_public_address(&self) -> Option<SocketAddr> {
         *self.public_address.lock()
+    }
+
+    pub fn get_local_address(&self) -> Option<SocketAddr> {
+        *self.local_address.lock()
     }
 
     pub fn get_debug_info(&self) -> MultiplayerDebugInfo {
@@ -280,30 +330,45 @@ impl MultiplayerManager {
                     continue;
                 }
                 
-                // Get public address discovered by STUN
+                // Get public address discovered by STUN, plus our LAN address for
+                // same-NAT peers.
                 let public_addr = ping_multiplayer.get_public_address();
                 let public_addr_str = public_addr.map(|a| a.to_string());
-                
+                let local_addr_str = ping_multiplayer.get_local_address().map(|a| a.to_string());
+
                 let url = format!("{}/multiplayer/ping", api_base);
                 let body = serde_json::json!({
-                    "udp_address": public_addr_str
+                    "udp_address": public_addr_str,
+                    "local_udp_address": local_addr_str
                 });
 
                 match client.post(&url).bearer_auth(&api_token).json(&body).send().await {
                     Ok(res) => {
                         if res.status().is_success() {
                             #[derive(serde::Deserialize)]
-                            struct PeerDetail {
-                                udp_address: String,
-                                username: String,
-                            }
-                            #[derive(serde::Deserialize)]
                             struct PingResponse {
+                                // Bare addresses from older services; used only as a
+                                // fallback when peer_details is absent.
+                                #[serde(default)]
                                 peers: Vec<String>,
                                 #[serde(default)]
-                                peer_details: Vec<PeerDetail>,
+                                peer_details: Vec<PeerCandidate>,
                             }
                             if let Ok(data) = res.json::<PingResponse>().await {
+                                // Prefer the richer peer_details; fall back to bare
+                                // addresses so we still work against an older service.
+                                let candidates = if !data.peer_details.is_empty() {
+                                    data.peer_details
+                                } else {
+                                    data.peers
+                                        .into_iter()
+                                        .map(|udp_address| PeerCandidate {
+                                            udp_address,
+                                            local_udp_address: None,
+                                            username: String::new(),
+                                        })
+                                        .collect()
+                                };
                                 let now = std::time::Instant::now();
                                 let should_log = match last_log_time {
                                     Some(t) if now.duration_since(t).as_secs() < 30 => false,
@@ -313,14 +378,9 @@ impl MultiplayerManager {
                                     }
                                 };
                                 if should_log {
-                                    crate::append_log(&ping_app, format!("[Multiplayer Ping] Active. Received {} peers from service", data.peers.len()));
+                                    crate::append_log(&ping_app, format!("[Multiplayer Ping] Active. Received {} peers from service", candidates.len()));
                                 }
-                                let names = data.peer_details
-                                    .into_iter()
-                                    .map(|p| (p.udp_address, p.username))
-                                    .collect();
-                                ping_multiplayer.update_peer_names(names);
-                                ping_multiplayer.update_peers(data.peers);
+                                ping_multiplayer.update_peers_from_candidates(candidates);
                             }
                         } else if res.status().as_u16() == 401 {
                             crate::force_logout(&ping_app, "service rejected token during multiplayer ping");
@@ -346,8 +406,15 @@ impl MultiplayerManager {
             };
             
             let _ = socket.set_nonblocking(true);
-            
+
             crate::append_log(&app, format!("[Multiplayer] UDP socket bound to: {:?}", socket.local_addr()));
+
+            // Record our LAN address (LAN IP + this socket's port) so peers behind
+            // the same NAT can reach us directly.
+            if let Some(local) = discover_local_address(&socket) {
+                *multiplayer.local_address.lock() = Some(local);
+                crate::append_log(&app, format!("[Multiplayer] Local LAN address: {}", local));
+            }
 
             // Background thread for receiving data (UDP hole punching needs this to "open" the port)
             let recv_app = app.clone();
