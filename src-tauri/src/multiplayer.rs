@@ -298,7 +298,7 @@ impl MultiplayerManager {
                 std::thread::sleep(Duration::from_millis(50));
                 
                 let config = interp_app.state::<ConfigManager>().get_config();
-                if !config.inject_butterlog_traffic && !config.enable_multiplayer_hubs {
+                if !config.inject_butterlog_traffic {
                     continue;
                 }
                 
@@ -357,8 +357,8 @@ impl MultiplayerManager {
                 
                 let config = ping_app.state::<ConfigManager>().get_config();
                 
-                // Only ping if features are enabled and logged in
-                let features_enabled = config.inject_butterlog_traffic || config.enable_multiplayer_hubs;
+                // Only ping if the feature is enabled and logged in
+                let features_enabled = config.inject_butterlog_traffic;
                 let api_auth = config.api_auth();
                 let (api_base, api_token) = match api_auth {
                     Some(auth) if features_enabled => auth,
@@ -586,7 +586,7 @@ impl MultiplayerManager {
                                             let monitor = recv_app.state::<UnifiedMonitor>();
                                             
                                             // Throttled logging of received peer telemetry (every 10s)
-                                            if config.inject_butterlog_traffic || config.enable_multiplayer_hubs {
+                                            if config.inject_butterlog_traffic {
                                                 let now = std::time::Instant::now();
                                                 let should_log = {
                                                     let mut last_log = recv_multiplayer.last_received_log.lock();
@@ -613,22 +613,18 @@ impl MultiplayerManager {
                                             let connected = monitor.get_connected_monitor();
                                             let mut should_process = false;
                                             if let Some(m) = connected.as_ref() {
-                                                if m.is_connected() {
-                                                    if config.inject_butterlog_traffic {
-                                                        let self_metrics = m.get_metrics();
-                                                        if self_metrics.latitude != 0.0 || self_metrics.longitude != 0.0 {
-                                                            let dist = crate::sim_monitor::calculate_distance(
-                                                                self_metrics.latitude,
-                                                                self_metrics.longitude,
-                                                                metrics.latitude,
-                                                                metrics.longitude,
-                                                            );
-                                                            if dist <= 20.0 {
-                                                                should_process = true;
-                                                            }
+                                                if m.is_connected() && config.inject_butterlog_traffic {
+                                                    let self_metrics = m.get_metrics();
+                                                    if self_metrics.latitude != 0.0 || self_metrics.longitude != 0.0 {
+                                                        let dist = crate::sim_monitor::calculate_distance(
+                                                            self_metrics.latitude,
+                                                            self_metrics.longitude,
+                                                            metrics.latitude,
+                                                            metrics.longitude,
+                                                        );
+                                                        if dist <= 20.0 {
+                                                            should_process = true;
                                                         }
-                                                    } else if config.enable_multiplayer_hubs {
-                                                        should_process = true;
                                                     }
                                                 }
                                             }
@@ -725,7 +721,6 @@ impl MultiplayerManager {
             let mut last_stun_query = std::time::Instant::now() - Duration::from_secs(300);
             let mut cached_stun_addr = None;
             let mut last_prune = std::time::Instant::now();
-            let mut last_publish_hubs = std::time::Instant::now();
             let mut last_publish_inject = std::time::Instant::now();
 
             loop {
@@ -786,13 +781,7 @@ impl MultiplayerManager {
                                 999.0 // force remove if we don't have our own coordinates
                             };
                             
-                            let prune_dist = if config.enable_multiplayer_hubs {
-                                false
-                            } else {
-                                dist > 20.0
-                            };
-                            
-                            if age > Duration::from_secs(60) || prune_dist {
+                            if age > Duration::from_secs(60) || dist > 20.0 {
                                 to_remove.push(id.clone());
                             }
                         }
@@ -806,14 +795,7 @@ impl MultiplayerManager {
 
                 // 3. Publish our position to peers
                 let mut should_publish = false;
-                
-                if config.enable_multiplayer_hubs {
-                    if now.duration_since(last_publish_hubs) >= Duration::from_millis(200) {
-                        should_publish = true;
-                        last_publish_hubs = now;
-                    }
-                }
-                
+
                 if config.inject_butterlog_traffic {
                     if now.duration_since(last_publish_inject) >= Duration::from_millis(250) {
                         should_publish = true;

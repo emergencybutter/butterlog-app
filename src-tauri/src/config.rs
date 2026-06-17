@@ -32,7 +32,6 @@ pub struct Config {
     pub api_token: String,
     pub open_at_login: bool,
     pub start_minimized: bool,
-    pub enable_multiplayer_hubs: bool,
     pub inject_butterlog_traffic: bool,
     pub auto_share_flights: bool,
 }
@@ -152,7 +151,6 @@ impl Config {
             api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
-            enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
             auto_share_flights: true,
         }
@@ -175,7 +173,6 @@ impl Default for Config {
             api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
-            enable_multiplayer_hubs: false,
             inject_butterlog_traffic: false,
             auto_share_flights: true,
         }

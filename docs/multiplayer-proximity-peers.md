@@ -32,16 +32,16 @@ The only filters are "not me" and "active". There is **no position stored and
 no distance filter** — the table doesn't know where anyone is.
 
 Proximity is enforced **client-side** in the receiver (`multiplayer.rs`):
-inject mode processes/keeps an aircraft only within `20 nm`; hub mode
-(`enable_multiplayer_hubs`) processes everyone.
+the (now sole) inject mode processes/keeps an aircraft only within `20 nm`.
 
 ## Goal / non-goals
 
-- **Goal:** in inject mode, the service returns only peers near the caller, so a
-  client sends to (and hole-punches) just those — cutting the *N²* fan-out.
-- **Goal:** hub mode still returns everyone; existing clients keep working.
+- **Goal:** the service returns only peers near the caller, so a client sends to
+  (and hole-punches) just those — cutting the *N²* fan-out.
+- **Goal:** degrade gracefully — when the caller has no position fix yet, return
+  everyone; existing clients keep working.
 - **Non-goal:** changing the transport. This scopes *who* you talk to; it's still
-  all-to-all within a region. Hundreds of co-located users (a busy hub) would
+  all-to-all within a region. Hundreds of co-located users would
   need a relay/SFU — out of scope.
 
 ## Design
@@ -103,20 +103,16 @@ A square box slightly over-includes corners — the client's existing 20 nm chec
 trims them. For an exact circle, run a haversine pass in Rust over the (small)
 returned set.
 
-### 4. Client — populate coords; hub mode stays "everyone"
+### 4. Client — populate coords (omit when no fix)
 
 In the app ping (`multiplayer.rs`) and the traffic simulator:
 
 ```rust
-// inject mode: send our position so the service can scope to nearby peers.
-// hub mode: omit it so the service returns everyone.
-let (lat, lon) = if config.inject_butterlog_traffic && !config.enable_multiplayer_hubs {
-    match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
-        Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
-        _ => (None, None),
-    }
-} else {
-    (None, None)
+// Send our position so the service can scope to nearby peers. With no fix yet
+// we omit it and the service returns everyone (degenerate fallback).
+let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
+    Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
+    _ => (None, None),
 };
 // body: { udp_address, local_udp_address, latitude: lat, longitude: lon }
 ```
@@ -126,7 +122,8 @@ let (lat, lon) = if config.inject_butterlog_traffic && !config.enable_multiplaye
 - **Backward compatible:** request fields and columns are additive. Old clients
   send no coords (NULL position); the `OR mp.latitude IS NULL` clause keeps them
   visible, so nothing breaks. The traffic reduction phases in as clients update.
-- **Hub mode unchanged:** sending no position returns the full list, as today.
+- **No fix yet:** a caller without a position fix sends no coords and gets the
+  full list, as today.
 - **Boundary margin:** filter at ~30 nm server-side vs the 20 nm client gate so
   aircraft don't pop in/out at the edge as people move between 200 ms pings under
   the 120 s presence window.

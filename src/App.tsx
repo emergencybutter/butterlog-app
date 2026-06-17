@@ -369,7 +369,7 @@ function App() {
                     </div>
                   </div>
                   <div className="panel" style={{ border: "1px solid #444" }}>
-                    <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>ACTIVE MULTIPLAYER PEERS / HUBS</h4>
+                    <h4 style={{ color: "#888", marginBottom: "0.5rem", fontSize: "0.9rem" }}>ACTIVE MULTIPLAYER PEERS</h4>
                     <div style={{ fontSize: "1.4rem", fontWeight: "bold" }}>
                       {multiplayerInfo?.peers.length || 0} active
                     </div>

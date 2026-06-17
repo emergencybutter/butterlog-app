@@ -93,10 +93,7 @@ export function Settings() {
 
     const handleChange = (key: keyof Config, value: any) => {
         if (!config) return;
-        // The two multiplayer flags are a single UI concept, so keep them in sync.
-        const next: Config = key === "injectButterlogTraffic"
-            ? { ...config, injectButterlogTraffic: value, enableMultiplayerHubs: value }
-            : { ...config, [key]: value };
+        const next: Config = { ...config, [key]: value };
         setConfig(next);
         persist(next);
     };

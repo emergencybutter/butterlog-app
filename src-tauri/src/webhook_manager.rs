@@ -77,7 +77,6 @@ impl WebhookManager {
         let _guard = SyncGuard(&self.is_syncing);
 
         let config = app.state::<crate::config::ConfigManager>().get_config();
-        let multiplayer_enabled = config.enable_multiplayer_hubs;
         let inject_traffic = config.inject_butterlog_traffic;
 
         let udp_address = if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
@@ -132,7 +131,7 @@ impl WebhookManager {
                 let body = serde_json::json!({
                     "arrival": summary.arrival.icao,
                     "statistics": summary,
-                    "multiplayer_enabled": multiplayer_enabled || inject_traffic,
+                    "multiplayer_enabled": inject_traffic,
                     "udp_address": udp_address
                 });
 
@@ -165,7 +164,7 @@ impl WebhookManager {
                 let body = serde_json::json!({
                     "departure": summary.departure.icao,
                     "statistics": summary,
-                    "multiplayer_enabled": multiplayer_enabled || inject_traffic,
+                    "multiplayer_enabled": inject_traffic,
                     "udp_address": udp_address
                 });
 
