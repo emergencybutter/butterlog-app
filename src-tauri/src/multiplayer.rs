@@ -72,6 +72,10 @@ pub struct TrackedAircraftDebugInfo {
     /// Username of the peer this aircraft belongs to (from the service); empty
     /// if the peer's name isn't known.
     pub username: String,
+    /// Peer's public (STUN) address; falls back to the packet source (`id`).
+    pub address: String,
+    /// Peer's LAN address, if it published one (may be empty).
+    pub local_address: String,
     pub aircraft: String,
     pub atc_model: String,
     /// ICAO type designator the sender deduced from its title + livery (may be empty).
@@ -122,11 +126,20 @@ pub struct PeerCandidate {
     pub username: String,
 }
 
+/// What we know about a peer, kept so the debug UI can show the username
+/// alongside both addresses.
+#[derive(Clone, Default)]
+struct PeerInfo {
+    username: String,
+    public_address: String,
+    local_address: Option<String>,
+}
+
 pub struct MultiplayerManager {
     peers: Mutex<Vec<SocketAddr>>,
-    /// Maps a peer's address (as `addr.to_string()`) to its username, so the
-    /// debug UI can label peers and tracked aircraft by name instead of IP.
-    peer_names: Mutex<HashMap<String, String>>,
+    /// Maps a peer's chosen address (as `addr.to_string()`) to its details, so
+    /// the debug UI can show the username and both public/LAN addresses.
+    peer_info: Mutex<HashMap<String, PeerInfo>>,
     public_address: Mutex<Option<SocketAddr>>,
     /// Our own LAN address (LAN IP + the multiplayer socket's port), published so
     /// peers behind the same NAT can reach us directly without router hairpinning.
@@ -140,7 +153,7 @@ impl MultiplayerManager {
     pub fn new() -> Self {
         Self {
             peers: Mutex::new(Vec::new()),
-            peer_names: Mutex::new(HashMap::new()),
+            peer_info: Mutex::new(HashMap::new()),
             public_address: Mutex::new(None),
             local_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
@@ -166,7 +179,7 @@ impl MultiplayerManager {
     pub fn update_peers_from_candidates(&self, candidates: Vec<PeerCandidate>) {
         let my_ip = self.public_address.lock().map(|a| a.ip());
         let mut peers = Vec::new();
-        let mut names = HashMap::new();
+        let mut info = HashMap::new();
         for c in candidates {
             let public: Option<SocketAddr> = c.udp_address.parse().ok();
             let local: Option<SocketAddr> = c.local_udp_address.as_deref().and_then(|s| s.parse().ok());
@@ -176,11 +189,15 @@ impl MultiplayerManager {
                 (None, Some(l), _) => l,
                 (None, None, _) => continue,
             };
-            names.insert(chosen.to_string(), c.username);
+            info.insert(chosen.to_string(), PeerInfo {
+                username: c.username,
+                public_address: c.udp_address,
+                local_address: c.local_udp_address,
+            });
             peers.push(chosen);
         }
         *self.peers.lock() = peers;
-        *self.peer_names.lock() = names;
+        *self.peer_info.lock() = info;
     }
 
     pub fn get_public_address(&self) -> Option<SocketAddr> {
@@ -194,14 +211,29 @@ impl MultiplayerManager {
     pub fn get_debug_info(&self) -> MultiplayerDebugInfo {
         let public_address = self.public_address.lock().map(|addr| addr.to_string());
         
-        let peer_names = self.peer_names.lock();
+        let peer_info = self.peer_info.lock();
 
-        // Show the peer's username where known, falling back to the raw address.
+        // Label each peer with its username plus both addresses, e.g.
+        // "Alice · 1.2.3.4:5000 · LAN 192.168.1.20:5000". Falls back to the raw
+        // address when we don't have details for it.
         let peers = self.peers.lock()
             .iter()
             .map(|addr| {
                 let s = addr.to_string();
-                peer_names.get(&s).cloned().unwrap_or(s)
+                match peer_info.get(&s) {
+                    Some(info) => {
+                        let mut label = if info.username.is_empty() {
+                            info.public_address.clone()
+                        } else {
+                            format!("{} · {}", info.username, info.public_address)
+                        };
+                        if let Some(local) = &info.local_address {
+                            label.push_str(&format!(" · LAN {}", local));
+                        }
+                        label
+                    }
+                    None => s,
+                }
             })
             .collect();
 
@@ -210,9 +242,12 @@ impl MultiplayerManager {
             .iter()
             .map(|(id, ac)| {
                 let last_seen_seconds_ago = now.duration_since(ac.last_seen).as_secs();
+                let info = peer_info.get(id);
                 TrackedAircraftDebugInfo {
                     id: id.clone(),
-                    username: peer_names.get(id).cloned().unwrap_or_default(),
+                    username: info.map(|i| i.username.clone()).unwrap_or_default(),
+                    address: info.map(|i| i.public_address.clone()).unwrap_or_else(|| id.clone()),
+                    local_address: info.and_then(|i| i.local_address.clone()).unwrap_or_default(),
                     aircraft: ac.identity.title.clone(),
                     atc_model: ac.identity.atc_model.clone(),
                     resolved_icao: ac.identity.resolved_icao.clone(),

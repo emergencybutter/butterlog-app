@@ -5,7 +5,15 @@ export type TrackedAircraftDebugInfo = { id: string,
  * Username of the peer this aircraft belongs to (from the service); empty
  * if the peer's name isn't known.
  */
-username: string, aircraft: string, atcModel: string,
+username: string,
+/**
+ * Peer's public (STUN) address; falls back to the packet source (`id`).
+ */
+address: string,
+/**
+ * Peer's LAN address, if it published one (may be empty).
+ */
+localAddress: string, aircraft: string, atcModel: string,
 /**
  * ICAO type designator the sender deduced from its title + livery (may be empty).
  */

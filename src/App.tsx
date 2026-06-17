@@ -411,6 +411,12 @@ function App() {
                                 <span className="mp-label">Aircraft:</span>
                                 <div style={{ fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.aircraft}>{ac.aircraft}</div>
                               </div>
+                              <div style={{ gridColumn: "span 3" }}>
+                                <span className="mp-label">Address:</span>
+                                <div style={{ color: "#aaa", fontFamily: "monospace", fontSize: "0.85rem", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={ac.id}>
+                                  {ac.address || ac.id}{ac.localAddress ? ` · LAN ${ac.localAddress}` : ""}
+                                </div>
+                              </div>
                               <div>
                                 <span className="mp-label">Deduced ICAO:</span>
                                 <div style={{ color: "#aaa" }} title={ac.atcModel ? `sim ATC MODEL: ${ac.atcModel}` : undefined}>
