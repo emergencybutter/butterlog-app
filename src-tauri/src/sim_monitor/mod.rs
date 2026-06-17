@@ -9,7 +9,7 @@ pub mod xplane;
 /// receiver into model selection. Bundles the raw sim fields with the sender's deduced
 /// canonical identity (`resolved_icao` / `resolved_airline`) and the raw `livery`, so a
 /// receiver can pick a local model + livery that best represents the friend.
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 pub struct RemoteAircraftIdentity {
     /// Free-text sim title (MSFS `TITLE` / X-Plane `acf_ui_name`).
     pub title: String,

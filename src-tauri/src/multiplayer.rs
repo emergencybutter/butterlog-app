@@ -145,6 +145,10 @@ pub struct MultiplayerManager {
     /// peers behind the same NAT can reach us directly without router hairpinning.
     local_address: Mutex<Option<SocketAddr>>,
     tracked_aircrafts: Mutex<HashMap<String, TrackedAircraft>>,
+    /// Cache of resolved local model per peer identity. Resolving scans the entire
+    /// installed-model library, so this avoids rescanning on every new peer or when
+    /// an aircraft is pruned and re-added (e.g. drifting around the 20 nm boundary).
+    model_cache: Mutex<HashMap<crate::sim_monitor::RemoteAircraftIdentity, Option<String>>>,
     last_received_log: Mutex<Option<std::time::Instant>>,
     last_emitted_log: Mutex<Option<std::time::Instant>>,
 }
@@ -157,6 +161,7 @@ impl MultiplayerManager {
             public_address: Mutex::new(None),
             local_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
+            model_cache: Mutex::new(HashMap::new()),
             last_received_log: Mutex::new(None),
             last_emitted_log: Mutex::new(None),
         }
@@ -211,7 +216,9 @@ impl MultiplayerManager {
     pub fn get_debug_info(&self) -> MultiplayerDebugInfo {
         let public_address = self.public_address.lock().map(|addr| addr.to_string());
         
-        let peer_info = self.peer_info.lock();
+        // Snapshot peer info so we never hold its lock while taking the peers /
+        // tracked locks (keeps the polled debug status from contending with them).
+        let peer_info = self.peer_info.lock().clone();
 
         // Label each peer with its username plus both addresses, e.g.
         // "Alice · 1.2.3.4:5000 · LAN 192.168.1.20:5000". Falls back to the raw
@@ -628,21 +635,45 @@ impl MultiplayerManager {
 
                                             if should_process {
                                                 let now = std::time::Instant::now();
+                                                let key = addr.to_string();
+
                                                 // The local model the connected sim would render for this peer.
-                                                // Resolving it scans every installed title, so only recompute when
-                                                // the peer's identity actually changes (not on every telemetry packet).
-                                                let choose = |id: &crate::sim_monitor::RemoteAircraftIdentity| -> Option<String> {
-                                                    let m = connected.as_ref()?;
-                                                    let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
-                                                        characteristics: std::collections::HashMap::new(),
-                                                    };
-                                                    let db_ref = recv_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
-                                                    let db = db_ref.as_deref().unwrap_or(&empty_db);
-                                                    m.choose_remote_model(id, db)
+                                                // Resolving it scans every installed title, so it must NOT run while
+                                                // holding tracked_aircrafts (that lock is contended by the 50ms
+                                                // interpolation loop and the polled debug status). We:
+                                                //   1. peek whether (re)resolution is needed under a brief lock,
+                                                //   2. resolve outside the lock (cached by identity), then
+                                                //   3. re-lock briefly to store metrics + chosen model.
+                                                let needs_resolution = {
+                                                    let tracked = recv_multiplayer.tracked_aircrafts.lock();
+                                                    match tracked.get(&key) {
+                                                        Some(ac) => ac.identity != identity,
+                                                        None => true,
+                                                    }
+                                                };
+
+                                                let chosen_model = if needs_resolution {
+                                                    let cached = recv_multiplayer.model_cache.lock().get(&identity).cloned();
+                                                    match cached {
+                                                        Some(m) => m,
+                                                        None => {
+                                                            // Expensive scan — performed with no tracked lock held.
+                                                            let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
+                                                                characteristics: std::collections::HashMap::new(),
+                                                            };
+                                                            let db_ref = recv_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
+                                                            let db = db_ref.as_deref().unwrap_or(&empty_db);
+                                                            let resolved = connected.as_ref().and_then(|m| m.choose_remote_model(&identity, db));
+                                                            recv_multiplayer.model_cache.lock().insert(identity.clone(), resolved.clone());
+                                                            resolved
+                                                        }
+                                                    }
+                                                } else {
+                                                    None // unused; identity unchanged so the stored model is kept
                                                 };
 
                                                 let mut tracked = recv_multiplayer.tracked_aircrafts.lock();
-                                                if let Some(ac) = tracked.get_mut(&addr.to_string()) {
+                                                if let Some(ac) = tracked.get_mut(&key) {
                                                     let elapsed = now.duration_since(ac.last_seen);
                                                     let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
 
@@ -653,12 +684,16 @@ impl MultiplayerManager {
                                                     ac.last_seen = now;
 
                                                     if ac.identity != identity {
-                                                        ac.chosen_model = choose(&identity);
+                                                        ac.chosen_model = chosen_model;
                                                         ac.identity = identity;
                                                     }
                                                 } else {
-                                                    let chosen_model = choose(&identity);
-                                                    tracked.insert(addr.to_string(), TrackedAircraft {
+                                                    // Re-inserting (e.g. the entry was pruned between the peek
+                                                    // and here): fall back to the cached model so we don't lose it.
+                                                    let chosen_model = chosen_model.or_else(|| {
+                                                        recv_multiplayer.model_cache.lock().get(&identity).cloned().flatten()
+                                                    });
+                                                    tracked.insert(key, TrackedAircraft {
                                                         last_seen: now,
                                                         identity,
                                                         chosen_model,

@@ -149,6 +149,7 @@ function App() {
   // Refs read inside the poll interval so the closure sees current values.
   const flightOngoingRef = useRef(false);
   const pollFailedRef = useRef(false);
+  const pollInFlightRef = useRef(false);
 
   const handleBackToHistory = useCallback(() => {
     setView("history");
@@ -217,6 +218,10 @@ function App() {
       pollTick++;
       if (document.hidden) return;
       if (!flightOngoingRef.current && pollTick % 5 !== 0) return;
+      // Skip if the previous poll is still in flight so slow backend calls don't
+      // pile up overlapping invocations and saturate the command worker pool.
+      if (pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
       try {
         const [m, connected, ongoing, sims, fid, mpInfo] = await Promise.all([
           invoke<FlightMetrics>("get_metrics"),
@@ -240,6 +245,8 @@ function App() {
           pollFailedRef.current = true;
           console.error("Backend status poll failed:", e);
         }
+      } finally {
+        pollInFlightRef.current = false;
       }
     }, 200);
 
