@@ -378,10 +378,19 @@ impl MultiplayerManager {
                 let public_addr_str = public_addr.map(|a| a.to_string());
                 let local_addr_str = ping_multiplayer.get_local_address().map(|a| a.to_string());
 
+                // Our current position so the service can return only nearby peers.
+                // Without a fix we send none and the service returns no peers.
+                let (latitude, longitude) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
+                    Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
+                    _ => (None, None),
+                };
+
                 let url = format!("{}/multiplayer/ping", api_base);
                 let body = serde_json::json!({
                     "udp_address": public_addr_str,
-                    "local_udp_address": local_addr_str
+                    "local_udp_address": local_addr_str,
+                    "latitude": latitude,
+                    "longitude": longitude
                 });
 
                 match client.post(&url).bearer_auth(&api_token).json(&body).send().await {

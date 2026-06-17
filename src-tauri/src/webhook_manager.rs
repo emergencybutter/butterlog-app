@@ -85,6 +85,16 @@ impl WebhookManager {
             None
         };
 
+        // Our current position so the service scopes the returned peers to nearby
+        // players; without a fix the service returns none.
+        let (latitude, longitude) = match app
+            .try_state::<crate::UnifiedMonitor>()
+            .and_then(|mon| mon.get_connected_monitor().map(|m| m.get_metrics()))
+        {
+            Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
+            _ => (None, None),
+        };
+
         let mut current_id = self.current_remote_id.lock().clone();
         let last_time = self.last_update_time.lock().clone();
 
@@ -132,7 +142,9 @@ impl WebhookManager {
                     "arrival": summary.arrival.icao,
                     "statistics": summary,
                     "multiplayer_enabled": inject_traffic,
-                    "udp_address": udp_address
+                    "udp_address": udp_address,
+                    "latitude": latitude,
+                    "longitude": longitude
                 });
 
                 match self.client.put(&url).bearer_auth(&api_token).json(&body).send().await {
@@ -165,7 +177,9 @@ impl WebhookManager {
                     "departure": summary.departure.icao,
                     "statistics": summary,
                     "multiplayer_enabled": inject_traffic,
-                    "udp_address": udp_address
+                    "udp_address": udp_address,
+                    "latitude": latitude,
+                    "longitude": longitude
                 });
 
                 match self.client.post(&url).bearer_auth(&api_token).json(&body).send().await {

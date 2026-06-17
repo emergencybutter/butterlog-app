@@ -1,7 +1,7 @@
 # Scoping the Multiplayer Peer List to Nearby Players
 
-> Status: **proposed** (not yet implemented). Tracks server-side proximity
-> filtering of the multiplayer ping peer list.
+> Status: **implemented**. The ping endpoint stores each peer's position and
+> returns only nearby peers; a caller without a position fix gets none.
 
 ## Problem
 
@@ -12,7 +12,7 @@ online users that's an all-to-all mesh: ~*N²* packet flows and *N* hole-punch
 targets per client. It doesn't scale, wastes bandwidth on peers the receiver
 will discard, and leaks every user's public IP + username to everyone online.
 
-## How it works today
+## Prior behavior (before this change)
 
 `update_and_get_peers` (`butterlog-service/src/handlers.rs`):
 
@@ -38,8 +38,9 @@ the (now sole) inject mode processes/keeps an aircraft only within `20 nm`.
 
 - **Goal:** the service returns only peers near the caller, so a client sends to
   (and hole-punches) just those — cutting the *N²* fan-out.
-- **Goal:** degrade gracefully — when the caller has no position fix yet, return
-  everyone; existing clients keep working.
+- **Decision:** when the caller has no position fix, return **no peers** — it
+  can't be near anyone, and inject mode can't render a peer without its own
+  coordinates, so returning everyone would only re-introduce the fan-out.
 - **Non-goal:** changing the transport. This scopes *who* you talk to; it's still
   all-to-all within a region. Hundreds of co-located users would
   need a relay/SFU — out of scope.
@@ -76,11 +77,16 @@ pub struct MultiplayerPingRequest {
 ### 3. Server — persist coords, bounding-box filter
 
 Persist `latitude/longitude` in the upsert (same `COALESCE`-preserve pattern as
-`local_udp_address`, so a position-less caller doesn't wipe a stored one), then:
+`local_udp_address`, so a position-less caller doesn't wipe a stored one). If the
+caller sent **no** position, early-return an empty list. Otherwise compute the
+box and filter:
 
 ```rust
+let (lat, lon) = match (latitude, longitude) {
+    (Some(lat), Some(lon)) => (lat, lon),
+    _ => return Ok(Some(Vec::new())), // no fix → no peers
+};
 const RADIUS_NM: f64 = 30.0; // > the client's 20 nm gate, for movement between pings
-// when the caller sent a position:
 let lat_delta = RADIUS_NM / 60.0;
 let lon_delta = RADIUS_NM / (60.0 * lat.to_radians().cos().abs().max(0.01)); // guard poles
 ```
@@ -90,26 +96,23 @@ SELECT mp.udp_address, mp.local_udp_address, COALESCE(NULLIF(u.global_name,''), 
 FROM multiplayer_peers mp
 JOIN users u ON u.id = mp.user_id
 WHERE mp.user_id <> $1
-  AND (
-        $2::double precision IS NULL              -- caller sent no position → everyone
-     OR mp.latitude IS NULL                       -- peer has no known position → keep (client still gates)
-     OR ( mp.latitude  BETWEEN $3 - $4 AND $3 + $4
-      AND mp.longitude BETWEEN $5 - $6 AND $5 + $6 )
-  )
+  AND ( mp.latitude IS NULL                        -- peer has no known position → keep (client still gates)
+     OR ( mp.latitude  BETWEEN $2 AND $3
+      AND mp.longitude BETWEEN $4 AND $5 ) )
 ```
 
-`$2` is a "do we filter" sentinel; `$3/$5` the caller lat/lon; `$4/$6` the deltas.
-A square box slightly over-includes corners — the client's existing 20 nm check
-trims them. For an exact circle, run a haversine pass in Rust over the (small)
-returned set.
+`$2/$3` are the caller's lat range, `$4/$5` the lon range. A square box slightly
+over-includes corners — the client's existing 20 nm check trims them. For an exact
+circle, run a haversine pass in Rust over the (small) returned set.
 
 ### 4. Client — populate coords (omit when no fix)
 
-In the app ping (`multiplayer.rs`) and the traffic simulator:
+In the app ping (`multiplayer.rs`), the flight-sync path (`webhook_manager.rs`,
+which also returns peers), and the traffic simulator:
 
 ```rust
-// Send our position so the service can scope to nearby peers. With no fix yet
-// we omit it and the service returns everyone (degenerate fallback).
+// Send our position so the service scopes to nearby peers. With no fix we omit
+// it and the service returns no peers.
 let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
     Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
     _ => (None, None),
@@ -119,11 +122,14 @@ let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) 
 
 ## Edge cases & rollout
 
-- **Backward compatible:** request fields and columns are additive. Old clients
-  send no coords (NULL position); the `OR mp.latitude IS NULL` clause keeps them
-  visible, so nothing breaks. The traffic reduction phases in as clients update.
-- **No fix yet:** a caller without a position fix sends no coords and gets the
-  full list, as today.
+- **Rollout / compat:** the request fields and columns are additive, and the
+  `OR mp.latitude IS NULL` clause keeps *peers* with unknown position visible.
+  But the caller side is a **breaking change**: an existing released client
+  doesn't send a position, so against the new service it gets an **empty** peer
+  list until it updates to a version that sends coordinates. Ship the
+  position-sending client **before or with** the service deploy.
+- **No fix yet:** a caller without a position fix sends no coords and gets **no
+  peers** (it can't be near anyone, and inject mode needs coordinates to render).
 - **Boundary margin:** filter at ~30 nm server-side vs the 20 nm client gate so
   aircraft don't pop in/out at the edge as people move between 200 ms pings under
   the 120 s presence window.
@@ -132,6 +138,17 @@ let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) 
   longitude range if it ever matters.
 - **Privacy:** as a side effect, you only learn the addresses/usernames of users
   near you rather than everyone online.
+
+## Implementation
+
+- **Service:** migration `20260617000000_multiplayer_peer_position.sql` (lat/lon
+  columns); `MultiplayerPingRequest`, `CreateFlightRequest`, `UpdateFlightRequest`,
+  and `update_and_get_peers` in `handlers.rs` (persist + bounding-box filter,
+  empty when the caller has no position).
+- **App:** `multiplayer.rs` ping sends the connected monitor's position;
+  `webhook_manager.rs` flight create/update also sends it (it returns peers too).
+- **Simulator:** `traffic_simulator.rs` publishes each mock client's position
+  (`ping_position`) so the service scopes peers and same-machine testing works.
 
 ## Alternatives considered
 
