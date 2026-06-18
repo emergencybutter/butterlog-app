@@ -149,7 +149,9 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(define_id, "PRESSURIZATION CABIN ALTITUDE", "feet")?;
 
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for xp_prop_rpm
-        sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for xp_gear_ratio
+        // Real landing-gear extension (0..1) into the xp_gear_ratio slot so it
+        // propagates to peers; "percent over 100" yields a 0..1 fraction.
+        sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent over 100")?;
         sc.add_to_data_definition::<f64>(define_id, "BRAKE PARKING POSITION", "bool")?;
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
@@ -175,6 +177,12 @@ impl SimConnectMonitor {
             // so small differences between the sender's MSL and our terrain mesh
             // don't leave parked aircraft floating or sunk.
             on_ground: f64,
+            // Landing-gear extension (0..1) from the peer, driven onto the AI's
+            // gear handle + per-leg positions so the gear animates.
+            gear_handle: f64,
+            gear_center: f64,
+            gear_left: f64,
+            gear_right: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -184,6 +192,10 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE BANK DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "SIM ON GROUND", "bool")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR HANDLE POSITION", "percent over 100")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR CENTER POSITION", "percent over 100")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR LEFT POSITION", "percent over 100")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR RIGHT POSITION", "percent over 100")?;
 
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
@@ -267,6 +279,7 @@ impl SimConnectMonitor {
                 last_update_times.insert(update.id.clone(), std::time::Instant::now());
                 if let Some(object_id) = remote_aircraft.get(&update.id) {
                     if *object_id != 0 {
+                        let gear = update.metrics.xp_gear_ratio.clamp(0.0, 1.0);
                         let data = RemoteAircraftData {
                             latitude: update.metrics.latitude,
                             longitude: update.metrics.longitude,
@@ -275,6 +288,10 @@ impl SimConnectMonitor {
                             bank: update.metrics.roll_angle,
                             heading: update.metrics.heading,
                             on_ground: if update.metrics.is_on_ground > 0.5 { 1.0 } else { 0.0 },
+                            gear_handle: gear,
+                            gear_center: gear,
+                            gear_left: gear,
+                            gear_right: gear,
                         };
 
                         unsafe {
