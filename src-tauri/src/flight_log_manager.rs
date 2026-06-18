@@ -512,6 +512,8 @@ pub fn map_row_to_metrics(row: &rusqlite::Row) -> rusqlite::Result<FlightMetrics
         xp_prop_rpm: row.get(68)?,
         xp_gear_ratio: row.get(69)?,
         parking_brake: 0.0,
+        // Light states aren't persisted in flight logs; default them.
+        ..Default::default()
     })
 }
 
@@ -1201,6 +1203,8 @@ fn parse_csv_line_to_row(
         xp_prop_rpm: 0.0,
         xp_gear_ratio: 0.0,
         parking_brake: 0.0,
+        // Light states aren't persisted in flight logs; default them.
+        ..Default::default()
     };
 
     Some(FlightLogRow { timestamp, metrics })

@@ -153,6 +153,12 @@ impl SimConnectMonitor {
         // propagates to peers; "percent over 100" yields a 0..1 fraction.
         sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent over 100")?;
         sc.add_to_data_definition::<f64>(define_id, "BRAKE PARKING POSITION", "bool")?;
+        // Exterior light states (match the trailing FlightMetrics fields).
+        sc.add_to_data_definition::<f64>(define_id, "LIGHT NAV", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "LIGHT BEACON", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "LIGHT STROBE", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "LIGHT TAXI", "bool")?;
+        sc.add_to_data_definition::<f64>(define_id, "LIGHT LANDING", "bool")?;
 
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "TITLE")?;
         sc.add_string256_to_data_definition::<[u8; 256]>(aircraft_define_id, "LIVERY NAME")?;
@@ -183,6 +189,12 @@ impl SimConnectMonitor {
             gear_center: f64,
             gear_left: f64,
             gear_right: f64,
+            // Exterior light states (0/1) from the peer.
+            nav_lights: f64,
+            beacon_lights: f64,
+            strobe_lights: f64,
+            taxi_lights: f64,
+            landing_lights: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -196,6 +208,11 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR CENTER POSITION", "percent over 100")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR LEFT POSITION", "percent over 100")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR RIGHT POSITION", "percent over 100")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT NAV", "bool")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT BEACON", "bool")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT STROBE", "bool")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT TAXI", "bool")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT LANDING", "bool")?;
 
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
@@ -292,6 +309,11 @@ impl SimConnectMonitor {
                             gear_center: gear,
                             gear_left: gear,
                             gear_right: gear,
+                            nav_lights: update.metrics.nav_lights,
+                            beacon_lights: update.metrics.beacon_lights,
+                            strobe_lights: update.metrics.strobe_lights,
+                            taxi_lights: update.metrics.taxi_lights,
+                            landing_lights: update.metrics.landing_lights,
                         };
 
                         unsafe {

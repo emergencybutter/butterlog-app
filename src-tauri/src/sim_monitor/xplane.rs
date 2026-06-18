@@ -251,6 +251,11 @@ impl XPlaneMonitor {
             "sim/cockpit2/autopilot/pitch_status",
             "sim/cockpit2/pressurization/indicators/cabin_altitude_ft",
             "sim/cockpit2/controls/parking_brake_ratio",
+            "sim/cockpit2/switches/navigation_lights_on",
+            "sim/cockpit2/switches/beacon_on",
+            "sim/cockpit2/switches/strobe_lights_on",
+            "sim/cockpit2/switches/taxi_light_on",
+            "sim/cockpit2/switches/landing_lights_on",
         ];
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
@@ -555,6 +560,13 @@ impl XPlaneMonitor {
                             updated = true;
                         }
                         if let Some(v) = get_path_double_idx("sim/aircraft/parts/acf_gear_deploy", 0) { m.xp_gear_ratio = v; updated = true; }
+
+                        // Exterior light switch states (0/1).
+                        if let Some(v) = get_path_double("sim/cockpit2/switches/navigation_lights_on") { m.nav_lights = if v > 0.5 { 1.0 } else { 0.0 }; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/switches/beacon_on") { m.beacon_lights = if v > 0.5 { 1.0 } else { 0.0 }; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/switches/strobe_lights_on") { m.strobe_lights = if v > 0.5 { 1.0 } else { 0.0 }; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/switches/taxi_light_on") { m.taxi_lights = if v > 0.5 { 1.0 } else { 0.0 }; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/switches/landing_lights_on") { m.landing_lights = if v > 0.5 { 1.0 } else { 0.0 }; updated = true; }
 
                         // Added X-Plane parameter mapping
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/ITT_deg_C", 0) {
@@ -1308,6 +1320,11 @@ impl SimMonitor for XPlaneMonitor {
             "roll": metrics.roll_angle as f32,
             "on_ground": metrics.is_on_ground > 0.5,
             "gear_ratio": metrics.xp_gear_ratio,
+            "nav_lights": metrics.nav_lights,
+            "beacon_lights": metrics.beacon_lights,
+            "strobe_lights": metrics.strobe_lights,
+            "taxi_lights": metrics.taxi_lights,
+            "landing_lights": metrics.landing_lights,
             "remove": false
         });
 

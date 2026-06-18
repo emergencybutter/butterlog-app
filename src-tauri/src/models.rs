@@ -139,6 +139,15 @@ pub struct FlightMetrics {
     pub xp_prop_rpm: f64,
     pub xp_gear_ratio: f64,
     pub parking_brake: f64,
+
+    // Exterior light states (0.0 off / 1.0 on), propagated to peers so injected
+    // traffic shows the right lights. Appended last to keep the MSFS SimConnect
+    // direct-cast field offsets stable.
+    pub nav_lights: f64,
+    pub beacon_lights: f64,
+    pub strobe_lights: f64,
+    pub taxi_lights: f64,
+    pub landing_lights: f64,
 }
 
 impl FlightMetrics {
@@ -214,6 +223,12 @@ impl FlightMetrics {
         self.xp_prop_rpm = self.xp_prop_rpm.max(other.xp_prop_rpm);
         self.xp_gear_ratio = self.xp_gear_ratio.max(other.xp_gear_ratio);
         self.parking_brake = self.parking_brake.max(other.parking_brake);
+
+        self.nav_lights = self.nav_lights.max(other.nav_lights);
+        self.beacon_lights = self.beacon_lights.max(other.beacon_lights);
+        self.strobe_lights = self.strobe_lights.max(other.strobe_lights);
+        self.taxi_lights = self.taxi_lights.max(other.taxi_lights);
+        self.landing_lights = self.landing_lights.max(other.landing_lights);
     }
 }
 
