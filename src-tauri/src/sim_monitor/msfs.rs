@@ -171,6 +171,10 @@ impl SimConnectMonitor {
             pitch: f64,
             bank: f64,
             heading: f64,
+            // 1.0 when on the ground: MSFS then clamps the object to the terrain,
+            // so small differences between the sender's MSL and our terrain mesh
+            // don't leave parked aircraft floating or sunk.
+            on_ground: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -179,6 +183,7 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE PITCH DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE BANK DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
+        sc.add_to_data_definition::<f64>(remote_define_id, "SIM ON GROUND", "bool")?;
 
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
@@ -269,6 +274,7 @@ impl SimConnectMonitor {
                             pitch: update.metrics.pitch_angle,
                             bank: update.metrics.roll_angle,
                             heading: update.metrics.heading,
+                            on_ground: if update.metrics.is_on_ground > 0.5 { 1.0 } else { 0.0 },
                         };
 
                         unsafe {
