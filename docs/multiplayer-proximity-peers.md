@@ -38,9 +38,12 @@ the (now sole) inject mode processes/keeps an aircraft only within `100 nm`.
 
 - **Goal:** the service returns only peers near the caller, so a client sends to
   (and hole-punches) just those — cutting the *N²* fan-out.
-- **Decision:** when the caller has no position fix, return **no peers** — it
-  can't be near anyone, and inject mode can't render a peer without its own
+- **Intended:** when the caller has no position fix it should get **no peers** —
+  it can't be near anyone, and inject mode can't render a peer without its own
   coordinates, so returning everyone would only re-introduce the fan-out.
+  **Currently** the service still returns everyone in that case (temporary
+  fallback, marked with a TODO in `update_and_get_peers`) until all clients send
+  a position.
 - **Non-goal:** changing the transport. This scopes *who* you talk to; it's still
   all-to-all within a region. Hundreds of co-located users would
   need a relay/SFU — out of scope.
@@ -77,14 +80,14 @@ pub struct MultiplayerPingRequest {
 ### 3. Server — persist coords, bounding-box filter
 
 Persist `latitude/longitude` in the upsert (same `COALESCE`-preserve pattern as
-`local_udp_address`, so a position-less caller doesn't wipe a stored one). If the
-caller sent **no** position, early-return an empty list. Otherwise compute the
-box and filter:
+`local_udp_address`, so a position-less caller doesn't wipe a stored one). With a
+position, filter to the box below. **Temporary:** with no position, return all
+active peers (TODO to switch to an empty list once all clients send a position):
 
 ```rust
 let (lat, lon) = match (latitude, longitude) {
     (Some(lat), Some(lon)) => (lat, lon),
-    _ => return Ok(Some(Vec::new())), // no fix → no peers
+    _ => return Ok(Some(all_active_peers)), // TODO: return empty once clients all send a position
 };
 const RADIUS_NM: f64 = 120.0; // > the client's 100 nm gate, for movement between pings
 let lat_delta = RADIUS_NM / 60.0;
@@ -112,7 +115,7 @@ which also returns peers), and the traffic simulator:
 
 ```rust
 // Send our position so the service scopes to nearby peers. With no fix we omit
-// it and the service returns no peers.
+// it (the service currently returns everyone in that case — see TODO).
 let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
     Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
     _ => (None, None),
@@ -128,8 +131,9 @@ let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) 
   doesn't send a position, so against the new service it gets an **empty** peer
   list until it updates to a version that sends coordinates. Ship the
   position-sending client **before or with** the service deploy.
-- **No fix yet:** a caller without a position fix sends no coords and gets **no
-  peers** (it can't be near anyone, and inject mode needs coordinates to render).
+- **No fix yet:** a caller without a position fix sends no coords. Intended to
+  get **no peers** (it can't be near anyone); **currently** gets everyone as a
+  temporary fallback (TODO in `update_and_get_peers`).
 - **Boundary margin:** filter at ~120 nm server-side vs the 100 nm client gate so
   aircraft don't pop in/out at the edge as people move between 200 ms pings under
   the 120 s presence window.
