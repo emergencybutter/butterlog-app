@@ -40,16 +40,16 @@ Two corollaries that drive the wire format:
 
 ```jsonc
 {
-   "v": 2,                          // schema version — P2P has mixed client versions
+  "v": 2,                          // schema version — P2P has mixed client versions
   "sim": "msfs" | "xplane",        // enables a same-sim exact-match fast path
   "native_model": "<title|csl_model_id>",   // used ONLY for the same-sim tier
   "registration": "N12345",        // tail; soft signal
 
   // --- portable type identity (primary key) ---
-  "type_icao": "B738",             // deduced from MSFS ATC MODEL or title / XP acf_ICAO, validated
+  "type_icao": "B738",             // deduced from MSFS title / XP acf_ui_name or acf_ICAO, validated
 
-  // --- fallback descriptor: consulted ONLY when type_icao is empty or
-  //     unknown to the receiver's reference table ---
+  // --- fallback descriptor: populated ONLY when type_icao is empty.
+  // For now we assume the ICAO databases are in sync.
   "raw": {
     "category": "airplane|helicopter|glider",
     "engine_type": "jet|turboprop|piston|...",
@@ -57,9 +57,9 @@ Two corollaries that drive the wire format:
   },
 
   // --- portable livery identity ---
-  "livery": {
+  "livery": {                       // optional, the sender may not have been able to determine a known livery
    "airline_icao": "UAL",
-   "livery_variant": "std",         // normalized scheme tag (see "Livery variants")
+   "livery_variant": "std",         // optional normalized scheme tag (see "Livery variants")
    "livery_era": 2019,              // optional refresh year the scheme belongs to
    "livery_hint": "<raw sim livery>",   // same-sim only, never a cross-sim key
   },
@@ -77,19 +77,12 @@ Two corollaries that drive the wire format:
 
 ### `type_icao` and `airline_icao` determination
 
-When an title/aircraft name is detected, we try multiple avenue to guess its `type_icao` and `airline_icao`.
-First we look in a database that maps (aircraft title/name, livery name/path) -> (`type_icao`, `airline_icao`). Airline icao can be 'none'.
-If not found: We look in all the data we have, title, livery name (or livery path for xplane), `acf_ICAO`, `ATC MODEL`. We look for all valid icao types as well as all valid airlines. For airlines we have a map: airline name -> icao.
-
-If after this we fail to determine the type we log all the info and send it to the service.
+type_icao and airline_icao are determined using heuristics from the aircraft title and livery name for msfs. and the ui name and livery path for xplane.
+Note that this heuristics applies to both the user's aircraft but also installed models available to render other players.
 
 ### The `raw` fallback block
 
 `raw` exists **only** for the cases where `type_icao` cannot be resolved:
-
-- **Empty `type_icao`** — X-Plane `acf_ICAO` is often blank/garbage on custom, addon,
-  or experimental aircraft; MSFS `ATC MODEL` can also be empty.
-- **Unknown `type_icao`** — a newer or custom ICAO the receiver's table lacks.
 
 In those cases the receiver has nothing to infer from, and these **sim-measured**
 primitives are the only signal for the similarity fallback. They are direct readings,
@@ -99,15 +92,10 @@ independent of any ICAO lookup, so they cannot be reconstructed receiver-side:
 - `engine_type` ← MSFS `ENGINE TYPE` / X-Plane `acf_en_type`
 - `num_engines` ← MSFS `NUMBER OF ENGINES` / X-Plane `acf_num_engines`
 
-`category` is kept even though ICAO usually implies it, specifically because the failure
-it guards against — rendering a helicopter where a fixed-wing belongs — is the most
-jarring miss, and it occurs precisely in the unknown-ICAO custom-aircraft case where no
-table fallback exists.
-
 ### Matcher rule for the descriptor
 
-- `type_icao` **known** → derive all attributes (`wtc`, `manufacturer`, `category`,
-  `engine_type`, `num_engines`) from the **local** reference table; **`raw` is ignored**.
+- `type_icao` **known and on the wire** → derive all attributes (`wtc`, `manufacturer`, `category`,
+  `engine_type`, `num_engines`) from the **local** reference table; **`raw` is absent from the protocol**.
 - `type_icao` **empty/unknown** → fall back to `raw.category` (to gate
   heli/plane/glider) plus `raw.engine_type` / `raw.num_engines` for similarity scoring.
 
