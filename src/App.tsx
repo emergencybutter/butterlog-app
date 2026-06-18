@@ -456,6 +456,20 @@ function App() {
                                   {ac.chosenModel || "— (deferred to sim plugin)"}
                                 </div>
                               </div>
+                              <div style={{ gridColumn: "span 3" }}>
+                                <span className="mp-label">State:</span>
+                                <div style={{ color: "#aaa" }}>
+                                  {ac.onGround ? "On ground" : "Airborne"} · Gear {Math.round(ac.gearRatio * 100)}% · Lights: {
+                                    [
+                                      ac.navLights && "NAV",
+                                      ac.beaconLights && "BCN",
+                                      ac.strobeLights && "STRB",
+                                      ac.taxiLights && "TAXI",
+                                      ac.landingLights && "LDG",
+                                    ].filter(Boolean).join(" ") || "—"
+                                  }
+                                </div>
+                              </div>
                             </div>
                             <div className="mp-telemetry-box">
                               <span className="mp-label">LAT:</span>

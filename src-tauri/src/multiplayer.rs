@@ -107,6 +107,15 @@ pub struct TrackedAircraftDebugInfo {
     pub track: f64,
     pub pitch_angle: f64,
     pub roll_angle: f64,
+    /// On-ground flag and equipment states from the peer's telemetry.
+    pub on_ground: bool,
+    /// Landing-gear extension, 0.0..=1.0.
+    pub gear_ratio: f64,
+    pub nav_lights: bool,
+    pub beacon_lights: bool,
+    pub strobe_lights: bool,
+    pub taxi_lights: bool,
+    pub landing_lights: bool,
 }
 
 #[derive(serde::Serialize, Clone, ts_rs::TS)]
@@ -279,6 +288,13 @@ impl MultiplayerManager {
                     track: ac.current_metrics.track,
                     pitch_angle: ac.current_metrics.pitch_angle,
                     roll_angle: ac.current_metrics.roll_angle,
+                    on_ground: ac.current_metrics.is_on_ground > 0.5,
+                    gear_ratio: ac.current_metrics.xp_gear_ratio,
+                    nav_lights: ac.current_metrics.nav_lights > 0.5,
+                    beacon_lights: ac.current_metrics.beacon_lights > 0.5,
+                    strobe_lights: ac.current_metrics.strobe_lights > 0.5,
+                    taxi_lights: ac.current_metrics.taxi_lights > 0.5,
+                    landing_lights: ac.current_metrics.landing_lights > 0.5,
                 }
             })
             .collect();

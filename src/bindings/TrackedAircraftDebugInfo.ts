@@ -33,4 +33,4 @@ livery: string,
 /**
  * Local model chosen to render this peer; empty when the receiver defers selection.
  */
-chosenModel: string, objectClass: string, category: string, numEngines: number, engineType: string, lastSeenSecondsAgo: number, latitude: number, longitude: number, gpsAltitudeMsl: number, indicatedAltitude: number, groundSpeed: number, heading: number, track: number, pitchAngle: number, rollAngle: number, };
+chosenModel: string, objectClass: string, category: string, numEngines: number, engineType: string, lastSeenSecondsAgo: number, latitude: number, longitude: number, gpsAltitudeMsl: number, indicatedAltitude: number, groundSpeed: number, heading: number, track: number, pitchAngle: number, rollAngle: number, onGround: boolean, gearRatio: number, navLights: boolean, beaconLights: boolean, strobeLights: boolean, taxiLights: boolean, landingLights: boolean, };
