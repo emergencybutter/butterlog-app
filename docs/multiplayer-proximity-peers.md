@@ -32,7 +32,7 @@ The only filters are "not me" and "active". There is **no position stored and
 no distance filter** — the table doesn't know where anyone is.
 
 Proximity is enforced **client-side** in the receiver (`multiplayer.rs`):
-the (now sole) inject mode processes/keeps an aircraft only within `20 nm`.
+the (now sole) inject mode processes/keeps an aircraft only within `100 nm`.
 
 ## Goal / non-goals
 
@@ -86,7 +86,7 @@ let (lat, lon) = match (latitude, longitude) {
     (Some(lat), Some(lon)) => (lat, lon),
     _ => return Ok(Some(Vec::new())), // no fix → no peers
 };
-const RADIUS_NM: f64 = 30.0; // > the client's 20 nm gate, for movement between pings
+const RADIUS_NM: f64 = 120.0; // > the client's 100 nm gate, for movement between pings
 let lat_delta = RADIUS_NM / 60.0;
 let lon_delta = RADIUS_NM / (60.0 * lat.to_radians().cos().abs().max(0.01)); // guard poles
 ```
@@ -102,7 +102,7 @@ WHERE mp.user_id <> $1
 ```
 
 `$2/$3` are the caller's lat range, `$4/$5` the lon range. A square box slightly
-over-includes corners — the client's existing 20 nm check trims them. For an exact
+over-includes corners — the client's existing 100 nm check trims them. For an exact
 circle, run a haversine pass in Rust over the (small) returned set.
 
 ### 4. Client — populate coords (omit when no fix)
@@ -130,7 +130,7 @@ let (lat, lon) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) 
   position-sending client **before or with** the service deploy.
 - **No fix yet:** a caller without a position fix sends no coords and gets **no
   peers** (it can't be near anyone, and inject mode needs coordinates to render).
-- **Boundary margin:** filter at ~30 nm server-side vs the 20 nm client gate so
+- **Boundary margin:** filter at ~120 nm server-side vs the 100 nm client gate so
   aircraft don't pop in/out at the edge as people move between 200 ms pings under
   the 120 s presence window.
 - **Antimeridian / poles:** the box breaks across ±180° longitude and near the

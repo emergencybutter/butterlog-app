@@ -10,6 +10,9 @@ use crate::UnifiedMonitor;
 
 const STUN_TX_ID: [u8; 12] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0];
 
+/// Render/track peers within this range (nautical miles) of our aircraft.
+const RANGE_NM: f64 = 100.0;
+
 /// Best-effort LAN address: the OS's chosen source IP toward a public host (no
 /// packet is actually sent by `connect` on a UDP socket), paired with the
 /// multiplayer socket's port. Used as a same-NAT (LAN) candidate.
@@ -631,7 +634,7 @@ impl MultiplayerManager {
                                                             metrics.latitude,
                                                             metrics.longitude,
                                                         );
-                                                        if dist <= 20.0 {
+                                                        if dist <= RANGE_NM {
                                                             should_process = true;
                                                         }
                                                     }
@@ -790,7 +793,7 @@ impl MultiplayerManager {
                                 999.0 // force remove if we don't have our own coordinates
                             };
                             
-                            if age > Duration::from_secs(60) || dist > 20.0 {
+                            if age > Duration::from_secs(60) || dist > RANGE_NM {
                                 to_remove.push(id.clone());
                             }
                         }
