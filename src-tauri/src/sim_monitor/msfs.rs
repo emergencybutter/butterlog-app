@@ -17,6 +17,21 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Simvars in the injected-aircraft (`remote_define_id`) data definition, in
+/// registration order. Used to label SimConnect exceptions by datum name.
+/// MUST stay in sync with the `add_to_data_definition` calls below.
+const REMOTE_DATUM_NAMES: &[&str] = &[
+    "PLANE LATITUDE",
+    "PLANE LONGITUDE",
+    "PLANE ALTITUDE",
+    "PLANE PITCH DEGREES",
+    "PLANE BANK DEGREES",
+    "PLANE HEADING DEGREES TRUE",
+    "SIM ON GROUND",
+    "GEAR HANDLE POSITION",
+    "GEAR CENTER POSITION",
+];
+
 pub struct SimConnectMonitor {
     metrics: Arc<Mutex<FlightMetrics>>,
     aircraft_info: Arc<Mutex<AircraftInfo>>,
@@ -183,18 +198,12 @@ impl SimConnectMonitor {
             // so small differences between the sender's MSL and our terrain mesh
             // don't leave parked aircraft floating or sunk.
             on_ground: f64,
-            // Landing-gear extension (0..1) from the peer, driven onto the AI's
-            // gear handle + per-leg positions so the gear animates.
+            // Gear from the peer. Only GEAR HANDLE/CENTER POSITION are settable on
+            // a non-ATC AI; GEAR LEFT/RIGHT POSITION and all LIGHT * simvars are
+            // rejected with DATA_ERROR (confirmed via the exception diagnostic), so
+            // lights are not driven on MSFS AI.
             gear_handle: f64,
             gear_center: f64,
-            gear_left: f64,
-            gear_right: f64,
-            // Exterior light states (0/1) from the peer.
-            nav_lights: f64,
-            beacon_lights: f64,
-            strobe_lights: f64,
-            taxi_lights: f64,
-            landing_lights: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -204,15 +213,11 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE BANK DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "SIM ON GROUND", "bool")?;
+        // Only the gear datums MSFS accepts on a non-ATC AI. GEAR LEFT/RIGHT POSITION
+        // and all LIGHT * simvars return DATA_ERROR, so they're omitted. Order must
+        // match RemoteAircraftData and REMOTE_DATUM_NAMES.
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR HANDLE POSITION", "percent over 100")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR CENTER POSITION", "percent over 100")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR LEFT POSITION", "percent over 100")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "GEAR RIGHT POSITION", "percent over 100")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT NAV", "bool")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT BEACON", "bool")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT STROBE", "bool")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT TAXI", "bool")?;
-        sc.add_to_data_definition::<f64>(remote_define_id, "LIGHT LANDING", "bool")?;
 
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
@@ -251,6 +256,9 @@ impl SimConnectMonitor {
         let mut remote_aircraft: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         let mut last_update_times: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
         let mut last_ai_log: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
+        // Maps a SetDataOnSimObject packet's send id -> peer id, so SimConnect
+        // exceptions can be attributed to the exact inject call + datum.
+        let mut inject_sends: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
         let mut last_msfs_update = std::time::Instant::now();
@@ -307,13 +315,6 @@ impl SimConnectMonitor {
                             on_ground: if update.metrics.is_on_ground > 0.5 { 1.0 } else { 0.0 },
                             gear_handle: gear,
                             gear_center: gear,
-                            gear_left: gear,
-                            gear_right: gear,
-                            nav_lights: update.metrics.nav_lights,
-                            beacon_lights: update.metrics.beacon_lights,
-                            strobe_lights: update.metrics.strobe_lights,
-                            taxi_lights: update.metrics.taxi_lights,
-                            landing_lights: update.metrics.landing_lights,
                         };
 
                         unsafe {
@@ -327,6 +328,15 @@ impl SimConnectMonitor {
                                 std::mem::size_of::<RemoteAircraftData>() as DWORD,
                                 std::mem::transmute(&data),
                             );
+                            // Correlate this packet's send id back to the peer so a
+                            // SimConnect exception can be attributed to this call.
+                            let mut send_id: DWORD = 0;
+                            if SimConnect_GetLastSentPacketID(handle, &mut send_id) >= 0 {
+                                if inject_sends.len() >= 4096 {
+                                    inject_sends.clear();
+                                }
+                                inject_sends.insert(send_id, update.id.clone());
+                            }
                         }
 
                         let should_log = last_ai_log.get(&update.id)
@@ -449,7 +459,19 @@ impl SimConnectMonitor {
                     }
                 }
                 if let Some(exception) = msg.as_exception() {
-                    crate::append_log(app, format!("[BUG] SimConnectException:: {} {} {}", exception.exception, exception.send_id, exception.index));
+                    // If this exception belongs to an inject SetDataOnSimObject call,
+                    // attribute it to the peer and the specific datum that failed.
+                    let detail = match inject_sends.get(&exception.send_id) {
+                        Some(peer) => {
+                            let datum = REMOTE_DATUM_NAMES
+                                .get(exception.index as usize)
+                                .copied()
+                                .unwrap_or("<out-of-range>");
+                            format!("  (inject peer={} datum[{}]={})", peer, exception.index, datum)
+                        }
+                        None => String::new(),
+                    };
+                    crate::append_log(app, format!("[BUG] SimConnectException:: {} {} {}{}", exception.exception, exception.send_id, exception.index, detail));
                 }
 
                 if let Some(event) = msg.as_event() {
