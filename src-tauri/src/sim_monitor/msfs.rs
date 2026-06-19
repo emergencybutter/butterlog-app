@@ -243,9 +243,6 @@ impl SimConnectMonitor {
             pitch: f64,
             bank: f64,
             heading: f64,
-            gear_left_position: f64,
-            gear_right_position: f64,
-            gear_center_position: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -352,9 +349,6 @@ impl SimConnectMonitor {
                             pitch: update.metrics.pitch_angle,
                             bank: update.metrics.roll_angle,
                             heading: update.metrics.heading,
-                            gear_left_position: update.metrics.xp_gear_ratio,
-                            gear_right_position: update.metrics.xp_gear_ratio,
-                            gear_center_position: update.metrics.xp_gear_ratio,
                         };
 
                         unsafe {
@@ -1753,6 +1747,7 @@ fn find_best_multiplayer_model(
                 num_engines: remote_num_engines,
                 wtc: if remote_num_engines >= 2 && remote_engine_type.to_lowercase() == "jet" { "Medium".to_string() } else { "Light".to_string() },
                 class: "Fixed-wing".to_string(),
+                wingspan: 0.0,
             })
         } else {
             None

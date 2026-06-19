@@ -331,6 +331,7 @@ mod tests {
             num_engines: 0,
             wtc: String::new(),
             class: String::new(),
+            wingspan: 0.0,
         }
     }
 
