@@ -191,6 +191,9 @@ impl SimConnectMonitor {
             pitch: f64,
             bank: f64,
             heading: f64,
+            gear_left_position: f64,
+            gear_right_position: f64,
+            gear_center_position: f64,
         }
 
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE LATITUDE", "degrees")?;
@@ -199,12 +202,11 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE PITCH DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE BANK DEGREES", "degrees")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "PLANE HEADING DEGREES TRUE", "degrees")?;
-        // NOTE: we deliberately do NOT write gear or light simvars to injected AI.
-        // Gear-position and LIGHT * simvars return DATA_ERROR on non-ATC AI, and
-        // writing GEAR HANDLE/CENTER re-seats the object on extended gear, lifting
-        // parked aircraft a few metres off the ground. SIM ON GROUND lets MSFS
-        // auto-manage AI gear. Gear/lights still propagate to peers and animate on
-        // the X-Plane (CSL) receiver.
+        // NOTE: We propagate gear positions and light states to injected AI.
+        // We write to individual gear positions (GEAR LEFT/RIGHT/CENTER POSITION)
+        // instead of GEAR HANDLE POSITION to avoid the re-seating/levitation bug.
+        // We also call SimConnect_AIReleaseControl after spawning to let MSFS manage
+        // ground clamping physics. Gear and lights are also propagated to X-Plane peers.
 
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
@@ -298,6 +300,9 @@ impl SimConnectMonitor {
                             pitch: update.metrics.pitch_angle,
                             bank: update.metrics.roll_angle,
                             heading: update.metrics.heading,
+                            gear_left_position: update.metrics.xp_gear_ratio,
+                            gear_right_position: update.metrics.xp_gear_ratio,
+                            gear_center_position: update.metrics.xp_gear_ratio,
                         };
 
                         unsafe {

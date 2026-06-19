@@ -712,6 +712,11 @@ mod tests {
             xp_prop_rpm: 0.0,
             xp_gear_ratio: 0.0,
             parking_brake: 0.0,
+            nav_lights: 0.0,
+            beacon_lights: 0.0,
+            strobe_lights: 0.0,
+            taxi_lights: 0.0,
+            landing_lights: 0.0,
         }
     }
 
