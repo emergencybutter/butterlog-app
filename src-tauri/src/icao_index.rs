@@ -100,6 +100,8 @@ const NICKNAMES: &[(&str, &str)] = &[
     // The ERJ-140 shares the ERJ-135's type code (the DB lists E135 as "ERJ 135/140"); the
     // glued "E140" title token matches neither the code nor the split "140" model token.
     ("E140", "E135"),
+    // The MD-10 is a glass-cockpit DC-10 conversion and shares the DC10 type code.
+    ("MD10", "DC10"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -347,7 +349,7 @@ mod tests {
             ac("M600", "PIPER", "Piper M600", "Piper PA-46-600TP M600"),
             ac("TL20", "TL ULTRALIGHT", "TL Ultralight Sting S4", "TL-2000 Sting"),
             ac("C17", "BOEING", "Boeing Globemaster III", "Boeing C-17 Globemaster III"),
-            ac("MD10", "MCDONNELL DOUGLAS", "McDonnell Douglas MD-10", "MD-10-30F"),
+            ac("DC10", "BOEING-MCDONNELL DOUGLAS", "Boeing (Douglas) DC 10-10/30/40", "McDonnell Douglas DC10-30"),
             ac("PC6", "PILATUS", "Pilatus PC-6 Porter", "Pilatus PC-6/B2-H4"),
             ac("DA62", "DIAMOND", "Diamond DA62", "Diamond DA-62"),
             ac("DJET", "DIAMOND", "Diamond D-Jet", "Diamond D-JET"),
@@ -526,7 +528,7 @@ mod tests {
         assert_eq!(top(&idx, "NXCub"), "CC19");
 
         // Codes appearing verbatim as a title token resolve directly off the ICAO column.
-        assert_eq!(top(&idx, "Asobo PassiveAircraft MD10-30F"), "MD10");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft MD10-30F"), "DC10"); // MD-10 folds into DC10
         assert_eq!(top(&idx, "Asobo PassiveAircraft PC6"), "PC6");
         assert_eq!(top(&idx, "DA62 Passengers"), "DA62");
         assert_eq!(top(&idx, "Asobo PassiveAircraft DJET"), "DJET");
