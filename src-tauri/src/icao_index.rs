@@ -102,6 +102,10 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("E140", "E135"),
     // The MD-10 is a glass-cockpit DC-10 conversion and shares the DC10 type code.
     ("MD10", "DC10"),
+    // Air Tractor AT-802 (existing AT8T) and the Skyship 600 airship: glued title tokens the
+    // model columns store split ("AT-802" -> at,802; "Skyship 600" -> skyship,600).
+    ("AT802", "AT8T"),
+    ("Skyship600", "SKS6"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -387,6 +391,15 @@ mod tests {
             ac("M7", "MAULE", "Maule M-7", "Maule M-7-235"),
             ac("M9", "MAULE", "Maule M-9", "Maule M-9-235"),
             ac("PARA", "GENERIC", "Powered Parachute", "Powered Parachute"),
+            ac("L39", "AERO VODOCHODY", "Aero L-39 Albatros", "Aero L-39 Albatros"),
+            ac("DA20", "DIAMOND", "Diamond DA20 Katana", "Diamond DA20-C1 Eclipse"),
+            ac("C82S", "CESSNA", "Cessna T182 Skylane", "Cessna T182T Turbo Skylane"),
+            ac("SIRA", "TECNAM", "Tecnam P2002 Sierra", "Tecnam P2002-JF Sierra"),
+            ac("SKS6", "AIRSHIP INDUSTRIES", "Skyship 600", "Skyship 600"),
+            ac("BRAV", "TECNAM", "Tecnam P2004 Bravo", "Tecnam P2004 Bravo"),
+            ac("C337", "CESSNA", "Cessna 337 Skymaster", "Cessna 337 Super Skymaster"),
+            ac("T50", "CESSNA", "Cessna T-50 Bobcat", "Cessna AT-17 Bobcat"),
+            ac("AT8T", "AIR TRACTOR", "Air Tractor AT-802", "ATR AT-802"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -610,6 +623,27 @@ mod tests {
         assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 2S20M"), "GLID");
         assert_eq!(top(&idx, "Asobo PassiveAircraft DG1001E"), "GLID");
         assert_eq!(top(&idx, "DG LS8"), "GLID");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 11S18M"), "GLID");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 1S15M"), "GLID");
+
+        // Codes/model words for distinct new types.
+        assert_eq!(top(&idx, "L-39 Albatros"), "L39");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft DA20"), "DA20"); // distinct from DV20 (Katana)
+        assert_eq!(top(&idx, "Asobo PassiveAircraft T182"), "C82S"); // Turbo Skylane, distinct from C182
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2002"), "SIRA");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2004"), "BRAV");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft C337"), "C337"); // Skymaster, distinct from C336
+        assert_eq!(top(&idx, "Asobo PassiveAircraft T50"), "T50");
+
+        // Nicknames: AT-802 (existing AT8T) and the Skyship 600 airship.
+        assert_eq!(top(&idx, "AT802 Aerial Application Sprayer"), "AT8T");
+        assert_eq!(top(&idx, "Skyship600 Passenger"), "SKS6");
+
+        // More FSLTL 737 and Edge 540 / S340B title variants.
+        assert_eq!(top(&idx, "FSLTL_B73X_SNJ"), "B737");
+        assert_eq!(top(&idx, "FSLTL_B73X_SKY"), "B737");
+        assert_eq!(top(&idx, "Edge540 v3 Matt Hall"), "EDGE");
+        assert_eq!(top(&idx, "Microsoft PassiveAircraft S340B Passenger"), "SF34");
     }
 
     #[test]
