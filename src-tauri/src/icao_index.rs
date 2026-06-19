@@ -324,6 +324,10 @@ mod tests {
             ac("BE17", "BEECH", "Beech 17 Staggerwing", "Beechcraft D17 Staggerwing"),
             ac("C402", "CESSNA", "Cessna 401/402", "Cessna 402B"),
             ac("BE9L", "BEECH", "Beech King Air 90", "Beechcraft King Air E90"),
+            ac("F18", "BOEING", "Boeing F/A-18 Hornet", "Boeing F/A-18 Super Hornet"),
+            ac("LGEZ", "RUTAN", "Rutan Long-EZ", "Rutan Model 61 Long-EZ"),
+            ac("UH1", "BELL", "Bell UH-1 Iroquois", "Bell UH-1H Huey"),
+            ac("AT42", "ATR", "ATR-42-500", "ATR 42-600"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -474,6 +478,13 @@ mod tests {
         // Staggerwing's "D17" and the King Air's "C90GTx" variant designation.
         assert_eq!(top(&idx, "Microsoft PassiveAircraft D17"), "BE17");
         assert_eq!(top(&idx, "Microsoft PassiveAircraft C90GTX Medic"), "BE9L");
+
+        // Curated nicknames for marketing/variant names the model columns don't carry.
+        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18");
+        assert_eq!(top(&idx, "Long-EZ Experimental"), "LGEZ");
+        assert_eq!(top(&idx, "Bell UH-1H Iroquois"), "UH1");
+        // ATR 42 must not be swallowed by the ATR 72 (both share the "atr" brand token).
+        assert_eq!(top(&idx, "ATR 42-600 Passengers"), "AT42");
     }
 
     #[test]
