@@ -106,6 +106,12 @@ const NICKNAMES: &[(&str, &str)] = &[
     // model columns store split ("AT-802" -> at,802; "Skyship 600" -> skyship,600).
     ("AT802", "AT8T"),
     ("Skyship600", "SKS6"),
+    // E175 -> the short-wing variant (E75S, existing); CAP 10 -> CP10; the Maule MT-7 shares
+    // the M-7 code; and "S12-G" is a generic glider whose name the model columns don't carry.
+    ("E175", "E75S"),
+    ("CAP10", "CP10"),
+    ("MT7", "M7"),
+    ("S12-G", "GLID"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -400,6 +406,15 @@ mod tests {
             ac("C337", "CESSNA", "Cessna 337 Skymaster", "Cessna 337 Super Skymaster"),
             ac("T50", "CESSNA", "Cessna T-50 Bobcat", "Cessna AT-17 Bobcat"),
             ac("AT8T", "AIR TRACTOR", "Air Tractor AT-802", "ATR AT-802"),
+            ac("MM24", "MAGNI GYRO", "Magni M24 Orion", "Magni M24"),
+            ac("C411", "CESSNA", "Cessna 411", "Cessna 411A"),
+            ac("C82T", "CESSNA", "Cessna TR182 Turbo Skylane RG", "Cessna TR182 Skylane RG"),
+            ac("TWEN", "TECNAM", "Tecnam P2010 Twenty", "Tecnam P2010"),
+            ac("C205", "CESSNA", "Cessna 205", "Cessna 205A"),
+            ac("CP10", "CAP AVIATION", "Mudry CAP 10", "CAP Aviation CAP-10B"),
+            ac("U16", "GRUMMAN", "Grumman HU-16 Albatross", "Grumman HU-16 Albatross"),
+            ac("JAS4", "JOBY AVIATION", "Joby Aviation S4", "Joby S4"),
+            ac("E75S", "EMBRAER", "Embraer 175 short wing", "Embraer ERJ 170-200 IGW"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -644,6 +659,25 @@ mod tests {
         assert_eq!(top(&idx, "FSLTL_B73X_SKY"), "B737");
         assert_eq!(top(&idx, "Edge540 v3 Matt Hall"), "EDGE");
         assert_eq!(top(&idx, "Microsoft PassiveAircraft S340B Passenger"), "SF34");
+
+        // More distinct types and variant codes.
+        assert_eq!(top(&idx, "Magni M24 Plus White"), "MM24");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft C411"), "C411");
+        assert_eq!(top(&idx, "Virus SW Pipistrel"), "PIVI");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft TR182"), "C82T"); // Turbo R182, distinct from C82R/C82S
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2010"), "TWEN");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft C205"), "C205");
+        assert_eq!(top(&idx, "HU16 Albatross Passengers"), "U16"); // "albatross", not L39's "Albatros"
+        assert_eq!(top(&idx, "Joby [Preset Default]"), "JAS4");
+
+        // Nicknames: E175 -> short-wing E75S (existing), CAP 10, Maule MT-7 -> M7, glider S12-G,
+        // and another AT-802 livery.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft E175"), "E75S");
+        assert_eq!(top(&idx, "Robin CAP10"), "CP10");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft MT7"), "M7");
+        assert_eq!(top(&idx, "S12-G: Passengers"), "GLID");
+        assert_eq!(top(&idx, "AT802 Firefighting"), "AT8T");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 11S20M"), "GLID");
     }
 
     #[test]
