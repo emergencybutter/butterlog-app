@@ -61,6 +61,15 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("A320neo", "A20N"),
     ("A321neo", "A21N"),
     ("A380X", "A388"),
+    // Glued/hyphenated forms whose distinctive token the model columns store differently:
+    // the C-17's "C-17A" splits to a bare "17a", the Cessna 401 shares the 402's code, and
+    // CubCrafters' nosewheel XCub ("NXCub") is one token the model name ("XCub") doesn't cover.
+    ("C-17A", "C17"),
+    ("C401", "C402"),
+    ("NXCub", "CC19"),
+    // King Air C90GTx variant: the model columns store the type as "King Air 90"/"E90", so
+    // the distinctive "C90GTX" marketing token wouldn't otherwise resolve to the BE9L code.
+    ("C90GTX", "BE9L"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -306,6 +315,15 @@ mod tests {
             ac("SREY", "PROGRESSIVE AERODYNE", "SeaRey", "Progressive Aerodyne SeaRey"),
             ac("C408", "CESSNA", "Cessna 408 SkyCourier", "Cessna 408 SkyCourier"),
             ac("M600", "PIPER", "Piper M600", "Piper PA-46-600TP M600"),
+            ac("TL20", "TL ULTRALIGHT", "TL Ultralight Sting S4", "TL-2000 Sting"),
+            ac("C17", "BOEING", "Boeing Globemaster III", "Boeing C-17 Globemaster III"),
+            ac("MD10", "MCDONNELL DOUGLAS", "McDonnell Douglas MD-10", "MD-10-30F"),
+            ac("PC6", "PILATUS", "Pilatus PC-6 Porter", "Pilatus PC-6/B2-H4"),
+            ac("DA62", "DIAMOND", "Diamond DA62", "Diamond DA-62"),
+            ac("DJET", "DIAMOND", "Diamond D-Jet", "Diamond D-JET"),
+            ac("BE17", "BEECH", "Beech 17 Staggerwing", "Beechcraft D17 Staggerwing"),
+            ac("C402", "CESSNA", "Cessna 401/402", "Cessna 402B"),
+            ac("BE9L", "BEECH", "Beech King Air 90", "Beechcraft King Air E90"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -418,6 +436,44 @@ mod tests {
     fn no_match_returns_none() {
         let idx = IcaoIndex::build(&test_db());
         assert!(idx.find("spaceship zzzqqq").is_none());
+    }
+
+    #[test]
+    fn resolves_real_world_sim_titles() {
+        let idx = IcaoIndex::build(&test_db());
+
+        // Kitfox add-on ("Fox2 ...") — the curated nickname carries the type; the trailing
+        // engine/variant noise (915 iS, KR699, STOL, livery names) has no competing signal.
+        assert_eq!(top(&idx, "Fox2 Mountain Fox (915 iS - Analog)"), "FOX");
+        assert_eq!(top(&idx, "Fox2 STOL Club"), "FOX");
+        assert_eq!(top(&idx, "Fox2 ElectricProwl (912 iS - Low n' Slow Analog)"), "FOX");
+        assert_eq!(top(&idx, "Fox2 KR699 (912 iS - Low n' Slow)"), "FOX");
+        assert_eq!(top(&idx, "Fox2 Hwite Fox (912 iS - Low n' Slow)"), "FOX");
+        assert_eq!(top(&idx, "Fox2 Wildflowers (912 iS - Low n' Slow)"), "FOX");
+
+        // TL Ultralight Sting — curated nickname.
+        assert_eq!(top(&idx, "Sting S4 Orange Black GTN750"), "TL20");
+        assert_eq!(top(&idx, "Sting S4 Bronze Burgundy GTN750"), "TL20");
+
+        // Hyphenated C-17A: tokenizes to a bare "17a", pinned via nickname.
+        assert_eq!(top(&idx, "C-17A Military Airlift"), "C17");
+
+        // Cessna 401 shares the 402's ICAO type; glued "C401" pinned via nickname.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft C401"), "C402");
+
+        // CubCrafters nosewheel XCub: one token the model name ("XCub") doesn't cover.
+        assert_eq!(top(&idx, "NXCub"), "CC19");
+
+        // Codes appearing verbatim as a title token resolve directly off the ICAO column.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft MD10-30F"), "MD10");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft PC6"), "PC6");
+        assert_eq!(top(&idx, "DA62 Passengers"), "DA62");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft DJET"), "DJET");
+
+        // Distinctive model tokens carry the type when the code isn't spelled out: the
+        // Staggerwing's "D17" and the King Air's "C90GTx" variant designation.
+        assert_eq!(top(&idx, "Microsoft PassiveAircraft D17"), "BE17");
+        assert_eq!(top(&idx, "Microsoft PassiveAircraft C90GTX Medic"), "BE9L");
     }
 
     #[test]
