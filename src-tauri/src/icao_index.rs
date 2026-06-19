@@ -38,7 +38,10 @@ const ALIASES: &[(&str, &str)] = &[
 const NICKNAMES: &[(&str, &str)] = &[
     ("jumbo jet", "B744"),
     ("dreamliner", "B788"),
-    ("super hornet", "F18"),
+    ("super hornet", "F18H"),
+    // The other F/A-18 add-on titles itself "FA18E"; map it to the Super Hornet code. (A plain
+    // code-prefix no longer applies now that the code is F18S rather than FA18.)
+    ("FA18E", "F18S"),
     ("warthog", "A10"),
     ("Long-EZ", "LGEZ"),
     ("Fox2", "FOX"),
@@ -345,7 +348,7 @@ mod tests {
             ac("BE17", "BEECH", "Beech 17 Staggerwing", "Beechcraft D17 Staggerwing"),
             ac("C402", "CESSNA", "Cessna 401/402", "Cessna 402B"),
             ac("BE9L", "BEECH", "Beech King Air 90", "Beechcraft King Air E90"),
-            ac("F18", "BOEING", "Boeing F/A-18 Hornet", "Boeing F/A-18 Super Hornet"),
+            ac("F18H", "BOEING", "Boeing F/A-18 Hornet", "Boeing F/A-18 Super Hornet"),
             ac("LGEZ", "RUTAN", "Rutan Long-EZ", "Rutan Model 61 Long-EZ"),
             ac("UH1", "BELL", "Bell UH-1 Iroquois", "Bell UH-1H Huey"),
             ac("AT42", "ATR", "ATR-42-500", "ATR 42-600"),
@@ -362,7 +365,7 @@ mod tests {
             ac("CRJ7", "CANADAIR", "canadair CRJ-700", "Bombardier CRJ-700"),
             ac("PIVI", "PIPISTREL", "Pipistrel Virus SW", "Pipistrel Virus SW 121"),
             ac("PITA", "PIPISTREL", "Pipistrel Taurus", "Pipistrel Taurus M"),
-            ac("FA18", "BOEING", "FA-18E", "Boeing FA-18E"),
+            ac("F18S", "BOEING", "FA-18E", "Boeing FA-18E"),
             ac("F7", "FOKKER", "Fokker F.VIIa/3m", "Fokker F7"),
             ac("OPCA", "EDGLEY", "Edgley Optica", "Edgley EA-7 Optica"),
             ac("EDGE", "ZIVKO", "Zivko Edge 540", "Zivko Edge 540"),
@@ -528,7 +531,7 @@ mod tests {
         assert_eq!(top(&idx, "Microsoft PassiveAircraft C90GTX Medic"), "BE9L");
 
         // Curated nicknames for marketing/variant names the model columns don't carry.
-        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18");
+        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18H");
         assert_eq!(top(&idx, "Long-EZ Experimental"), "LGEZ");
         assert_eq!(top(&idx, "Bell UH-1H Iroquois"), "UH1");
         // ATR 42 must not be swallowed by the ATR 72 (both share the "atr" brand token).
@@ -585,10 +588,12 @@ mod tests {
         assert_eq!(top(&idx, "Edge540 v3 Kirby Chambliss"), "EDGE");
         assert_eq!(top(&idx, "Edge540 v3 Bullet"), "EDGE");
 
-        // FA18 (code-prefix of "fa18e") and F18 (Super Hornet nickname) stay distinct.
-        assert_eq!(top(&idx, "Asobo PassiveAircraft FA18E"), "FA18");
-        assert_eq!(top(&idx, "FA18E SuperHornet"), "FA18");
-        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18");
+        // The two F/A-18 add-ons stay distinct: the "FA18E"-titled one is the Super Hornet
+        // code (F18S), while the spelled-out "Super Hornet" title resolves via the Hornet
+        // add-on's nickname (F18H).
+        assert_eq!(top(&idx, "Asobo PassiveAircraft FA18E"), "F18S");
+        assert_eq!(top(&idx, "FA18E SuperHornet"), "F18S");
+        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18H");
 
         // Generic gliders: "Generic Glider" via the code-as-prefix of "glider", plus glider
         // model names carried by nicknames.
