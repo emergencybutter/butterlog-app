@@ -418,7 +418,7 @@ VL3,VL3,JMB,JMB VL-3,JMB Aircraft VL-3,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-w
 CD2,CD2,DORNIER,Dornier Seastar,Dornier Seastar CD2,Turboprop,2,,,,,,,,,,,,,,,,,,,Light,,Amphibian,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 E1400,E1400,EMBRAER,Embraer E140,Embraer ERJ-140,Jet,2,,,,,,,,,,,,,,,,,,,Medium,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 TNDR,TNDR,GOT FRIENDS,Got Friends Tundra,Tundra,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-LEG2,LEG2,VERTIGO,Vertigo,Vertigo Inferno,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+LEG2,LEG2,LANCAIR,Lancair Legacy,Lancair Legacy 2000,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 P212,P212,TECNAM,Tecnam P2012 Traveller,Tecnam P2012,Piston,2,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 C336,C336,CESSNA,Cessna 336 Skymaster,Cessna 336,Piston,2,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 M7,M7,MAULE,Maule M-7,Maule M-7-235,Piston,1,,,,,,,,,,,,,,,,,,,Light,,Fixed-wing,,,,,,,,,,,,,,,,,,,,,,,,,,,,

@@ -88,6 +88,9 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("DG1001E", "GLID"),
     ("LS8", "GLID"),
     ("Powrachute", "PARA"),
+    // "Vertigo" is an add-on livery/edition name for the Lancair Legacy (LEG2); the model
+    // columns carry "Lancair Legacy", which the title doesn't mention.
+    ("Vertigo", "LEG2"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -367,7 +370,7 @@ mod tests {
             ac("CD2", "DORNIER", "Dornier Seastar", "Dornier Seastar CD2"),
             ac("E1400", "EMBRAER", "Embraer E140", "Embraer ERJ-140"),
             ac("TNDR", "GOT FRIENDS", "Got Friends Tundra", "Tundra"),
-            ac("LEG2", "VERTIGO", "Vertigo", "Vertigo Inferno"),
+            ac("LEG2", "LANCAIR", "Lancair Legacy", "Lancair Legacy 2000"),
             ac("P212", "TECNAM", "Tecnam P2012 Traveller", "Tecnam P2012"),
             ac("C336", "CESSNA", "Cessna 336 Skymaster", "Cessna 336"),
             ac("M7", "MAULE", "Maule M-7", "Maule M-7-235"),
@@ -563,6 +566,8 @@ mod tests {
         assert_eq!(top(&idx, "Optica: Scientific Research"), "OPCA");
         assert_eq!(top(&idx, "Seastar"), "CD2");
         assert_eq!(top(&idx, "Tundra 29in"), "TNDR");
+        // "Vertigo" is a Lancair Legacy edition name carried by a nickname (the model columns
+        // say "Lancair Legacy", which this title doesn't mention).
         assert_eq!(top(&idx, "Vertigo: Inferno"), "LEG2");
         // No Fokker collides in the DB, so the brand word alone pins the trimotor.
         assert_eq!(top(&idx, "Fokker F-VIIa/3m Skis"), "F7");
