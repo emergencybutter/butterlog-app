@@ -2044,6 +2044,70 @@ mod tests {
     }
 
     #[test]
+    fn matches_gulfstream_g650() {
+        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+            .expect("Failed to load characteristics DB for tests");
+
+        let available_aircraft = vec![
+            "Cessna Skyhawk G1000".to_string(),
+            "Gulfstream G650".to_string(),
+        ];
+
+        // Exact-title match wins outright — the common case where the peer flies the same
+        // stock title we have installed. (The deduced ICAO is along for the ride.)
+        let exact = RemoteAircraftIdentity {
+            title: "Gulfstream G650".to_string(),
+            resolved_icao: "GLF6".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(fbm_id(&exact, &available_aircraft, &[], &db), "Gulfstream G650");
+
+        // Case-insensitive exact match.
+        let lower = RemoteAircraftIdentity {
+            title: "gulfstream g650".to_string(),
+            resolved_icao: "GLF6".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(fbm_id(&lower, &available_aircraft, &[], &db), "Gulfstream G650");
+
+        // When the peer didn't deduce an ICAO type, a livery title we don't have verbatim
+        // still maps to the installed G650 by title overlap rather than a generic aircraft.
+        let livery_only = vec![
+            "Cessna Skyhawk G1000".to_string(),
+            "Gulfstream G650 NetJets".to_string(),
+        ];
+        let no_icao = RemoteAircraftIdentity {
+            title: "Gulfstream G650".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(fbm_id(&no_icao, &livery_only, &[], &db), "Gulfstream G650 NetJets");
+
+        // Deduced ICAO drives selection even when the peer's raw title is an unhelpful add-on
+        // name: "Gulfstream G650" resolves to GLF6 (via the brand + model-name match), so the
+        // GLF6 type maps to it rather than falling back to a generic jet or the Cessna default.
+        let deduced = RemoteAircraftIdentity {
+            title: "PMDG-style custom bizjet livery".to_string(),
+            resolved_icao: "GLF6".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(fbm_id(&deduced, &available_aircraft, &[], &db), "Gulfstream G650");
+
+        // Airline-aware livery selection: among installed G650 liveries (all resolving to GLF6),
+        // pick the one whose title mentions the operating airline.
+        let liveries = vec![
+            "Gulfstream G650 NetJets".to_string(),
+            "Gulfstream G650 Qatar Executive".to_string(),
+        ];
+        let qatar = RemoteAircraftIdentity {
+            title: "Gulfstream G650".to_string(),
+            resolved_icao: "GLF6".to_string(),
+            resolved_airline: "Qatar Executive".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(fbm_id(&qatar, &liveries, &[], &db), "Gulfstream G650 Qatar Executive");
+    }
+
+    #[test]
     fn test_find_best_multiplayer_model() {
         let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
             .expect("Failed to load characteristics DB for tests");

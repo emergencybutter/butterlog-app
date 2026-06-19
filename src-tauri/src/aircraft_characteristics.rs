@@ -110,8 +110,15 @@ impl CharacteristicsDatabase {
         }
 
         for candidate in candidates {
+            // Match on the manufacturer's brand token rather than its full name: the DB often
+            // stores multi-word manufacturers ("GULFSTREAM AEROSPACE", "GULFSTREAM AEROSPACE-
+            // ROCKWELL") while sim titles carry only the brand ("Gulfstream G650"), so the full
+            // string would never appear. The full model-name match below is the strong signal;
+            // the brand token just guards against matching a model that happens to be a
+            // substring of an unrelated manufacturer's title.
             let mfg = candidate.manufacturer.to_lowercase();
-            if !mfg.is_empty() && lower.contains(&mfg) {
+            let brand = mfg.split(|c: char| c.is_whitespace() || c == '-').next().unwrap_or("");
+            if !brand.is_empty() && lower.contains(brand) {
                 let model_faa = candidate.model_faa.to_lowercase();
                 if !model_faa.is_empty() && lower.contains(&model_faa) {
                     return Some((*candidate).clone());
