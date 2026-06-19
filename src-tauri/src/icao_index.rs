@@ -70,6 +70,10 @@ const NICKNAMES: &[(&str, &str)] = &[
     // King Air C90GTx variant: the model columns store the type as "King Air 90"/"E90", so
     // the distinctive "C90GTX" marketing token wouldn't otherwise resolve to the BE9L code.
     ("C90GTX", "BE9L"),
+    // Sim titles that drop a model-suffix letter so the bare number matches no column token:
+    // Tecnam's "P2006" (type P2006T -> P06T) and Saab's "S2000" (the 2000 -> SB20).
+    ("P2006", "P06T"),
+    ("S2000", "SB20"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -328,6 +332,13 @@ mod tests {
             ac("LGEZ", "RUTAN", "Rutan Long-EZ", "Rutan Model 61 Long-EZ"),
             ac("UH1", "BELL", "Bell UH-1 Iroquois", "Bell UH-1H Huey"),
             ac("AT42", "ATR", "ATR-42-500", "ATR 42-600"),
+            ac("P06T", "TECNAM", "Tecnam P2006T", "Tecnam P2006T"),
+            ac("GLID", "GENERIC", "Generic Glider", "Generic Glider"),
+            ac("MXS", "MX AIRCRAFT", "MXS", "MX Aircraft MXS"),
+            ac("SAVG", "ZLIN AVIATION", "Savage Cub", "Zlin Savage"),
+            ac("P208", "TECNAM", "Tecnam P2008", "Tecnam P2008JC"),
+            ac("ECHO", "TECNAM", "Tecnam P92 Echo", "Tecnam P92"),
+            ac("SB20", "SAAB", "Saab 2000", "Saab 2000"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -485,6 +496,16 @@ mod tests {
         assert_eq!(top(&idx, "Bell UH-1H Iroquois"), "UH1");
         // ATR 42 must not be swallowed by the ATR 72 (both share the "atr" brand token).
         assert_eq!(top(&idx, "ATR 42-600 Passengers"), "AT42");
+
+        // Codes verbatim, code-as-prefix, model words, and suffix-dropping nicknames.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2006"), "P06T"); // nickname (P2006 -> P06T)
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 2S18M"), "GLID"); // "glider" -> code GLID
+        assert_eq!(top(&idx, "Asobo PassiveAircraft S2000"), "SB20"); // nickname (S2000 -> SB20)
+        assert_eq!(top(&idx, "MXS-R"), "MXS"); // code token verbatim
+        assert_eq!(top(&idx, "Savage Norden: Aerial Advertising"), "SAVG"); // distinctive model word
+        assert_eq!(top(&idx, "Robin DR400"), "DR40"); // code DR40 is a prefix of "dr400"
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2008"), "P208"); // model token "p2008"
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P92"), "ECHO"); // model token "p92"
     }
 
     #[test]
