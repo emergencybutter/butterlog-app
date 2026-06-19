@@ -82,6 +82,9 @@ impl SimConnectMonitor {
         let define_id = 1;
         let aircraft_define_id = 2;
         let remote_define_id = 3;
+        // Self-check: read GEAR CENTER POSITION back off an injected AI to confirm
+        // our writes actually take effect on the object.
+        let gear_readback_define_id = 4;
         let request_id = 1;
         let aircraft_request_id = 2;
         let event_sim_start = 1;
@@ -219,6 +222,9 @@ impl SimConnectMonitor {
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR HANDLE POSITION", "percent over 100")?;
         sc.add_to_data_definition::<f64>(remote_define_id, "GEAR CENTER POSITION", "percent over 100")?;
 
+        // Single-datum definition for the gear self-check readback.
+        sc.add_to_data_definition::<f64>(gear_readback_define_id, "GEAR CENTER POSITION", "percent over 100")?;
+
         // Initial request for aircraft title
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
         sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND)?;
@@ -259,6 +265,12 @@ impl SimConnectMonitor {
         // Maps a SetDataOnSimObject packet's send id -> peer id, so SimConnect
         // exceptions can be attributed to the exact inject call + datum.
         let mut inject_sends: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        // Gear self-check: last gear value we wrote per peer, and pending readback
+        // requests (request id -> (peer, expected value)).
+        let mut last_gear_written: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut gear_readback_pending: std::collections::HashMap<u32, (String, f64)> = std::collections::HashMap::new();
+        let mut next_gear_req_id: u32 = 5000;
+        let mut last_gear_check = std::time::Instant::now();
         let mut pending_requests: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         let mut next_request_id: u32 = 1000;
         let mut last_msfs_update = std::time::Instant::now();
@@ -338,6 +350,8 @@ impl SimConnectMonitor {
                                 inject_sends.insert(send_id, update.id.clone());
                             }
                         }
+                        // Remember what gear we just wrote, for the periodic readback check.
+                        last_gear_written.insert(update.id.clone(), gear);
 
                         let should_log = last_ai_log.get(&update.id)
                             .map(|t| t.elapsed().as_secs() >= 60)
@@ -842,6 +856,29 @@ impl SimConnectMonitor {
                             info.num_engines = num_engines;
                             info.engine_type = engine_type;
                         }
+                    }
+                }
+
+                // Gear self-check readback (own request-id range). Handle BEFORE the
+                // FlightMetrics cast below, which would otherwise reinterpret this
+                // small single-f64 buffer out of bounds.
+                if let Some(req) = msg.request_id() {
+                    if let Some((peer, expected)) = gear_readback_pending.remove(&req) {
+                        if let Some(read_ref) = msg.as_sim_object_data::<f64>() {
+                            let read = *read_ref;
+                            if (read - expected).abs() > 0.1 {
+                                crate::append_log(app, format!(
+                                    "[GearCheck] peer {}: gear write NOT applied on AI (wrote {:.2}, AI reads {:.2})",
+                                    peer, expected, read
+                                ));
+                            } else {
+                                crate::append_log(app, format!(
+                                    "[GearCheck] peer {}: gear applied OK (AI reads {:.2})",
+                                    peer, read
+                                ));
+                            }
+                        }
+                        continue;
                     }
                 }
 
@@ -1397,7 +1434,35 @@ impl SimConnectMonitor {
                 // log-throttle timestamp, and any spawn request still awaiting an
                 // assigned-object-id ack (the aircraft timed out before it spawned).
                 last_ai_log.remove(&id);
+                last_gear_written.remove(&id);
                 pending_requests.retain(|_, peer| peer != &id);
+            }
+
+            // Gear self-check (every 5s): ask each injected AI for its actual
+            // GEAR CENTER POSITION so we can confirm our writes took effect. The
+            // response is handled in the dispatch loop and compared to what we wrote.
+            if last_gear_check.elapsed() >= std::time::Duration::from_secs(5) {
+                last_gear_check = std::time::Instant::now();
+                if gear_readback_pending.len() > 512 {
+                    gear_readback_pending.clear(); // drop stale (never-answered) requests
+                }
+                for (peer, object_id) in remote_aircraft.iter() {
+                    if *object_id == 0 { continue; }
+                    let expected = match last_gear_written.get(peer) {
+                        Some(g) => *g,
+                        None => continue,
+                    };
+                    let req = next_gear_req_id;
+                    next_gear_req_id += 1;
+                    if next_gear_req_id >= 9000 { next_gear_req_id = 5000; }
+                    gear_readback_pending.insert(req, (peer.clone(), expected));
+                    let _ = sc.request_data_on_sim_object(
+                        req,
+                        gear_readback_define_id,
+                        *object_id,
+                        SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE,
+                    );
+                }
             }
 
             // Check if we haven't received telemetry updates from MSFS for 60 seconds
