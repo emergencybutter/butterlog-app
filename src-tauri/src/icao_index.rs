@@ -61,7 +61,9 @@ const NICKNAMES: &[(&str, &str)] = &[
     // family ("ATR72" vs code AT72), the neo suffix (the code is A20N/A21N, not A320/A321),
     // and the FlyByWire-style "A380X" marketing name.
     ("ATR72", "AT72"),
-    ("ATR42", "AT42"),
+    // The DB models the ATR 42 only as specific variants (AT43-AT46); a bare "ATR42" with no
+    // variant resolves to the current-production -600 (AT46).
+    ("ATR42", "AT46"),
     ("A320neo", "A20N"),
     ("A321neo", "A21N"),
     ("A380X", "A388"),
@@ -95,6 +97,9 @@ const NICKNAMES: &[(&str, &str)] = &[
     // "Vertigo" is an add-on livery/edition name for the Lancair Legacy (LEG2); the model
     // columns carry "Lancair Legacy", which the title doesn't mention.
     ("Vertigo", "LEG2"),
+    // The ERJ-140 shares the ERJ-135's type code (the DB lists E135 as "ERJ 135/140"); the
+    // glued "E140" title token matches neither the code nor the split "140" model token.
+    ("E140", "E135"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -352,7 +357,7 @@ mod tests {
             ac("F18H", "BOEING", "F/A-18 Hornet", "Boeing F/A-18C/D Hornet"),
             ac("LGEZ", "RUTAN", "Rutan Long-EZ", "Rutan Model 61 Long-EZ"),
             ac("UH1", "BELL", "Bell UH-1 Iroquois", "Bell UH-1H Huey"),
-            ac("AT42", "ATR", "ATR-42-500", "ATR 42-600"),
+            ac("AT46", "ATR", "ATR 42-600", "ATR 42-600"),
             ac("P06T", "TECNAM", "Tecnam P2006T", "Tecnam P2006T"),
             ac("GLID", "GENERIC", "Generic Glider", "Generic Glider"),
             ac("MXS", "MX AIRCRAFT", "MXS", "MX Aircraft MXS"),
@@ -372,7 +377,7 @@ mod tests {
             ac("EDGE", "ZIVKO", "Zivko Edge 540", "Zivko Edge 540"),
             ac("VL3", "JMB", "JMB VL-3", "JMB Aircraft VL-3"),
             ac("CD2", "DORNIER", "Dornier Seastar", "Dornier Seastar CD2"),
-            ac("E1400", "EMBRAER", "Embraer E140", "Embraer ERJ-140"),
+            ac("E135", "EMBRAER", "Embraer ERJ 135/140/Legacy", "Embraer EMB-135LR"),
             ac("TNDR", "GOT FRIENDS", "Got Friends Tundra", "Tundra"),
             ac("LEG2", "LANCAIR", "Lancair Legacy", "Lancair Legacy 2000"),
             ac("P212", "TECNAM", "Tecnam P2012 Traveller", "Tecnam P2012"),
@@ -535,8 +540,9 @@ mod tests {
         assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18S");
         assert_eq!(top(&idx, "Long-EZ Experimental"), "LGEZ");
         assert_eq!(top(&idx, "Bell UH-1H Iroquois"), "UH1");
-        // ATR 42 must not be swallowed by the ATR 72 (both share the "atr" brand token).
-        assert_eq!(top(&idx, "ATR 42-600 Passengers"), "AT42");
+        // ATR 42-600 resolves to its own variant code (AT46), not the ATR 72 (shared "atr"
+        // token) nor a generic AT42 (which isn't a real designator — the DB uses AT43-AT46).
+        assert_eq!(top(&idx, "ATR 42-600 Passengers"), "AT46");
 
         // Codes verbatim, code-as-prefix, model words, and suffix-dropping nicknames.
         assert_eq!(top(&idx, "Asobo PassiveAircraft P2006"), "P06T"); // nickname (P2006 -> P06T)
@@ -584,7 +590,7 @@ mod tests {
         assert_eq!(top(&idx, "Asobo PassiveAircraft M7"), "M7");
         assert_eq!(top(&idx, "Asobo PassiveAircraft M9"), "M9");
         assert_eq!(top(&idx, "Asobo PassiveAircraft P2012"), "P212");
-        assert_eq!(top(&idx, "Asobo PassiveAircraft E140"), "E1400");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft E140"), "E135"); // ERJ-140 shares the E135 code
         assert_eq!(top(&idx, "Edge540 v2"), "EDGE"); // code EDGE is a prefix of "edge540"
         assert_eq!(top(&idx, "Edge540 v3 Kirby Chambliss"), "EDGE");
         assert_eq!(top(&idx, "Edge540 v3 Bullet"), "EDGE");
