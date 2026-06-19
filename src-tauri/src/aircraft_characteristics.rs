@@ -68,12 +68,39 @@ impl CharacteristicsDatabase {
     }
 
     pub fn resolve_title_characteristics(&self, title: &str) -> Option<AircraftCharacteristic> {
-        let lower = title.to_lowercase();
-        
         let mut candidates: Vec<&AircraftCharacteristic> = self.characteristics.values().collect();
         candidates.sort_by_key(|c| std::cmp::Reverse(c.icao_code.len()));
-        
-        for candidate in &candidates {
+        Self::resolve_against_sorted(&candidates, title)
+    }
+
+    /// Resolve characteristics for many titles at once. Sorting the candidate list is the
+    /// expensive part of `resolve_title_characteristics`; doing it a single time here (rather
+    /// than once per title) is what makes multiplayer model matching cheap when many peers
+    /// resolve against the same installed library. Keys are the titles as passed in.
+    pub fn build_title_index(&self, titles: &[String]) -> HashMap<String, Option<AircraftCharacteristic>> {
+        let mut candidates: Vec<&AircraftCharacteristic> = self.characteristics.values().collect();
+        candidates.sort_by_key(|c| std::cmp::Reverse(c.icao_code.len()));
+
+        let mut index: HashMap<String, Option<AircraftCharacteristic>> = HashMap::with_capacity(titles.len());
+        for title in titles {
+            if index.contains_key(title) {
+                continue;
+            }
+            let resolved = Self::resolve_against_sorted(&candidates, title);
+            index.insert(title.clone(), resolved);
+        }
+        index
+    }
+
+    /// Shared matching pass over a candidate list already sorted longest-ICAO-first. Kept
+    /// identical to the per-call logic so the prebuilt index and ad-hoc resolution agree.
+    fn resolve_against_sorted(
+        candidates: &[&AircraftCharacteristic],
+        title: &str,
+    ) -> Option<AircraftCharacteristic> {
+        let lower = title.to_lowercase();
+
+        for candidate in candidates {
             if !candidate.icao_code.is_empty() {
                 let icao_lower = candidate.icao_code.to_lowercase();
                 if lower.contains(&icao_lower) {
@@ -81,8 +108,8 @@ impl CharacteristicsDatabase {
                 }
             }
         }
-        
-        for candidate in &candidates {
+
+        for candidate in candidates {
             let mfg = candidate.manufacturer.to_lowercase();
             if !mfg.is_empty() && lower.contains(&mfg) {
                 let model_faa = candidate.model_faa.to_lowercase();
@@ -95,7 +122,7 @@ impl CharacteristicsDatabase {
                 }
             }
         }
-        
+
         None
     }
 

@@ -39,6 +39,20 @@ pub struct SimConnectMonitor {
     remote_aircraft_sender: Arc<Mutex<Option<std::sync::mpsc::Sender<RemoteAircraftUpdate>>>>,
     available_aircraft: Arc<Mutex<Vec<String>>>,
     available_helicopters: Arc<Mutex<Vec<String>>>,
+    /// Memoized title -> characteristics index for multiplayer model matching, rebuilt only
+    /// when the installed library or characteristics DB changes (see `ModelMatchIndex`).
+    model_match_index: Arc<Mutex<Option<ModelMatchIndex>>>,
+}
+
+/// Cached title -> resolved-characteristics map plus the input sizes it was built from, so a
+/// burst of peers resolving against the same installed library reuses one scan instead of
+/// re-resolving every local title per peer. Lengths are a cheap staleness key: the available
+/// lists and the DB only grow as they load, then stay fixed for the session.
+struct ModelMatchIndex {
+    aircraft_len: usize,
+    helicopter_len: usize,
+    db_len: usize,
+    title_chars: Arc<std::collections::HashMap<String, Option<AircraftCharacteristic>>>,
 }
 
 #[derive(Clone)]
@@ -46,6 +60,10 @@ pub struct RemoteAircraftUpdate {
     pub id: String,
     pub identity: crate::sim_monitor::RemoteAircraftIdentity,
     pub metrics: FlightMetrics,
+    /// Local model the multiplayer layer resolved for this peer, or `None` while
+    /// resolution is still pending. The dispatch loop spawns with this directly rather
+    /// than re-scanning the installed library on the SimConnect thread.
+    pub chosen_model: Option<String>,
 }
 
 impl SimConnectMonitor {
@@ -60,7 +78,41 @@ impl SimConnectMonitor {
             remote_aircraft_sender: Arc::new(Mutex::new(None)),
             available_aircraft: Arc::new(Mutex::new(Vec::new())),
             available_helicopters: Arc::new(Mutex::new(Vec::new())),
+            model_match_index: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Return the memoized title -> characteristics index, rebuilding it only when the
+    /// installed library or DB has changed. The expensive scan runs at most once per
+    /// snapshot, so a startup burst of peers shares a single build.
+    fn title_characteristics_index(
+        &self,
+        ac_list: &[String],
+        hc_list: &[String],
+        db: &CharacteristicsDatabase,
+    ) -> Arc<std::collections::HashMap<String, Option<AircraftCharacteristic>>> {
+        let mut cache = self.model_match_index.lock();
+        let stale = match cache.as_ref() {
+            Some(idx) => {
+                idx.aircraft_len != ac_list.len()
+                    || idx.helicopter_len != hc_list.len()
+                    || idx.db_len != db.characteristics.len()
+            }
+            None => true,
+        };
+        if stale {
+            let mut titles: Vec<String> = Vec::with_capacity(ac_list.len() + hc_list.len());
+            titles.extend_from_slice(ac_list);
+            titles.extend_from_slice(hc_list);
+            let title_chars = Arc::new(db.build_title_index(&titles));
+            *cache = Some(ModelMatchIndex {
+                aircraft_len: ac_list.len(),
+                helicopter_len: hc_list.len(),
+                db_len: db.characteristics.len(),
+                title_chars,
+            });
+        }
+        cache.as_ref().unwrap().title_chars.clone()
     }
 
     fn run_monitor(
@@ -340,35 +392,20 @@ impl SimConnectMonitor {
                         }
                     }
                 } else {
-                    // Create new AI aircraft
+                    // Create new AI aircraft. The local model was already resolved off the
+                    // SimConnect thread by the multiplayer resolver pool; scanning the
+                    // installed library here would stall dispatch and serialize the startup
+                    // burst of peers. If it isn't ready yet, skip — a fresh update arrives
+                    // every 50ms, so we'll spawn on a later tick once a model is available.
+                    let title = match update.chosen_model.as_deref() {
+                        Some(t) if !t.is_empty() => t.to_string(),
+                        _ => continue,
+                    };
+
                     remote_aircraft.insert(update.id.clone(), 0); // Mark as pending
                     let request_id = next_request_id;
                     next_request_id += 1;
                     pending_requests.insert(request_id, update.id.clone());
-
-                    let mut identity = update.identity.clone();
-                    if identity.title.is_empty() {
-                        identity.title = "Cessna Skyhawk G1000".to_string();
-                    }
-                    let raw_title = identity.title.clone();
-                    let title = {
-                        let ac_list = available_aircraft.lock();
-                        let hc_list = available_helicopters.lock();
-                        let empty_db = CharacteristicsDatabase { characteristics: std::collections::HashMap::new() };
-                        let db_ref = app.try_state::<CharacteristicsDatabase>();
-                        let db = db_ref.as_deref().unwrap_or(&empty_db);
-                        let mapped = find_best_multiplayer_model(&identity, &ac_list, &hc_list, db);
-                        if mapped != raw_title {
-                            crate::append_log(app, format!(
-                                "[MSFS] Mapping remote aircraft '{}' (ICAO: {}, airline: {}) to local model '{}'",
-                                raw_title,
-                                if identity.resolved_icao.is_empty() { identity.atc_model.as_str() } else { identity.resolved_icao.as_str() },
-                                identity.resolved_airline,
-                                mapped,
-                            ));
-                        }
-                        mapped
-                    };
 
                     crate::append_log(app, format!(
                         "[MSFS AI] Spawning '{}' for peer {} at Lat={:.4}, Lon={:.4}, Alt={:.0} ft",
@@ -1604,6 +1641,9 @@ fn find_best_multiplayer_model(
     identity: &crate::sim_monitor::RemoteAircraftIdentity,
     available_aircraft: &[String],
     available_helicopters: &[String],
+    // Title -> resolved characteristics, prebuilt once per installed-library snapshot so we
+    // don't re-scan/re-sort the whole characteristics DB for every local title on every peer.
+    title_chars: &std::collections::HashMap<String, Option<AircraftCharacteristic>>,
     db: &CharacteristicsDatabase,
 ) -> String {
     let remote_title = identity.title.as_str();
@@ -1648,7 +1688,7 @@ fn find_best_multiplayer_model(
         let type_upper = type_icao.to_uppercase();
         let mut type_matches: Vec<&String> = Vec::new();
         for ac in available_aircraft {
-            if let Some(c) = db.resolve_title_characteristics(ac) {
+            if let Some(Some(c)) = title_chars.get(ac) {
                 if c.icao_code.eq_ignore_ascii_case(&type_upper) {
                     type_matches.push(ac);
                 }
@@ -1725,8 +1765,8 @@ fn find_best_multiplayer_model(
         let mut best_match = None;
         
         for ac in list_to_search {
-            if let Some(l_char) = db.resolve_title_characteristics(ac) {
-                let score = db.calculate_similarity_score(&r_char, &l_char);
+            if let Some(Some(l_char)) = title_chars.get(ac) {
+                let score = db.calculate_similarity_score(&r_char, l_char);
                 if score > best_score {
                     best_score = score;
                     best_match = Some(ac.clone());
@@ -1900,6 +1940,7 @@ impl SimMonitor for SimConnectMonitor {
         id: &str,
         identity: &crate::sim_monitor::RemoteAircraftIdentity,
         metrics: &FlightMetrics,
+        chosen_model: Option<&str>,
     ) {
         let sender = self.remote_aircraft_sender.lock();
         if let Some(tx) = sender.as_ref() {
@@ -1907,6 +1948,7 @@ impl SimMonitor for SimConnectMonitor {
                 id: id.to_string(),
                 identity: identity.clone(),
                 metrics: *metrics,
+                chosen_model: chosen_model.map(|s| s.to_string()),
             });
         }
     }
@@ -1922,7 +1964,8 @@ impl SimMonitor for SimConnectMonitor {
         }
         let ac_list = self.available_aircraft.lock();
         let hc_list = self.available_helicopters.lock();
-        Some(find_best_multiplayer_model(&identity, &ac_list, &hc_list, db))
+        let title_chars = self.title_characteristics_index(&ac_list, &hc_list, db);
+        Some(find_best_multiplayer_model(&identity, &ac_list, &hc_list, &title_chars, db))
     }
 }
 
@@ -1983,7 +2026,21 @@ mod tests {
             engine_type: engine_type.to_string(),
             ..Default::default()
         };
-        find_best_multiplayer_model(&identity, available_aircraft, available_helicopters, db)
+        fbm_id(&identity, available_aircraft, available_helicopters, db)
+    }
+
+    /// Build the title index the way production does, then resolve — so tests exercise the
+    /// same prebuilt-index path as `choose_remote_model`.
+    fn fbm_id(
+        identity: &RemoteAircraftIdentity,
+        available_aircraft: &[String],
+        available_helicopters: &[String],
+        db: &CharacteristicsDatabase,
+    ) -> String {
+        let mut titles = available_aircraft.to_vec();
+        titles.extend_from_slice(available_helicopters);
+        let title_chars = db.build_title_index(&titles);
+        find_best_multiplayer_model(identity, available_aircraft, available_helicopters, &title_chars, db)
     }
 
     #[test]
@@ -2100,7 +2157,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            find_best_multiplayer_model(&identity, &available_aircraft, &[], &db),
+            fbm_id(&identity, &available_aircraft, &[], &db),
             "Boeing 737-800"
         );
     }
@@ -2124,7 +2181,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            find_best_multiplayer_model(&ryr, &available_aircraft, &[], &db),
+            fbm_id(&ryr, &available_aircraft, &[], &db),
             "Boeing 737-800 Ryanair"
         );
 
@@ -2135,7 +2192,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            find_best_multiplayer_model(&ual, &available_aircraft, &[], &db),
+            fbm_id(&ual, &available_aircraft, &[], &db),
             "Boeing 737-800 United"
         );
 
@@ -2146,7 +2203,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            find_best_multiplayer_model(&none, &available_aircraft, &[], &db),
+            fbm_id(&none, &available_aircraft, &[], &db),
             "Boeing 737-800 United"
         );
     }

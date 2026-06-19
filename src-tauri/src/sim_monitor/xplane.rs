@@ -1274,6 +1274,9 @@ impl SimMonitor for XPlaneMonitor {
         id: &str,
         identity: &crate::sim_monitor::RemoteAircraftIdentity,
         metrics: &FlightMetrics,
+        // X-Plane's plugin selects the CSL model itself, so the receiver-side resolution
+        // is ignored here.
+        _chosen_model: Option<&str>,
     ) {
         static UDP_SOCKET: std::sync::OnceLock<std::net::UdpSocket> = std::sync::OnceLock::new();
         let socket = UDP_SOCKET.get_or_init(|| {

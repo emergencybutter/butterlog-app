@@ -2,7 +2,7 @@ use std::net::{SocketAddr, UdpSocket, ToSocketAddrs};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::Duration;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Manager};
 use crate::models::FlightMetrics;
 use crate::config::ConfigManager;
@@ -52,6 +52,22 @@ fn interpolate_angle_signed(start: f64, target: f64, t: f64) -> f64 {
         res += 360.0;
     }
     res - 180.0
+}
+
+/// Fill in `chosen_model` on every tracked aircraft sharing this identity once a
+/// background worker has resolved it. Only patches entries still awaiting a model so
+/// we never clobber a model already set for a newer identity.
+fn apply_resolved_model(
+    mp: &MultiplayerManager,
+    identity: &crate::sim_monitor::RemoteAircraftIdentity,
+    resolved: Option<String>,
+) {
+    let mut tracked = mp.tracked_aircrafts.lock();
+    for ac in tracked.values_mut() {
+        if ac.chosen_model.is_none() && &ac.identity == identity {
+            ac.chosen_model = resolved.clone();
+        }
+    }
 }
 
 struct TrackedAircraft {
@@ -161,6 +177,13 @@ pub struct MultiplayerManager {
     /// installed-model library, so this avoids rescanning on every new peer or when
     /// an aircraft is pruned and re-added (e.g. drifting around the 20 nm boundary).
     model_cache: Mutex<HashMap<crate::sim_monitor::RemoteAircraftIdentity, Option<String>>>,
+    /// Queue feeding the background model-resolver pool. The receive loop must never
+    /// scan the installed library inline (it would stall UDP draining and serialize
+    /// the startup burst of peers), so it hands new identities to worker threads that
+    /// resolve them in parallel and patch `tracked_aircrafts`/`model_cache` when done.
+    model_resolve_tx: Mutex<Option<std::sync::mpsc::Sender<crate::sim_monitor::RemoteAircraftIdentity>>>,
+    /// Identities currently queued or being resolved, so we enqueue each one once.
+    resolving: Mutex<HashSet<crate::sim_monitor::RemoteAircraftIdentity>>,
     last_received_log: Mutex<Option<std::time::Instant>>,
     last_emitted_log: Mutex<Option<std::time::Instant>>,
 }
@@ -174,6 +197,8 @@ impl MultiplayerManager {
             local_address: Mutex::new(None),
             tracked_aircrafts: Mutex::new(HashMap::new()),
             model_cache: Mutex::new(HashMap::new()),
+            model_resolve_tx: Mutex::new(None),
+            resolving: Mutex::new(HashSet::new()),
             last_received_log: Mutex::new(None),
             last_emitted_log: Mutex::new(None),
         }
@@ -306,9 +331,71 @@ impl MultiplayerManager {
         }
     }
 
+    /// Queue an identity for background model resolution, skipping it if it's already
+    /// queued or in flight so the resolver pool scans each distinct identity only once.
+    fn enqueue_model_resolution(&self, identity: crate::sim_monitor::RemoteAircraftIdentity) {
+        if !self.resolving.lock().insert(identity.clone()) {
+            return; // already queued / being resolved
+        }
+        if let Some(tx) = self.model_resolve_tx.lock().as_ref() {
+            if tx.send(identity.clone()).is_err() {
+                // Pool gone (shouldn't happen while running); drop the in-flight mark.
+                self.resolving.lock().remove(&identity);
+            }
+        } else {
+            self.resolving.lock().remove(&identity);
+        }
+    }
+
     pub fn start(&self, app: AppHandle) {
         let multiplayer = app.state::<Arc<MultiplayerManager>>().inner().clone();
-        
+
+        // Background model-resolver pool. Resolving a peer's local model scans the whole
+        // installed-aircraft library, so it must not run on the UDP receive loop (it would
+        // stall draining and serialize the startup burst). Workers pull identities off a
+        // shared queue, resolve them in parallel, then patch the cache + tracked aircraft.
+        {
+            let (tx, rx) = std::sync::mpsc::channel::<crate::sim_monitor::RemoteAircraftIdentity>();
+            *multiplayer.model_resolve_tx.lock() = Some(tx);
+            let rx = Arc::new(Mutex::new(rx));
+            let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(2, 4);
+            for _ in 0..workers {
+                let rx = rx.clone();
+                let resolver_app = app.clone();
+                let resolver_multiplayer = multiplayer.clone();
+                std::thread::spawn(move || {
+                    loop {
+                        // Hold the queue lock only across recv(); the scan runs unlocked so
+                        // workers process the backlog concurrently.
+                        let identity = match rx.lock().recv() {
+                            Ok(i) => i,
+                            Err(_) => break, // sender dropped; shut down
+                        };
+
+                        // Another worker may have resolved an identical identity already.
+                        if let Some(cached) = resolver_multiplayer.model_cache.lock().get(&identity).cloned() {
+                            resolver_multiplayer.resolving.lock().remove(&identity);
+                            apply_resolved_model(&resolver_multiplayer, &identity, cached);
+                            continue;
+                        }
+
+                        let monitor = resolver_app.state::<UnifiedMonitor>();
+                        let connected = monitor.get_connected_monitor();
+                        let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
+                            characteristics: std::collections::HashMap::new(),
+                        };
+                        let db_ref = resolver_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
+                        let db = db_ref.as_deref().unwrap_or(&empty_db);
+                        let resolved = connected.as_ref().and_then(|m| m.choose_remote_model(&identity, db));
+
+                        resolver_multiplayer.model_cache.lock().insert(identity.clone(), resolved.clone());
+                        resolver_multiplayer.resolving.lock().remove(&identity);
+                        apply_resolved_model(&resolver_multiplayer, &identity, resolved);
+                    }
+                });
+            }
+        }
+
         // Dedicated thread for 50ms interpolation and simulator injection
         let interp_app = app.clone();
         let interp_multiplayer = multiplayer.clone();
@@ -359,7 +446,7 @@ impl MultiplayerManager {
                             ac.current_metrics.pitch_angle = pitch;
                             ac.current_metrics.roll_angle = roll;
                             
-                            m.update_remote_aircraft(id, &ac.identity, &ac.current_metrics);
+                            m.update_remote_aircraft(id, &ac.identity, &ac.current_metrics, ac.chosen_model.as_deref());
                         }
                     }
                 }
@@ -661,13 +748,12 @@ impl MultiplayerManager {
                                                 let now = std::time::Instant::now();
                                                 let key = addr.to_string();
 
-                                                // The local model the connected sim would render for this peer.
-                                                // Resolving it scans every installed title, so it must NOT run while
-                                                // holding tracked_aircrafts (that lock is contended by the 50ms
-                                                // interpolation loop and the polled debug status). We:
-                                                //   1. peek whether (re)resolution is needed under a brief lock,
-                                                //   2. resolve outside the lock (cached by identity), then
-                                                //   3. re-lock briefly to store metrics + chosen model.
+                                                // The local model the connected sim would render for this peer is
+                                                // resolved off-thread by the resolver pool — scanning the installed
+                                                // library is far too slow to run on the receive loop. Use the cached
+                                                // model when it's ready; otherwise enqueue the identity and leave the
+                                                // model unset for now. A worker patches `tracked_aircrafts` shortly,
+                                                // and the 50ms injection loop spawns the AI once a model is available.
                                                 let needs_resolution = {
                                                     let tracked = recv_multiplayer.tracked_aircrafts.lock();
                                                     match tracked.get(&key) {
@@ -679,17 +765,10 @@ impl MultiplayerManager {
                                                 let chosen_model = if needs_resolution {
                                                     let cached = recv_multiplayer.model_cache.lock().get(&identity).cloned();
                                                     match cached {
-                                                        Some(m) => m,
+                                                        Some(m) => m, // already resolved (possibly None for "no match")
                                                         None => {
-                                                            // Expensive scan — performed with no tracked lock held.
-                                                            let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
-                                                                characteristics: std::collections::HashMap::new(),
-                                                            };
-                                                            let db_ref = recv_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
-                                                            let db = db_ref.as_deref().unwrap_or(&empty_db);
-                                                            let resolved = connected.as_ref().and_then(|m| m.choose_remote_model(&identity, db));
-                                                            recv_multiplayer.model_cache.lock().insert(identity.clone(), resolved.clone());
-                                                            resolved
+                                                            recv_multiplayer.enqueue_model_resolution(identity.clone());
+                                                            None
                                                         }
                                                     }
                                                 } else {

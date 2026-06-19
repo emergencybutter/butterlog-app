@@ -42,11 +42,17 @@ pub trait SimMonitor: Send + Sync {
     fn get_current_flight_id(&self) -> String;
     fn is_connected(&self) -> bool;
     fn is_monitoring(&self) -> bool;
+    /// Push an interpolated position for a tracked peer into the sim. `chosen_model` is
+    /// the local model the multiplayer layer already resolved for this peer (or `None`
+    /// while resolution is still pending): MSFS spawns AI with it directly instead of
+    /// re-scanning the installed library on the SimConnect thread; X-Plane ignores it
+    /// (its plugin selects the model).
     fn update_remote_aircraft(
         &self,
         id: &str,
         identity: &RemoteAircraftIdentity,
         metrics: &FlightMetrics,
+        chosen_model: Option<&str>,
     );
     /// Resolve the local model this monitor would use to represent the given remote
     /// aircraft, for observability (the multiplayer debug tab). Returns `None` when the
