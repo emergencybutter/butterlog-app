@@ -74,6 +74,20 @@ const NICKNAMES: &[(&str, &str)] = &[
     // Tecnam's "P2006" (type P2006T -> P06T) and Saab's "S2000" (the 2000 -> SB20).
     ("P2006", "P06T"),
     ("S2000", "SB20"),
+    // Variant/marketing/add-on shorthands whose distinctive token the model columns don't
+    // carry: livery designations (S340B), add-on model names (FSR500 = M500, HA420 = HondaJet,
+    // CRJ550 = CRJ-700, B73X = FSLTL's generic 737, FreedomFox = Kitfox), developer shorthands
+    // (FWB = FlyByWire A320neo), generic glider models (DG1001E, LS8), and a powered parachute.
+    ("S340B", "SF34"),
+    ("FSR500", "P46T"),
+    ("HA420", "HDJT"),
+    ("CRJ550", "CRJ7"),
+    ("B73X", "B737"),
+    ("FreedomFox", "FOX"),
+    ("FWB", "A20N"),
+    ("DG1001E", "GLID"),
+    ("LS8", "GLID"),
+    ("Powrachute", "PARA"),
 ];
 
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
@@ -339,6 +353,26 @@ mod tests {
             ac("P208", "TECNAM", "Tecnam P2008", "Tecnam P2008JC"),
             ac("ECHO", "TECNAM", "Tecnam P92 Echo", "Tecnam P92"),
             ac("SB20", "SAAB", "Saab 2000", "Saab 2000"),
+            ac("SF34", "SAAB", "Saab SF 340", "Saab SF 340B"),
+            ac("P46T", "PIPER", "Piper Malibu Meridian", "Piper PA-46-500TP"),
+            ac("HDJT", "HONDA", "HONDA HA-420 HondaJet", "Honda HA-420 HondaJet"),
+            ac("CRJ7", "CANADAIR", "canadair CRJ-700", "Bombardier CRJ-700"),
+            ac("PIVI", "PIPISTREL", "Pipistrel Virus SW", "Pipistrel Virus SW 121"),
+            ac("PITA", "PIPISTREL", "Pipistrel Taurus", "Pipistrel Taurus M"),
+            ac("FA18", "BOEING", "FA-18E", "Boeing FA-18E"),
+            ac("F7", "FOKKER", "Fokker F.VIIa/3m", "Fokker F7"),
+            ac("OPCA", "EDGLEY", "Edgley Optica", "Edgley EA-7 Optica"),
+            ac("EDGE", "ZIVKO", "Zivko Edge 540", "Zivko Edge 540"),
+            ac("VL3", "JMB", "JMB VL-3", "JMB Aircraft VL-3"),
+            ac("CD2", "DORNIER", "Dornier Seastar", "Dornier Seastar CD2"),
+            ac("E1400", "EMBRAER", "Embraer E140", "Embraer ERJ-140"),
+            ac("TNDR", "GOT FRIENDS", "Got Friends Tundra", "Tundra"),
+            ac("LEG2", "VERTIGO", "Vertigo", "Vertigo Inferno"),
+            ac("P212", "TECNAM", "Tecnam P2012 Traveller", "Tecnam P2012"),
+            ac("C336", "CESSNA", "Cessna 336 Skymaster", "Cessna 336"),
+            ac("M7", "MAULE", "Maule M-7", "Maule M-7-235"),
+            ac("M9", "MAULE", "Maule M-9", "Maule M-9-235"),
+            ac("PARA", "GENERIC", "Powered Parachute", "Powered Parachute"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -506,6 +540,57 @@ mod tests {
         assert_eq!(top(&idx, "Robin DR400"), "DR40"); // code DR40 is a prefix of "dr400"
         assert_eq!(top(&idx, "Asobo PassiveAircraft P2008"), "P208"); // model token "p2008"
         assert_eq!(top(&idx, "Asobo PassiveAircraft P92"), "ECHO"); // model token "p92"
+
+        // Trailing-token noise doesn't dislodge a code/model match.
+        assert_eq!(top(&idx, "MXS-R Race"), "MXS");
+
+        // Add-on / variant / marketing shorthands carried by curated nicknames.
+        assert_eq!(top(&idx, "Microsoft PassiveAircraft S340B Cargo"), "SF34");
+        assert_eq!(top(&idx, "FSR500 VYA Old School"), "P46T");
+        assert_eq!(top(&idx, "FSR500 VYA New School"), "P46T");
+        assert_eq!(top(&idx, "mg hjet ha420 [Preset Default]"), "HDJT");
+        assert_eq!(top(&idx, "CRJ550 Privat D-ALKI"), "CRJ7");
+        assert_eq!(top(&idx, "FSLTL_B73X_ZZZZ"), "B737");
+        assert_eq!(top(&idx, "FreedomFox"), "FOX");
+        assert_eq!(top(&idx, "Powrachute Sky Rascal"), "PARA");
+        // FlyByWire's developer shorthand resolves to its A320neo even with no type word.
+        assert_eq!(top(&idx, "FWB JetBlue N4022J"), "A20N");
+
+        // Distinctive model words.
+        assert_eq!(top(&idx, "Virus SW Pipistrel Private Charter"), "PIVI");
+        assert_eq!(top(&idx, "Taurus M: Passengers"), "PITA");
+        assert_eq!(top(&idx, "Optica: Passengers"), "OPCA");
+        assert_eq!(top(&idx, "Optica: Scientific Research"), "OPCA");
+        assert_eq!(top(&idx, "Seastar"), "CD2");
+        assert_eq!(top(&idx, "Tundra 29in"), "TNDR");
+        assert_eq!(top(&idx, "Vertigo: Inferno"), "LEG2");
+        // No Fokker collides in the DB, so the brand word alone pins the trimotor.
+        assert_eq!(top(&idx, "Fokker F-VIIa/3m Skis"), "F7");
+        assert_eq!(top(&idx, "Fokker Replica Cargo"), "F7");
+        assert_eq!(top(&idx, "Fokker Replica Passenger"), "F7");
+
+        // Verbatim codes / code-as-prefix / model tokens for the remaining types.
+        assert_eq!(top(&idx, "JMB Aviation VL3"), "VL3");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft C336"), "C336");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft M7"), "M7");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft M9"), "M9");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft P2012"), "P212");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft E140"), "E1400");
+        assert_eq!(top(&idx, "Edge540 v2"), "EDGE"); // code EDGE is a prefix of "edge540"
+        assert_eq!(top(&idx, "Edge540 v3 Kirby Chambliss"), "EDGE");
+        assert_eq!(top(&idx, "Edge540 v3 Bullet"), "EDGE");
+
+        // FA18 (code-prefix of "fa18e") and F18 (Super Hornet nickname) stay distinct.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft FA18E"), "FA18");
+        assert_eq!(top(&idx, "FA18E SuperHornet"), "FA18");
+        assert_eq!(top(&idx, "F/A-18E Super Hornet VFA-103"), "F18");
+
+        // Generic gliders: "Generic Glider" via the code-as-prefix of "glider", plus glider
+        // model names carried by nicknames.
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 1S18M"), "GLID");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 2S20M"), "GLID");
+        assert_eq!(top(&idx, "Asobo PassiveAircraft DG1001E"), "GLID");
+        assert_eq!(top(&idx, "DG LS8"), "GLID");
     }
 
     #[test]
