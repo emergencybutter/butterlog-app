@@ -1474,13 +1474,7 @@ fn log_airline_index_match(
             }
             (m.icao, m.name)
         }
-        None => {
-            crate::append_log(
-                app,
-                format!("[MSFS Airline] {} '{}' [{}] -> no airline match", kind, title, livery),
-            );
-            (String::new(), String::new())
-        }
+        None => (String::new(), String::new()),
     }
 }
 
