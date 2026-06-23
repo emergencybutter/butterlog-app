@@ -386,7 +386,7 @@ impl FlightAnalyzer {
 
         let mut counts = HashMap::new();
         for (lat, lon) in coords {
-            if let Some(airport) = db.find_nearest(*lat, *lon, 1).first() {
+            if let Some(airport) = db.find_best_airport(*lat, *lon) {
                 let code = airport.ident.clone();
                 *counts.entry(code).or_insert(0) += 1;
             }

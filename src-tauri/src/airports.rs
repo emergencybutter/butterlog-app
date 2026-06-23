@@ -66,6 +66,33 @@ fn lat_lon_to_cartesian(lat_deg: f64, lon_deg: f64) -> [f64; 3] {
     [x, y, z]
 }
 
+/// When the closest airport to a fix is an uncoded placeholder, prefer a properly
+/// coded airport within this distance instead of the placeholder.
+const PREFER_CODED_WITHIN_KM: f64 = 10.0;
+
+/// OurAirports gives minor fields with no official ICAO/IATA/local code a synthetic
+/// `{ISO country}-{n}` ident (e.g. "RS-0011"). Real airport idents — ICAO codes like
+/// "LYBE" or local codes — never have that 2-letter + hyphen shape, so this flags the
+/// placeholders we should avoid surfacing as a flight's departure/arrival.
+fn is_placeholder_ident(ident: &str) -> bool {
+    let b = ident.as_bytes();
+    b.len() >= 4
+        && b[0].is_ascii_uppercase()
+        && b[1].is_ascii_uppercase()
+        && b[2] == b'-'
+        && b[3..].iter().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Great-circle distance between two lat/lon points, in kilometers.
+fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const EARTH_RADIUS_KM: f64 = 6371.0;
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * EARTH_RADIUS_KM * a.sqrt().asin()
+}
+
 pub struct AirportsDatabase {
     pub airports: Vec<Airport>,
     pub by_ident: HashMap<String, usize>,
@@ -129,6 +156,27 @@ impl AirportsDatabase {
             .take(count)
             .map(|loc| &self.airports[loc.index])
             .collect()
+    }
+
+    /// Resolve the airport at a position for *naming a flight's endpoint*. Like
+    /// [`Self::find_nearest`] with `count == 1`, except when the closest airport is an
+    /// uncoded placeholder field (e.g. "RS-0011") it prefers the nearest properly coded
+    /// airport within [`PREFER_CODED_WITHIN_KM`] (e.g. "LYBE"). This stops a co-located
+    /// minor airstrip from masking the real airport a flight actually departed/arrived at.
+    pub fn find_best_airport(&self, lat: f64, lon: f64) -> Option<&Airport> {
+        let candidates = self.find_nearest(lat, lon, 10);
+        let closest = *candidates.first()?;
+        if !is_placeholder_ident(&closest.ident) {
+            return Some(closest);
+        }
+        if let Some(coded) = candidates.iter().copied().find(|a| !is_placeholder_ident(&a.ident)) {
+            if let (Some(clat), Some(clon)) = (coded.latitude_deg, coded.longitude_deg) {
+                if haversine_km(lat, lon, clat, clon) <= PREFER_CODED_WITHIN_KM {
+                    return Some(coded);
+                }
+            }
+        }
+        Some(closest)
     }
 }
 
@@ -235,5 +283,52 @@ mod tests {
         assert_eq!(nearest_two.len(), 2);
         assert_eq!(nearest_two[0].ident, "A1");
         assert_eq!(nearest_two[1].ident, "A2");
+    }
+
+    #[test]
+    fn test_is_placeholder_ident() {
+        assert!(is_placeholder_ident("RS-0011"));
+        assert!(is_placeholder_ident("US-1234"));
+        assert!(is_placeholder_ident("GB-0AB1"));
+        assert!(!is_placeholder_ident("LYBE"));
+        assert!(!is_placeholder_ident("KJFK"));
+        assert!(!is_placeholder_ident("X51"));
+        assert!(!is_placeholder_ident("1A2"));
+    }
+
+    fn db_from(airports: Vec<Airport>) -> AirportsDatabase {
+        let mut by_ident = HashMap::new();
+        let mut locs = Vec::new();
+        for (i, a) in airports.iter().enumerate() {
+            by_ident.insert(a.ident.clone(), i);
+            if let (Some(lat), Some(lon)) = (a.latitude_deg, a.longitude_deg) {
+                locs.push(AirportLocation { index: i, coords: lat_lon_to_cartesian(lat, lon) });
+            }
+        }
+        AirportsDatabase { airports, by_ident, tree: RTree::bulk_load(locs) }
+    }
+
+    #[test]
+    fn find_best_airport_prefers_coded_over_colocated_placeholder() {
+        // Belgrade Nikola Tesla (LYBE, coded) with the co-located "Surčin Airstrip"
+        // placeholder (RS-0011) ~5.5 km south — the real-world case this fixes.
+        let db = db_from(vec![
+            mock_airport(1, "LYBE", 44.8184, 20.3091),
+            mock_airport(2, "RS-0011", 44.7689, 20.3047),
+        ]);
+        // The raw nearest at the airstrip is the placeholder...
+        assert_eq!(db.find_nearest(44.7689, 20.3047, 1)[0].ident, "RS-0011");
+        // ...but endpoint resolution prefers the nearby real airport.
+        assert_eq!(db.find_best_airport(44.7689, 20.3047).unwrap().ident, "LYBE");
+    }
+
+    #[test]
+    fn find_best_airport_keeps_placeholder_when_no_coded_airport_is_near() {
+        // A placeholder strip with the only coded airport ~450 km away stays itself.
+        let db = db_from(vec![
+            mock_airport(1, "RS-0011", 10.0, 10.0),
+            mock_airport(2, "LYBE", 13.0, 13.0),
+        ]);
+        assert_eq!(db.find_best_airport(10.0, 10.0).unwrap().ident, "RS-0011");
     }
 }
