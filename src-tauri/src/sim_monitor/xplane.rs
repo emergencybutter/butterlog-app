@@ -376,7 +376,9 @@ impl XPlaneMonitor {
 
         let mut last_debug_log = std::time::Instant::now();
         let mut m = FlightMetrics::default();
-        let mut last_pos: Option<(f64, f64)> = None;
+        // (lat, lon, instant the fix was received) so a jump can be judged against
+        // how much time actually elapsed, not just raw distance between samples.
+        let mut last_pos: Option<(f64, f64, std::time::Instant)> = None;
         let mut last_known_title = String::new();
         let mut last_identify_attempt: Option<std::time::Instant> = None;
 
@@ -444,20 +446,42 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/flightmodel/position/latitude") { m.latitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/longitude") { m.longitude = v; updated = true; }
                         
-                        // Check for teleportation (> 3nm jump)
+                        // Teleport detection. A real teleport (loading a new situation or
+                        // repositioning the aircraft) is a position discontinuity: the fix
+                        // moves further than the aircraft could physically have travelled in
+                        // the elapsed wall-clock time. A stalled data stream (network hiccup,
+                        // frame stutter, brief pause) is NOT a teleport — the aircraft keeps
+                        // flying, so a 30s gap at 420kt legitimately covers ~3.5nm. Judging by
+                        // raw distance alone flagged those as jumps and reset the flight.
+                        //
+                        // Bound the plausible travel by the last known groundspeed and the
+                        // elapsed time, times a generous factor that absorbs GS-reading lag,
+                        // turns, and time acceleration (X-Plane's common 2x/4x/8x steps), plus
+                        // a small absolute margin for GPS jitter near-stationary. m.ground_speed
+                        // here is the reading from just before the gap (parsed later this loop).
+                        const JUMP_SPEED_TOLERANCE: f64 = 8.0;   // covers up to ~8x time accel
+                        const JUMP_BASE_MARGIN_NM: f64 = 3.0;    // floor: never flag sub-3nm moves
                         if updated && m.latitude != 0.0 && m.longitude != 0.0 {
-                            if let Some((l_lat, l_lon)) = last_pos {
+                            let now_pos = std::time::Instant::now();
+                            if let Some((l_lat, l_lon, l_time)) = last_pos {
                                 let d_lat = (m.latitude - l_lat).abs() * 60.0; // 1 deg lat = 60nm
                                 let d_lon = (m.longitude - l_lon).abs() * 60.0 * l_lat.to_radians().cos();
-                                let dist_sq = d_lat * d_lat + d_lon * d_lon;
-                                
-                                if dist_sq > 9.0 && flight_ongoing {
-                                    crate::append_log(&app, format!("[X-Plane] Position jump detected ({:.2}nm). Resetting flight.", dist_sq.sqrt()));
+                                let actual_nm = (d_lat * d_lat + d_lon * d_lon).sqrt();
+
+                                let elapsed_s = now_pos.duration_since(l_time).as_secs_f64();
+                                let max_plausible_nm =
+                                    (m.ground_speed.max(0.0) / 3600.0) * elapsed_s * JUMP_SPEED_TOLERANCE
+                                    + JUMP_BASE_MARGIN_NM;
+
+                                if flight_ongoing && actual_nm > max_plausible_nm {
+                                    crate::append_log(&app, format!(
+                                        "[X-Plane] Position jump detected: {:.2}nm in {:.1}s (max plausible {:.2}nm at GS {:.0}kt). Resetting flight.",
+                                        actual_nm, elapsed_s, max_plausible_nm, m.ground_speed));
                                     ws_stream.close(None).await.ok();
                                     return Ok(()); // Loop in start() will restart discovery and new flight
                                 }
                             }
-                            last_pos = Some((m.latitude, m.longitude));
+                            last_pos = Some((m.latitude, m.longitude, now_pos));
                         }
 
                         if let Some(v) = get_path_double("sim/flightmodel/position/elevation") { m.gps_altitude_msl = v * 3.28084; updated = true; }
