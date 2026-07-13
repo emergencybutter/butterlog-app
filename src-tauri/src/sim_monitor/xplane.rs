@@ -754,7 +754,11 @@ impl XPlaneMonitor {
                         }
 
                         if flight_ongoing {
-                            if !departure_set && m.latitude != 0.0 && m.longitude != 0.0 && (m.is_on_ground > 0.5 || m.altitude_agl < 10.0) {
+                            // Only capture a fallback departure before the aircraft has taken off.
+                            // Once airborne, the next time we're near the ground is the *arrival*
+                            // field, so writing it here would mislabel the destination as the
+                            // departure (mirrors FlightAnalyzer::find_end_icao's takeoff guard).
+                            if !departure_set && takeoff_time.is_none() && m.latitude != 0.0 && m.longitude != 0.0 && (m.is_on_ground > 0.5 || m.altitude_agl < 10.0) {
                                 if let Some(ref conn) = db_conn {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {

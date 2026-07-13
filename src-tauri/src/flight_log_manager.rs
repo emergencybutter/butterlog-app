@@ -701,9 +701,19 @@ pub fn parse_db_file(app: &AppHandle, path: &PathBuf) -> Option<FlightSummary> {
         e
     }).ok()?;
 
-    // Check if the metrics table has any data
-    let count: i64 = conn.query_row("SELECT count(*) FROM metrics", [], |r| r.get(0)).unwrap_or(0);
+    // Check if the metrics table has any data. Distinguish "no rows" from a
+    // query error (e.g. missing table / schema mismatch) so a log that exists on
+    // disk but never shows up in the list leaves a diagnosable reason behind
+    // instead of a bare "Failed to parse".
+    let count: i64 = match conn.query_row("SELECT count(*) FROM metrics", [], |r| r.get(0)) {
+        Ok(c) => c,
+        Err(e) => {
+            crate::append_log(app, format!("[Logs] Skipping {}: metrics table unreadable: {}", filename, e));
+            return None;
+        }
+    };
     if count == 0 {
+        crate::append_log(app, format!("[Logs] Skipping {}: metrics table is empty (no data points recorded)", filename));
         return None;
     }
 
