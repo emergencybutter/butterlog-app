@@ -207,6 +207,7 @@ mod tests {
                 al("RYR", "Ryanair", "RYANAIR"),
                 al("AAL", "American Airlines", "AMERICAN"),
                 al("AFR", "Air France", "AIRFRANS"),
+                al("VYA", "Voyager Aviation", "VOYAGER"),
             ],
         }
     }
@@ -222,6 +223,10 @@ mod tests {
         assert_eq!(top(&idx, "Airbus A320 Lufthansa"), "DLH");
         assert_eq!(top(&idx, "Asobo Boeing 747-400 United"), "UAL");
         assert_eq!(top(&idx, "Air France A320"), "AFR");
+        assert_eq!(
+            top(&idx, "Flying FSReborn Phenom 300E Tristan Interior  Voyager Aviation | S2 (Dynamic) (S108)"),
+            "VYA"
+        );
     }
 
     #[test]

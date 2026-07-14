@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - The Multiplayer Debugging tab now shows each tracked peer's deduced ICAO type, airline (ICAO code + name), livery, and the local model chosen to represent them.
+- Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
 
 ## [0.3.14] - 2026-06-15
 
