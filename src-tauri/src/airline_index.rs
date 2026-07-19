@@ -29,6 +29,9 @@ const STOPWORDS: &[&str] = &[
     "daher", "pilatus", "beechcraft", "beech", "gulfstream", "dassault", "mcdonnell",
     "douglas", "antonov", "tupolev", "sukhoi", "robin", "mooney", "textron", "tecnam",
     "icon", "kodiak", "honda", "hondajet", "asobo", "microsoft",
+    // engine and airframe variant designators — common in livery titles ("A320 CFM WF"),
+    // and several collide with real ICAO designators (CFM = ACEF, IAE = AC Insat-Aero).
+    "cfm", "cfm56", "iae", "leap", "gtf", "pw", "neo", "ceo",
     // generic aviation filler
     "air", "airline", "airlines", "airway", "airways", "aviation", "aero", "cargo",
     "international", "intl", "express", "transport", "transports", "group", "company",
@@ -208,6 +211,11 @@ mod tests {
                 al("AAL", "American Airlines", "AMERICAN"),
                 al("AFR", "Air France", "AIRFRANS"),
                 al("VYA", "Voyager Aviation", "VOYAGER"),
+                al("EIN", "Aer Lingus", "SHAMROCK"),
+                // Real entries whose ICAO designators collide with engine variant
+                // designators that show up in livery titles.
+                al("CFM", "ACEF", "ACEF"),
+                al("IAE", "AC Insat-Aero", ""),
             ],
         }
     }
@@ -227,6 +235,13 @@ mod tests {
             top(&idx, "Flying FSReborn Phenom 300E Tristan Interior  Voyager Aviation | S2 (Dynamic) (S108)"),
             "VYA"
         );
+        // "CFM" / "IAE" here are engine variants, not the operators whose ICAO
+        // designators happen to spell the same thing.
+        assert_eq!(
+            top(&idx, "Flying FenixA320 CFM WF — Aer Lingus 'Classic' EI-DEP (2023) (A320)"),
+            "EIN"
+        );
+        assert_eq!(top(&idx, "FenixA320 IAE SL — Ryanair"), "RYR");
     }
 
     #[test]
