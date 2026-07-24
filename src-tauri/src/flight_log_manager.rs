@@ -1428,22 +1428,49 @@ fn ts_to_epoch(ts: &str) -> i64 {
 }
 
 fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
-    let mut last_sec = i64::MIN;
-    let mut last_min = i64::MIN;
+    // Adaptive, dynamics-aware thinning:
+    //  - within 60s of a takeoff/landing: keep one sample per second (touchdown detail);
+    //  - steady flight (holding altitude within STEADY_ALT_FT and heading within
+    //    STEADY_HDG_DEG of the last kept sample): keep one per STEADY_SECS;
+    //  - otherwise (climbing, descending, turning): keep one per ACTIVE_SECS.
+    // Steadiness is re-checked on every row against the last kept sample, so a
+    // deviation part-way through a steady stretch still forces an earlier sample.
+    const NEAR_SECS: i64 = 60;
+    const STEADY_SECS: i64 = 60;
+    const ACTIVE_SECS: i64 = 10;
+    const STEADY_ALT_FT: f64 = 100.0;
+    const STEADY_HDG_DEG: f64 = 10.0;
+
+    // Smallest angular difference between two headings in degrees (0..=180).
+    fn hdg_diff(a: f64, b: f64) -> f64 {
+        let d = (a - b).rem_euclid(360.0);
+        if d > 180.0 { 360.0 - d } else { d }
+    }
+
     let mut indices = Vec::new();
+    let mut last_sec = i64::MIN;      // per-second dedup inside near-event windows
+    let mut last_emit_epoch = i64::MIN;
+    let mut ref_alt = 0.0f64;         // altitude/heading of the last kept sample
+    let mut ref_hdg = 0.0f64;
     for (i, row) in rows.iter().enumerate() {
         let epoch = ts_to_epoch(&row.timestamp);
-        let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= 60);
-        if near {
-            if epoch != last_sec {
-                last_sec = epoch;
-                last_min = epoch / 60;
-                indices.push(i);
-            }
-        } else if epoch / 60 != last_min {
-            last_min = epoch / 60;
-            last_sec = epoch;
+        let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= NEAR_SECS);
+        let keep = if near {
+            epoch != last_sec
+        } else if indices.is_empty() {
+            true
+        } else {
+            let steady = (row.metrics.indicated_altitude - ref_alt).abs() <= STEADY_ALT_FT
+                && hdg_diff(row.metrics.heading, ref_hdg) <= STEADY_HDG_DEG;
+            let interval = if steady { STEADY_SECS } else { ACTIVE_SECS };
+            epoch - last_emit_epoch >= interval
+        };
+        if keep {
             indices.push(i);
+            last_sec = epoch;
+            last_emit_epoch = epoch;
+            ref_alt = row.metrics.indicated_altitude;
+            ref_hdg = row.metrics.heading;
         }
     }
     indices
