@@ -24,6 +24,10 @@ impl<'a> Drop for SyncGuard<'a> {
 pub struct WebhookManager {
     client: Client,
     current_remote_id: Mutex<Option<i64>>,
+    /// Flight log DB backing the flight currently being synced. Recorded here so
+    /// the live track uploader can find the in-progress flight without either
+    /// sim monitor having to know about it.
+    current_log_path: Mutex<Option<String>>,
     last_update_time: Mutex<Option<std::time::Instant>>,
     is_syncing: Mutex<bool>,
 }
@@ -33,9 +37,18 @@ impl WebhookManager {
         Self {
             client: Client::new(),
             current_remote_id: Mutex::new(None),
+            current_log_path: Mutex::new(None),
             last_update_time: Mutex::new(None),
             is_syncing: Mutex::new(false),
         }
+    }
+
+    /// The in-progress flight as `(log_path, remote_id)`, once the service has
+    /// assigned an id. `None` between flights, or before the first sync lands.
+    pub fn current_flight(&self) -> Option<(String, i64)> {
+        let path = self.current_log_path.lock().clone()?;
+        let id = (*self.current_remote_id.lock())?;
+        if path.is_empty() { None } else { Some((path, id)) }
     }
 
     /// API base + bearer token, or None when sync is disabled or logged out.
@@ -50,6 +63,8 @@ impl WebhookManager {
     pub fn reset(&self) {
         let mut id = self.current_remote_id.lock();
         *id = None;
+        let mut path = self.current_log_path.lock();
+        *path = None;
         let mut time = self.last_update_time.lock();
         *time = None;
         let mut syncing = self.is_syncing.lock();
@@ -76,8 +91,22 @@ impl WebhookManager {
         }
         let _guard = SyncGuard(&self.is_syncing);
 
+        if !summary.log_path.is_empty() {
+            *self.current_log_path.lock() = Some(summary.log_path.clone());
+        }
+
         let config = app.state::<crate::config::ConfigManager>().get_config();
         let inject_traffic = config.inject_butterlog_traffic;
+
+        // What this client will accept from the web. The live page renders only
+        // advertised commands, so a pilot with remote control off sees no
+        // control strip rather than a row of dead buttons.
+        let capabilities = serde_json::json!({
+            "commands": crate::sim_commands::capabilities(
+                config.allow_remote_commands,
+                config.allow_beta_commands,
+            ),
+        });
 
         let udp_address = if let Some(multiplayer) = app.try_state::<Arc<crate::multiplayer::MultiplayerManager>>() {
             multiplayer.get_public_address().map(|addr| addr.to_string())
@@ -134,13 +163,23 @@ impl WebhookManager {
             crate::append_log(app, format!("[Webhook Sync] Publishing public UDP address: {} to service", addr));
         }
 
+        // Statistics is a client-defined blob the service only cherry-picks
+        // from, so extra keys ride along safely.
+        let statistics = {
+            let mut v = serde_json::to_value(summary).unwrap_or_else(|_| serde_json::json!({}));
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("capabilities".to_string(), capabilities);
+            }
+            v
+        };
+
         match current_id {
             Some(id) => {
                 // Update
                 let url = format!("{}/flights/{}", base_url, id);
                 let body = serde_json::json!({
                     "arrival": summary.arrival.icao,
-                    "statistics": summary,
+                    "statistics": statistics,
                     "multiplayer_enabled": inject_traffic,
                     "udp_address": udp_address,
                     "latitude": latitude,
@@ -175,7 +214,7 @@ impl WebhookManager {
                 let url = format!("{}/flights", base_url);
                 let body = serde_json::json!({
                     "departure": summary.departure.icao,
-                    "statistics": summary,
+                    "statistics": statistics,
                     "multiplayer_enabled": inject_traffic,
                     "udp_address": udp_address,
                     "latitude": latitude,

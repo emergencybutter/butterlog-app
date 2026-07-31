@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 - The app→X-Plane plugin protocol now ships an `on_ground` flag alongside each aircraft's position (peer-to-peer telemetry already carried it inside the metrics block). The X-Plane plugin uses it to clamp on-ground aircraft to the local terrain (via a terrain probe) instead of trusting the transmitted MSL altitude, so multiplayer traffic no longer floats above or sinks into the runway.
 
 ### Added
+- Flights are now visible online in full detail *while you fly*. The app streams the track to the service every 20 seconds, and `/content/flights/:id` shows a live map, charts, events and screenshots that update as you go, handing off to the permanent share once you land. Controlled by a new "Show flights live on the web while flying" setting, on by default.
+- Optional remote control of your own simulator from your live flight page: pause and resume, plus beta autopilot controls (heading bug, altitude, vertical speed, HDG and NAV modes). Off by default behind "Allow remote commands", with the beta controls behind a second opt-in. Only you can command your own flight.
 - The Multiplayer Debugging tab now shows each tracked peer's deduced ICAO type, airline (ICAO code + name), livery, and the local model chosen to represent them.
 - Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
 

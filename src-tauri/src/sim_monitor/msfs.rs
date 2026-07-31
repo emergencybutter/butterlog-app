@@ -301,6 +301,10 @@ impl SimConnectMonitor {
         let mut next_request_id: u32 = 1000;
         let mut last_msfs_update = std::time::Instant::now();
         let mut last_parking_brake: Option<bool> = None;
+        // K events mapped so far, name -> client event id. SimConnect wants each
+        // event mapped once per connection before it can be transmitted.
+        let mut mapped_events: std::collections::HashMap<&'static str, u32> =
+            std::collections::HashMap::new();
 
         let webhook_manager = app.state::<WebhookManager>();
         webhook_manager.reset();
@@ -336,6 +340,11 @@ impl SimConnectMonitor {
                     airline_index = Some(crate::airline_index::AirlineIndex::build(&db));
                 }
             }
+
+            // Web-issued commands. Executed here rather than from the poller
+            // task because SimConnect calls belong to the thread that owns the
+            // connection.
+            drain_sim_commands(app, &sc, &mut mapped_events);
 
             // Handle remote aircraft updates
             while let Ok(update) = remote_receiver.try_recv() {
@@ -693,12 +702,7 @@ impl SimConnectMonitor {
                                          landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
                                          landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                                      };
-                                    let app_c = app.clone();
-                                    let sum_c = summary.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
-                                    });
-                                    webhook_manager.reset();
+                                    crate::live_track::spawn_finalize(&app, summary.clone(), "landed");
                                 }
 
                                 let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
@@ -1293,12 +1297,7 @@ impl SimConnectMonitor {
                                                     landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
                                                     landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                                                 };
-                                                let app_c = app.clone();
-                                                let sum_c = summary.clone();
-                                                tauri::async_runtime::spawn(async move {
-                                                    app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
-                                                });
-                                                webhook_manager.reset();
+                                                crate::live_track::spawn_finalize(&app, summary.clone(), "landed");
 
                                                 let app_share = app.clone();
                                                 let fname_share = current_log_path.as_ref()
@@ -1961,6 +1960,89 @@ impl SimMonitor for SimConnectMonitor {
         let hc_list = self.available_helicopters.lock();
         let title_chars = self.title_characteristics_index(&ac_list, &hc_list, db);
         Some(find_best_multiplayer_model(&identity, &ac_list, &hc_list, &title_chars, db))
+    }
+}
+
+/// Client event ids for mapped K events. Well above the request/define ids used
+/// elsewhere in this file so the ranges cannot collide.
+const COMMAND_EVENT_ID_BASE: u32 = 50_000;
+
+/// Execute any queued web-issued commands against the sim.
+///
+/// A `false` return from the mapping means the sim cannot service the command
+/// with those parameters — reported as `unsupported` rather than swallowed, so
+/// the web UI can stop offering a control that does nothing here.
+fn drain_sim_commands(
+    app: &AppHandle,
+    sc: &SimConnect,
+    mapped: &mut std::collections::HashMap<&'static str, u32>,
+) {
+    let Some(queue) = app.try_state::<crate::sim_commands::CommandQueue>() else {
+        return;
+    };
+    let pending = queue.drain();
+    if pending.is_empty() {
+        return;
+    }
+
+    let config = app.state::<crate::config::ConfigManager>().get_config();
+    let flight_id = app
+        .state::<WebhookManager>()
+        .current_flight()
+        .map(|(_, id)| id);
+
+    for cmd in pending {
+        let outcome = match crate::sim_commands::allowed_by_settings(
+            &cmd.kind,
+            config.allow_remote_commands,
+            config.allow_beta_commands,
+        ) {
+            Err(why) => crate::sim_commands::Outcome::Rejected(why),
+            Ok(()) => match crate::sim_commands::msfs_event(&cmd.kind, &cmd.params) {
+                None => crate::sim_commands::Outcome::Unsupported(format!(
+                    "MSFS has no binding for `{}` with these parameters",
+                    cmd.kind
+                )),
+                Some((event_name, data)) => {
+                    let next_id = COMMAND_EVENT_ID_BASE + mapped.len() as u32;
+                    let event_id = *mapped.entry(event_name).or_insert(next_id);
+                    let mapped_ok = if event_id == next_id {
+                        sc.map_client_event_to_sim_event(event_id, event_name).is_ok()
+                    } else {
+                        true
+                    };
+                    if !mapped_ok {
+                        mapped.remove(event_name);
+                        crate::sim_commands::Outcome::Unsupported(format!(
+                            "MSFS did not accept the event `{}`",
+                            event_name
+                        ))
+                    } else {
+                        match sc.transmit_client_event(event_id, data) {
+                            Ok(()) => {
+                                crate::append_log(
+                                    app,
+                                    format!("[Command] Sent {} ({}) to MSFS", event_name, data),
+                                );
+                                crate::sim_commands::Outcome::Applied
+                            }
+                            Err(e) => crate::sim_commands::Outcome::Rejected(format!(
+                                "MSFS rejected {}: {}",
+                                event_name, e
+                            )),
+                        }
+                    }
+                }
+            },
+        };
+
+        if let Some(flight_id) = flight_id {
+            let app_c = app.clone();
+            let id = cmd.id.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::sim_commands::ack(&app_c, flight_id, &id, outcome).await;
+            });
+        }
     }
 }
 

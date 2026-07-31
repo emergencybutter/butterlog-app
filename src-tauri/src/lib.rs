@@ -6,10 +6,12 @@ mod icao_index;
 mod config;
 mod flight_analyzer;
 mod flight_log_manager;
+mod live_track;
 mod models;
 mod multiplayer;
 mod runways;
 mod screenshot_manager;
+mod sim_commands;
 mod sim_monitor;
 mod webhook_manager;
 
@@ -482,6 +484,16 @@ pub fn run() {
 
             // Initialize WebhookManager
             app.manage(webhook_manager::WebhookManager::new());
+
+            // Streams the in-progress flight's track to the service. Idle until
+            // a flight is being synced and the user has live sharing enabled.
+            app.manage(live_track::LiveTrackUploader::new());
+            live_track::spawn(app.handle().clone());
+
+            // Web-issued sim commands. The poller is a no-op until the user
+            // turns remote control on, which is off by default.
+            app.manage(sim_commands::CommandQueue::new());
+            sim_commands::spawn_poller(app.handle().clone());
 
             // Initialize MultiplayerManager
             let multiplayer = Arc::new(MultiplayerManager::new());

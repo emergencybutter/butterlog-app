@@ -373,6 +373,53 @@ export function Settings() {
                                 </span>
                             )}
                         </div>
+                        <div className="setting-control auth-row" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
+                            <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.shareLiveFlights}
+                                    onChange={(e) => handleChange("shareLiveFlights", e.target.checked)}
+                                    disabled={!isLoggedIn}
+                                />
+                                <span>Show flights live on the web while flying</span>
+                            </label>
+                            <span className="setting-hint">
+                                Streams the track as you fly so the flight page updates in real time.
+                            </span>
+                        </div>
+                        <div className="setting-control auth-row" style={{ opacity: isLoggedIn ? 1 : 0.5 }}>
+                            <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.allowRemoteCommands}
+                                    onChange={(e) => handleChange("allowRemoteCommands", e.target.checked)}
+                                    disabled={!isLoggedIn}
+                                />
+                                <span>Allow controlling the sim from your live flight page</span>
+                            </label>
+                            <span className="setting-hint">
+                                Lets you pause the simulator from your own flight page. Only you can
+                                send commands, and only while a flight is in progress.
+                            </span>
+                        </div>
+                        {config.allowRemoteCommands && (
+                            <div className="setting-control auth-row" style={{ opacity: isLoggedIn ? 1 : 0.5, marginLeft: "1.5rem" }}>
+                                <label style={{ cursor: isLoggedIn ? "pointer" : "not-allowed" }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.allowBetaCommands}
+                                        onChange={(e) => handleChange("allowBetaCommands", e.target.checked)}
+                                        disabled={!isLoggedIn}
+                                    />
+                                    <span>Also allow autopilot controls (beta)</span>
+                                </label>
+                                <span className="setting-hint">
+                                    Heading, altitude, V/S and mode switches. These drive the default
+                                    autopilot — study-level add-ons such as PMDG or Fenix run their own
+                                    and will ignore them.
+                                </span>
+                            </div>
+                        )}
                         <p className="auth-note">
                             We use Discord to login to not make you create yet another account.
                         </p>

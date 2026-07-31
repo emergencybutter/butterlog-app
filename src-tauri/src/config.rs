@@ -34,6 +34,25 @@ pub struct Config {
     pub start_minimized: bool,
     pub inject_butterlog_traffic: bool,
     pub auto_share_flights: bool,
+    /// Stream the flight track to the service while airborne, so it can be
+    /// watched live on the web. Defaults to the auto-share setting on upgrade
+    /// so existing users get the behaviour they already expected.
+    #[serde(default = "default_share_live_flights")]
+    pub share_live_flights: bool,
+    /// Let the pilot act on their own simulator from the live flight page.
+    /// Off by default and deliberately not derived from any other setting:
+    /// logging in should not hand anyone a lever on a running sim.
+    #[serde(default)]
+    pub allow_remote_commands: bool,
+    /// Also allow the beta autopilot controls. Separate from the switch above
+    /// because those drive the *default* autopilot and do nothing on add-on
+    /// aircraft that run their own.
+    #[serde(default)]
+    pub allow_beta_commands: bool,
+}
+
+fn default_share_live_flights() -> bool {
+    true
 }
 
 pub fn default_service_url() -> String {
@@ -153,6 +172,9 @@ impl Config {
             start_minimized: false,
             inject_butterlog_traffic: false,
             auto_share_flights: true,
+            share_live_flights: true,
+            allow_remote_commands: false,
+            allow_beta_commands: false,
         }
     }
 }
@@ -175,6 +197,9 @@ impl Default for Config {
             start_minimized: false,
             inject_butterlog_traffic: false,
             auto_share_flights: true,
+            share_live_flights: true,
+            allow_remote_commands: false,
+            allow_beta_commands: false,
         }
     }
 }

@@ -1421,73 +1421,98 @@ pub struct FlightDetailShare {
     pub remote_flight_id: Option<i64>,
 }
 
-fn ts_to_epoch(ts: &str) -> i64 {
+pub fn ts_to_epoch(ts: &str) -> i64 {
     NaiveDateTime::parse_from_str(ts.split('.').next().unwrap_or(ts), "%Y-%m-%d %H:%M:%S")
         .map(|dt| dt.and_utc().timestamp())
         .unwrap_or(0)
 }
 
-fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
-    // Adaptive, dynamics-aware thinning, two tiers:
-    //  - straight and level: keep one per STEADY_SECS;
-    //  - everything else — climbing, descending, turning — keep one per ACTIVE_SECS,
-    //    which is the logger's own rate, so those phases are kept at full fidelity.
-    //
-    // "Straight and level" is judged from the aircraft's *instantaneous* state (vertical
-    // speed and bank angle), not from how far it has drifted since the last kept sample.
-    // Those are not the same thing: a steady 500 fpm climb only drifts past a 100 ft
-    // altitude tolerance every 12 s, so a drift-only test would thin a climb to one
-    // sample per 12 s instead of the per-second detail we want.
-    //
-    // The drift check is kept as a backstop on top of it, so a slow wander that never
-    // trips the VS/bank thresholds — or a sim reporting an unreliable vertical speed —
-    // still forces a sample rather than drawing a 5-minute straight line through a curve.
-    //
-    // The takeoff/landing windows are forced out of the steady tier so a rollout or
-    // taxi — level, wings level, but the most interesting part of the flight — is never
-    // thinned to one sample per STEADY_SECS.
-    const NEAR_SECS: i64 = 60;
-    const STEADY_SECS: i64 = 300;
-    const ACTIVE_SECS: i64 = 1;
-    const LEVEL_VS_FPM: f64 = 100.0;
-    const LEVEL_ROLL_DEG: f64 = 3.0;
-    const DRIFT_ALT_FT: f64 = 100.0;
-    const DRIFT_HDG_DEG: f64 = 10.0;
+// Adaptive, dynamics-aware thinning, two tiers:
+//  - straight and level: keep one per STEADY_SECS;
+//  - everything else — climbing, descending, turning — keep one per ACTIVE_SECS,
+//    which is the logger's own rate, so those phases are kept at full fidelity.
+//
+// "Straight and level" is judged from the aircraft's *instantaneous* state (vertical
+// speed and bank angle), not from how far it has drifted since the last kept sample.
+// Those are not the same thing: a steady 500 fpm climb only drifts past a 100 ft
+// altitude tolerance every 12 s, so a drift-only test would thin a climb to one
+// sample per 12 s instead of the per-second detail we want.
+//
+// The drift check is kept as a backstop on top of it, so a slow wander that never
+// trips the VS/bank thresholds — or a sim reporting an unreliable vertical speed —
+// still forces a sample rather than drawing a 5-minute straight line through a curve.
+//
+// The takeoff/landing windows are forced out of the steady tier so a rollout or
+// taxi — level, wings level, but the most interesting part of the flight — is never
+// thinned to one sample per STEADY_SECS.
+const NEAR_SECS: i64 = 60;
+const STEADY_SECS: i64 = 300;
+const ACTIVE_SECS: i64 = 1;
+const LEVEL_VS_FPM: f64 = 100.0;
+const LEVEL_ROLL_DEG: f64 = 3.0;
+const DRIFT_ALT_FT: f64 = 100.0;
+const DRIFT_HDG_DEG: f64 = 10.0;
 
-    // Smallest angular difference between two headings in degrees (0..=180).
-    fn hdg_diff(a: f64, b: f64) -> f64 {
-        let d = (a - b).rem_euclid(360.0);
-        if d > 180.0 { 360.0 - d } else { d }
+/// Smallest angular difference between two headings in degrees (0..=180).
+fn hdg_diff(a: f64, b: f64) -> f64 {
+    let d = (a - b).rem_euclid(360.0);
+    if d > 180.0 { 360.0 - d } else { d }
+}
+
+/// The thinning policy as resumable state.
+///
+/// Sharing one policy between the share document (which sees the whole flight at
+/// once) and the live uploader (which sees it 20 seconds at a time) matters: the
+/// decision depends on the last *kept* sample, so an uploader that restarted the
+/// policy on every batch would keep the first sample of every batch and hold
+/// cruise at one sample per flush instead of one per STEADY_SECS.
+#[derive(Default)]
+pub struct Downsampler {
+    started: bool,
+    last_emit_epoch: i64,
+    /// Altitude and heading of the last kept sample.
+    ref_alt: f64,
+    ref_hdg: f64,
+}
+
+impl Downsampler {
+    pub fn new() -> Self {
+        Self { started: false, last_emit_epoch: i64::MIN, ref_alt: 0.0, ref_hdg: 0.0 }
     }
 
-    let mut indices = Vec::new();
-    let mut last_emit_epoch = i64::MIN;
-    let mut ref_alt = 0.0f64;         // altitude/heading of the last kept sample
-    let mut ref_hdg = 0.0f64;
-    for (i, row) in rows.iter().enumerate() {
+    /// Whether to keep this sample, advancing the policy when it does.
+    pub fn accept(&mut self, row: &FlightLogRow, event_epochs: &[i64]) -> bool {
         let epoch = ts_to_epoch(&row.timestamp);
-        let keep = if indices.is_empty() {
+        let keep = if !self.started {
             true
         } else {
             let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= NEAR_SECS);
             let level = row.metrics.vertical_speed.abs() <= LEVEL_VS_FPM
                 && row.metrics.roll_angle.abs() <= LEVEL_ROLL_DEG;
-            let drifted = (row.metrics.indicated_altitude - ref_alt).abs() > DRIFT_ALT_FT
-                || hdg_diff(row.metrics.heading, ref_hdg) > DRIFT_HDG_DEG;
+            let drifted = (row.metrics.indicated_altitude - self.ref_alt).abs() > DRIFT_ALT_FT
+                || hdg_diff(row.metrics.heading, self.ref_hdg) > DRIFT_HDG_DEG;
             let steady = level && !drifted && !near;
             let interval = if steady { STEADY_SECS } else { ACTIVE_SECS };
             // ACTIVE_SECS == 1 also gives per-second dedup: rows sharing an epoch
             // second (the logger emits extras on force_update) collapse to one.
-            epoch - last_emit_epoch >= interval
+            epoch - self.last_emit_epoch >= interval
         };
         if keep {
-            indices.push(i);
-            last_emit_epoch = epoch;
-            ref_alt = row.metrics.indicated_altitude;
-            ref_hdg = row.metrics.heading;
+            self.started = true;
+            self.last_emit_epoch = epoch;
+            self.ref_alt = row.metrics.indicated_altitude;
+            self.ref_hdg = row.metrics.heading;
         }
+        keep
     }
-    indices
+}
+
+fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
+    let mut policy = Downsampler::new();
+    rows.iter()
+        .enumerate()
+        .filter_map(|(i, row)| policy.accept(row, event_epochs).then_some(i))
+        .collect()
 }
 
 fn read_remote_id(path: &std::path::Path) -> Option<i64> {

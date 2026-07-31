@@ -394,6 +394,10 @@ impl XPlaneMonitor {
         while let Some(msg) = ws_stream.next().await {
             if !*running.lock() { break; }
 
+            // Web-issued commands. X-Plane needs no plugin for these: the same
+            // Web API this monitor reads through also writes.
+            drain_sim_commands(&app).await;
+
             // Lazily build the word indexes once their databases finish loading, so a
             // connection that started before the background CSV load isn't stuck without
             // type/airline resolution for its whole duration.
@@ -1043,11 +1047,7 @@ impl XPlaneMonitor {
                                                  landing_offset_percent: landing_event.and_then(|e| e.offset_percent),
                                                  landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                                              };
-                                            let app_c = app.clone();
-                                            let sum_c = summary.clone();
-                                            tauri::async_runtime::spawn(async move {
-                                                app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
-                                            });
+                                            crate::live_track::spawn_finalize(&app, summary.clone(), "landed");
 
                                             let app_share = app.clone();
                                             let fname_share = current_log_path.as_ref()
@@ -1220,11 +1220,9 @@ impl XPlaneMonitor {
                     landing_threshold_dist_ft: landing_event.and_then(|e| e.threshold_dist_ft),
                 };
                 if takeoff_time.is_some() {
-                    let app_c = app.clone();
-                    let sum_c = summary.clone();
-                    tauri::async_runtime::spawn(async move {
-                        app_c.state::<WebhookManager>().sync_flight(&app_c, &sum_c, true).await;
-                    });
+                    // The sim went away rather than the aircraft parking, so this
+                    // is a sim_closed ending, not a landing.
+                    crate::live_track::spawn_finalize(&app, summary.clone(), "sim_closed");
                 }
                 crate::append_log(&app, "[X-Plane] Finalized flight sync.".to_string());
 
@@ -1361,6 +1359,42 @@ impl SimMonitor for XPlaneMonitor {
 
         if let Ok(data) = serde_json::to_vec(&payload) {
             let _ = socket.send_to(&data, "127.0.0.1:49020");
+        }
+    }
+}
+
+/// Execute any queued web-issued commands against X-Plane.
+///
+/// Unlike the MSFS path this has no thread affinity — the Web API is plain
+/// HTTP — but it is drained from the monitor loop for symmetry, so both sims
+/// stop executing commands the moment their monitor stops.
+async fn drain_sim_commands(app: &AppHandle) {
+    let pending = match app.try_state::<crate::sim_commands::CommandQueue>() {
+        Some(queue) => queue.drain(),
+        None => return,
+    };
+    if pending.is_empty() {
+        return;
+    }
+
+    let config = app.state::<crate::config::ConfigManager>().get_config();
+    let flight_id = app
+        .state::<WebhookManager>()
+        .current_flight()
+        .map(|(_, id)| id);
+
+    for cmd in pending {
+        let outcome = match crate::sim_commands::allowed_by_settings(
+            &cmd.kind,
+            config.allow_remote_commands,
+            config.allow_beta_commands,
+        ) {
+            Err(why) => crate::sim_commands::Outcome::Rejected(why),
+            Ok(()) => crate::sim_commands::execute_xplane(&cmd).await,
+        };
+
+        if let Some(flight_id) = flight_id {
+            crate::sim_commands::ack(app, flight_id, &cmd.id, outcome).await;
         }
     }
 }
