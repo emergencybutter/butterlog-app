@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Shared flight tracks are thinned on a new policy: straight and level keeps one sample per 5 minutes (was 1 per minute), and everything else — climbing, descending, turning — keeps one sample per second (was 1 per 10 seconds). Climbs, descents, turns and pattern work are now recorded at full logger fidelity while cruise costs a fifth of what it did.
+- "Straight and level" is now judged from the aircraft's instantaneous vertical speed and bank angle rather than only from how far it has drifted since the last kept sample. The drift check remains as a backstop, so a slow wander — or a sim reporting an unreliable vertical speed — still forces a sample.
 - Multiplayer telemetry now carries the sender's deduced ICAO type, operating airline and raw livery. Receivers use the deduced ICAO (instead of the unreliable raw ATC model) and the airline to pick a closer local model — including the matching livery title on MSFS, where liveries are separate titles.
 - The operating airline is carried on the multiplayer wire as a portable ICAO code (e.g. `UAL`) rather than a name: the X-Plane plugin can key its livery directly off it, and MSFS receivers map the code back to a name against their own table to match installed livery titles.
 - The app→X-Plane plugin protocol now ships an `on_ground` flag alongside each aircraft's position (peer-to-peer telemetry already carried it inside the metrics block). The X-Plane plugin uses it to clamp on-ground aircraft to the local terrain (via a terrain probe) instead of trusting the transmitted MSL altitude, so multiplayer traffic no longer floats above or sinks into the runway.

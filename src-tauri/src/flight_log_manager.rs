@@ -1428,18 +1428,31 @@ fn ts_to_epoch(ts: &str) -> i64 {
 }
 
 fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
-    // Adaptive, dynamics-aware thinning:
-    //  - within 60s of a takeoff/landing: keep one sample per second (touchdown detail);
-    //  - steady flight (holding altitude within STEADY_ALT_FT and heading within
-    //    STEADY_HDG_DEG of the last kept sample): keep one per STEADY_SECS;
-    //  - otherwise (climbing, descending, turning): keep one per ACTIVE_SECS.
-    // Steadiness is re-checked on every row against the last kept sample, so a
-    // deviation part-way through a steady stretch still forces an earlier sample.
+    // Adaptive, dynamics-aware thinning, two tiers:
+    //  - straight and level: keep one per STEADY_SECS;
+    //  - everything else — climbing, descending, turning — keep one per ACTIVE_SECS,
+    //    which is the logger's own rate, so those phases are kept at full fidelity.
+    //
+    // "Straight and level" is judged from the aircraft's *instantaneous* state (vertical
+    // speed and bank angle), not from how far it has drifted since the last kept sample.
+    // Those are not the same thing: a steady 500 fpm climb only drifts past a 100 ft
+    // altitude tolerance every 12 s, so a drift-only test would thin a climb to one
+    // sample per 12 s instead of the per-second detail we want.
+    //
+    // The drift check is kept as a backstop on top of it, so a slow wander that never
+    // trips the VS/bank thresholds — or a sim reporting an unreliable vertical speed —
+    // still forces a sample rather than drawing a 5-minute straight line through a curve.
+    //
+    // The takeoff/landing windows are forced out of the steady tier so a rollout or
+    // taxi — level, wings level, but the most interesting part of the flight — is never
+    // thinned to one sample per STEADY_SECS.
     const NEAR_SECS: i64 = 60;
-    const STEADY_SECS: i64 = 60;
-    const ACTIVE_SECS: i64 = 10;
-    const STEADY_ALT_FT: f64 = 100.0;
-    const STEADY_HDG_DEG: f64 = 10.0;
+    const STEADY_SECS: i64 = 300;
+    const ACTIVE_SECS: i64 = 1;
+    const LEVEL_VS_FPM: f64 = 100.0;
+    const LEVEL_ROLL_DEG: f64 = 3.0;
+    const DRIFT_ALT_FT: f64 = 100.0;
+    const DRIFT_HDG_DEG: f64 = 10.0;
 
     // Smallest angular difference between two headings in degrees (0..=180).
     fn hdg_diff(a: f64, b: f64) -> f64 {
@@ -1448,26 +1461,27 @@ fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
     }
 
     let mut indices = Vec::new();
-    let mut last_sec = i64::MIN;      // per-second dedup inside near-event windows
     let mut last_emit_epoch = i64::MIN;
     let mut ref_alt = 0.0f64;         // altitude/heading of the last kept sample
     let mut ref_hdg = 0.0f64;
     for (i, row) in rows.iter().enumerate() {
         let epoch = ts_to_epoch(&row.timestamp);
-        let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= NEAR_SECS);
-        let keep = if near {
-            epoch != last_sec
-        } else if indices.is_empty() {
+        let keep = if indices.is_empty() {
             true
         } else {
-            let steady = (row.metrics.indicated_altitude - ref_alt).abs() <= STEADY_ALT_FT
-                && hdg_diff(row.metrics.heading, ref_hdg) <= STEADY_HDG_DEG;
+            let near = event_epochs.iter().any(|&e| (epoch - e).abs() <= NEAR_SECS);
+            let level = row.metrics.vertical_speed.abs() <= LEVEL_VS_FPM
+                && row.metrics.roll_angle.abs() <= LEVEL_ROLL_DEG;
+            let drifted = (row.metrics.indicated_altitude - ref_alt).abs() > DRIFT_ALT_FT
+                || hdg_diff(row.metrics.heading, ref_hdg) > DRIFT_HDG_DEG;
+            let steady = level && !drifted && !near;
             let interval = if steady { STEADY_SECS } else { ACTIVE_SECS };
+            // ACTIVE_SECS == 1 also gives per-second dedup: rows sharing an epoch
+            // second (the logger emits extras on force_update) collapse to one.
             epoch - last_emit_epoch >= interval
         };
         if keep {
             indices.push(i);
-            last_sec = epoch;
             last_emit_epoch = epoch;
             ref_alt = row.metrics.indicated_altitude;
             ref_hdg = row.metrics.heading;
@@ -1774,4 +1788,86 @@ pub async fn delete_flight_share(app: AppHandle, filename: String) -> Result<(),
 
     crate::append_log(&app, format!("[Share] Deleted share {}", share_id));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One row per second starting at epoch 0: (altitude ft, heading deg, VS fpm, roll deg).
+    fn rows(samples: &[(f64, f64, f64, f64)]) -> Vec<FlightLogRow> {
+        samples
+            .iter()
+            .enumerate()
+            .map(|(i, &(alt, hdg, vs, roll))| {
+                let ts = chrono::DateTime::from_timestamp(i as i64, 0)
+                    .unwrap()
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string();
+                let mut metrics = FlightMetrics::default();
+                metrics.indicated_altitude = alt;
+                metrics.heading = hdg;
+                metrics.vertical_speed = vs;
+                metrics.roll_angle = roll;
+                FlightLogRow { timestamp: ts, metrics }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn straight_and_level_thins_to_one_per_five_minutes() {
+        // 20 minutes wings-level at a held altitude: first sample plus one every 300s.
+        let r = rows(&vec![(35_000.0, 90.0, 0.0, 0.0); 20 * 60]);
+        assert_eq!(downsample(&r, &[]), vec![0, 300, 600, 900]);
+    }
+
+    #[test]
+    fn climbing_keeps_every_second() {
+        // Steady 500 fpm climb. This is the case a drift-only test gets wrong: the
+        // aircraft only crosses a 100 ft tolerance every 12s, but it is plainly not
+        // level, so every logged second must survive.
+        let r = rows(
+            &(0..600)
+                .map(|i| (1_000.0 + i as f64 * 500.0 / 60.0, 90.0, 500.0, 0.0))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(downsample(&r, &[]).len(), 600);
+    }
+
+    #[test]
+    fn banked_turn_at_constant_altitude_keeps_every_second() {
+        // Level altitude and zero VS, but banked in a standard-rate turn.
+        let r = rows(
+            &(0..300)
+                .map(|i| (5_000.0, (i as f64 * 3.0) % 360.0, 0.0, 22.0))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(downsample(&r, &[]).len(), 300);
+    }
+
+    #[test]
+    fn shallow_drift_still_forces_a_sample() {
+        // Backstop: VS and bank both read level (an unreliable-VS sim, or a wander
+        // too slow to trip the thresholds) yet the altitude walks away. The drift
+        // check must break the 300s tier rather than draw a straight line through it.
+        let r = rows(
+            &(0..600)
+                .map(|i| (35_000.0 + i as f64 * 0.5, 90.0, 0.0, 0.0))
+                .collect::<Vec<_>>(),
+        );
+        let kept = downsample(&r, &[]);
+        // 0.5 ft/s crosses the 100 ft drift tolerance every ~201 samples.
+        assert_eq!(&kept[..3], &[0, 201, 402]);
+    }
+
+    #[test]
+    fn event_window_defeats_the_steady_tier() {
+        // Rollout after touchdown: level, wings level, so the steady tier would
+        // otherwise thin the most interesting part of the flight to one per 300s.
+        let r = rows(&vec![(50.0, 270.0, 0.0, 0.0); 120]);
+        let kept = downsample(&r, &[30]);
+        // Seconds 0..=90 fall within NEAR_SECS of the event and are all kept.
+        assert_eq!(&kept[..91], &(0..91).collect::<Vec<_>>()[..]);
+        assert!(kept.len() < 120, "past the window it returns to the steady tier");
+    }
 }
