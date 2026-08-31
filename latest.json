@@ -1,11 +1,11 @@
 {
-  "version": "0.3.23",
-  "notes": "Butterlog v0.3.23 Release\nbetter sampling.",
-  "pub_date": "2026-07-24T20:36:09Z",
+  "version": "0.3.25",
+  "notes": "Butterlog v0.3.25 Release\nMaps: moved to Esri basemaps after the previous tile provider began requiring an API key. The runway view now uses aerial imagery, with higher-contrast runway and flight-path overlays.",
+  "pub_date": "2026-08-31T21:08:40Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHB2cTRkcFQ1cElOMHZTZy91dGUzSWE1UWhNVXlsZHd6c1hydExydnFqc1kzSGJkWTRrWkdYd1dKYW1nMk9xWGNzdWo0elppSlJzUG03MnpNTk5ZVndnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0OTI1MzY5CWZpbGU6YnV0dGVybG9nXzAuMy4yM194NjQtc2V0dXAuZXhlCi9pRGNwVDNpbVorVTFQSmlPcE5YRzJlQkoyeVA1UmtQSU5mdWlsRTQ2Z3Q4RlRCZDlEYkNmTjRZU20zT0M4TXhhVU4zUWlMNUNheTdkRDlSRW5RR0F3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.23_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGt3N211Q25La1pUNXp2eHJ6aDVtSnJNUU9naEUxd2hDMXMraVVjTnBGV3l2U2NBa0d3bkxTMExtSFAxWHc5eGo1dUJweHc5NXRHMjNtbUVDa0dZUFFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjEwNTIwCWZpbGU6YnV0dGVybG9nXzAuMy4yNV94NjQtc2V0dXAuZXhlCjY3djdRYzdVRm16YkhjZW9McFFtN2J0eFFmMFRuWmE0bWhBQ3VqY1F6cnZDVEtFcGZzTWd2Qk1FamJISDc4RmNnTEhjTWRjb1pLaXFGVlRhTjB0UUJBPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.25_x64-setup.exe"
     }
   }
 }

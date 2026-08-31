@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, Tooltip as LeafletTooltip } from 'react-leaflet';
 import L from 'leaflet';
@@ -79,34 +79,49 @@ export function RunwayMap({ runways, icao, trajectory, fullTrajectory, title, sc
                     zoomControl={true}
                     scrollWheelZoom={true}
                 >
+                    {/* Esri World Imagery, not the dark canvas the other maps use.
+                        A runway diagram is the one view where seeing the actual
+                        surface beats a drawn basemap, and it is the one view that
+                        lives past z16 - the canvas stops tiling there, imagery goes
+                        to z19+. Everything drawn over it is cased in black: a thin
+                        line vanishes against aerial photography. */}
                     <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        attribution='Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        maxNativeZoom={19}
+                        maxZoom={20}
                     />
 
-                    {/* Runways */}
-                    {validRunways.map((r, i) => (
-                        <Polyline
-                            key={`rwy-${i}`}
-                            positions={[[r.le_latitude_deg!, r.le_longitude_deg!], [r.he_latitude_deg!, r.he_longitude_deg!]]}
-                            color="#666"
-                            weight={Math.max(4, (r.width_ft || 100) / 15)}
-                            opacity={0.8}
-                        >
-                            <LeafletTooltip permanent direction="center" opacity={0.7} className="runway-label">
-                                {r.le_ident} / {r.he_ident}
-                            </LeafletTooltip>
-                        </Polyline>
-                    ))}
+                    {/* Runways. Over imagery the tarmac is already visible, so the
+                        overlay is an annotation rather than a depiction: amber on a
+                        dark casing, semi-transparent so the surface and its markings
+                        still read underneath. Amber because the runway is pale
+                        concrete - the old grey, and white, both disappear into it -
+                        and because it stays distinct from the blue track. */}
+                    {validRunways.map((r, i) => {
+                        const ends: L.LatLngExpression[] = [
+                            [r.le_latitude_deg!, r.le_longitude_deg!],
+                            [r.he_latitude_deg!, r.he_longitude_deg!],
+                        ];
+                        const w = Math.max(4, (r.width_ft || 100) / 15);
+                        return (
+                            <Fragment key={`rwy-${i}`}>
+                                <Polyline positions={ends} color="#000000" weight={w + 4} opacity={0.45} />
+                                <Polyline positions={ends} color="#ffb000" weight={w} opacity={0.75}>
+                                    <LeafletTooltip permanent direction="center" opacity={0.7} className="runway-label">
+                                        {r.le_ident} / {r.he_ident}
+                                    </LeafletTooltip>
+                                </Polyline>
+                            </Fragment>
+                        );
+                    })}
 
                     {/* Full Flight Path */}
                     {fullTrajPath.length > 1 && (
-                        <Polyline
-                            positions={fullTrajPath}
-                            color="#2196f3"
-                            weight={3}
-                            opacity={0.8}
-                        />
+                        <>
+                            <Polyline positions={fullTrajPath} color="#000000" weight={6} opacity={0.45} />
+                            <Polyline positions={fullTrajPath} color="#2196f3" weight={3} opacity={1} />
+                        </>
                     )}
 
                     {/* Events */}

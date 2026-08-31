@@ -52,9 +52,17 @@ export function FullFlightMap({ trajectory, events, screenshots }: {
                     zoomControl={true}
                     scrollWheelZoom={true}
                 >
+                    {/* Esri's Dark Gray Canvas. CARTO's keyless basemap now serves
+                        tiles watermarked "API KEY REQUIRED" - still HTTP 200, so
+                        nothing errors, the notice is painted into the image. Esri
+                        needs no key. Its canvas stops at z16, so maxNativeZoom
+                        upscales past that rather than fetching the "Map data not
+                        yet available" placeholder. */}
                     <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        attribution='Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                        maxNativeZoom={16}
+                        maxZoom={19}
                     />
 
                     {trajPath.length > 1 && (
