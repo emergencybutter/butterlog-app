@@ -14,7 +14,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::airlines::AirlinesDatabase;
-use crate::icao_index::ADDON_DEVELOPERS;
+use crate::icao_index::{drop_developer_phrases, ADDON_DEVELOPERS};
 
 const W_ICAO: f32 = 4.0;
 const W_CALLSIGN: f32 = 1.5;
@@ -64,12 +64,17 @@ pub struct AirlineIndex {
 }
 
 fn tokenize(s: &str) -> Vec<String> {
-    s.to_lowercase()
+    let words = s.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
         .map(|t| t.to_string())
         .filter(|t| t.len() >= 2 || t.chars().any(|c| c.is_ascii_digit()))
         .filter(|t| !STOPWORDS.contains(&t.as_str()))
+        .collect::<Vec<_>>();
+    // Same rule as the type index: a studio name identifies neither the
+    // aircraft nor its operator.
+    drop_developer_phrases(words)
+        .into_iter()
         .filter(|t| !ADDON_DEVELOPERS.contains(&t.as_str()))
         .collect()
 }
@@ -212,6 +217,8 @@ mod tests {
                 al("AFR", "Air France", "AIRFRANS"),
                 al("VYA", "Voyager Aviation", "VOYAGER"),
                 al("EIN", "Aer Lingus", "SHAMROCK"),
+                // Contains a word that is also part of an add-on studio name.
+                al("SDB", "Sukhoi Design Bureau Company", "SUKHOI"),
                 // Real entries whose ICAO designators collide with engine variant
                 // designators that show up in livery titles.
                 al("CFM", "ACEF", "ACEF"),
@@ -300,5 +307,18 @@ mod tests {
         assert!(idx.find("Fox2 MicroFox (912 iS - Low n' Slow)").is_none());
         // Piper M600 should not resolve to an airline
         assert!(idx.find("Piper M600 Firenze Interior").is_none());
+    }
+
+
+    /// An add-on studio in the title is not an operator. "TFDi Design" used to
+    /// match Sukhoi Design Bureau on the strength of the word "design" alone,
+    /// putting an airline on a flight that had none.
+    #[test]
+    fn studio_names_do_not_become_operators() {
+        let idx = AirlineIndex::build(&test_db());
+        assert!(idx.find("TFDi Design MD-11F GE").is_none());
+        assert!(idx.find("TFDi Design").is_none());
+        // The airline itself must still resolve.
+        assert_eq!(idx.find("Sukhoi Design Bureau").map(|m| m.name), Some("Sukhoi Design Bureau Company".to_string()));
     }
 }

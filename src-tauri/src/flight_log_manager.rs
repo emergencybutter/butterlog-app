@@ -1404,6 +1404,42 @@ pub struct TransposedFlightData {
     pub vspeed: Vec<f32>,
     pub pitch: Vec<f32>,
     pub roll: Vec<f32>,
+    #[serde(default)]
+    pub heading: Vec<f32>,
+    #[serde(default)]
+    pub track: Vec<f32>,
+    #[serde(default)]
+    pub ground_speed: Vec<f32>,
+    #[serde(default)]
+    pub true_airspeed: Vec<f32>,
+    #[serde(default)]
+    pub baro: Vec<f32>,
+    #[serde(default)]
+    pub magvar: Vec<f32>,
+    #[serde(default)]
+    pub g_load: Vec<f32>,
+    #[serde(default)]
+    pub oat: Vec<f32>,
+    #[serde(default)]
+    pub wind_speed: Vec<f32>,
+    #[serde(default)]
+    pub wind_dir: Vec<f32>,
+    #[serde(default)]
+    pub fuel_flow: Vec<f32>,
+    #[serde(default)]
+    pub fuel_left: Vec<f32>,
+    #[serde(default)]
+    pub fuel_right: Vec<f32>,
+    #[serde(default)]
+    pub rpm: Vec<f32>,
+    #[serde(default)]
+    pub pct_power: Vec<f32>,
+    #[serde(default)]
+    pub manifold: Vec<f32>,
+    #[serde(default)]
+    pub oil_temp: Vec<f32>,
+    #[serde(default)]
+    pub oil_press: Vec<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1580,6 +1616,24 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     let mut vspeed = Vec::with_capacity(n);
     let mut pitch = Vec::with_capacity(n);
     let mut roll = Vec::with_capacity(n);
+    let mut heading = Vec::with_capacity(n);
+    let mut track = Vec::with_capacity(n);
+    let mut ground_speed = Vec::with_capacity(n);
+    let mut true_airspeed = Vec::with_capacity(n);
+    let mut baro = Vec::with_capacity(n);
+    let mut magvar = Vec::with_capacity(n);
+    let mut g_load = Vec::with_capacity(n);
+    let mut oat = Vec::with_capacity(n);
+    let mut wind_speed = Vec::with_capacity(n);
+    let mut wind_dir = Vec::with_capacity(n);
+    let mut fuel_flow = Vec::with_capacity(n);
+    let mut fuel_left = Vec::with_capacity(n);
+    let mut fuel_right = Vec::with_capacity(n);
+    let mut rpm = Vec::with_capacity(n);
+    let mut pct_power = Vec::with_capacity(n);
+    let mut manifold = Vec::with_capacity(n);
+    let mut oil_temp = Vec::with_capacity(n);
+    let mut oil_press = Vec::with_capacity(n);
 
     let mut prev_epoch = 0i64;
     for (pos, &i) in indices.iter().enumerate() {
@@ -1593,6 +1647,24 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
         vspeed.push(row.metrics.vertical_speed as f32);
         pitch.push(row.metrics.pitch_angle as f32);
         roll.push(row.metrics.roll_angle as f32);
+        heading.push(row.metrics.heading as f32);
+        track.push(row.metrics.track as f32);
+        ground_speed.push(row.metrics.ground_speed as f32);
+        true_airspeed.push(row.metrics.true_airspeed as f32);
+        baro.push(row.metrics.altimeter_setting as f32);
+        magvar.push(row.metrics.magnetic_variation as f32);
+        g_load.push(row.metrics.normal_acceleration as f32);
+        oat.push(row.metrics.outside_air_temp as f32);
+        wind_speed.push(row.metrics.wind_speed as f32);
+        wind_dir.push(row.metrics.wind_direction as f32);
+        fuel_flow.push(row.metrics.engine_1_fuel_flow as f32);
+        fuel_left.push(row.metrics.fuel_quantity_left as f32);
+        fuel_right.push(row.metrics.fuel_quantity_right as f32);
+        rpm.push(row.metrics.engine_1_rpm as f32);
+        pct_power.push(row.metrics.engine_1_percent_power as f32);
+        manifold.push(row.metrics.engine_1_manifold_pressure as f32);
+        oil_temp.push(row.metrics.engine_1_oil_temp as f32);
+        oil_press.push(row.metrics.engine_1_oil_pressure as f32);
     }
 
     let remote_flight_id = read_remote_id(&path);
@@ -1616,7 +1688,7 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     };
 
     let share = FlightDetailShare {
-        transposed_data: TransposedFlightData { timestamps, latitudes, longitudes, altitudes, ias, vspeed, pitch, roll },
+        transposed_data: TransposedFlightData { timestamps, latitudes, longitudes, altitudes, ias, vspeed, pitch, roll, heading, track, ground_speed, true_airspeed, baro, magvar, g_load, oat, wind_speed, wind_dir, fuel_flow, fuel_left, fuel_right, rpm, pct_power, manifold, oil_temp, oil_press },
         summary,
         screenshots,
         remote_flight_id,

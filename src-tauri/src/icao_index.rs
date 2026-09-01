@@ -119,8 +119,38 @@ const NICKNAMES: &[(&str, &str)] = &[
 /// airline. Dropped during tokenization for both the ICAO-type and airline indexes.
 pub const ADDON_DEVELOPERS: &[&str] = &[
     "ifly", "blacksquare", "fsreborn", "pmdg", "fenix", "flightsimware",
-    "asobo", "fsltl", "passiveaircraft", "laminar",
+    "asobo", "fsltl", "passiveaircraft", "laminar", "tfdi",
 ];
+
+/// Studio names made of words that are meaningful on their own, so they can
+/// only be dropped as a phrase.
+///
+/// "TFDi Design" is the case that forced this: dropping the bare word `design`
+/// would also blind the index to Flight Design, a real manufacturer, and to
+/// Sukhoi Design Bureau on the airline side. Left in, it out-scores the actual
+/// model - "TFDi Design MD-11F GE" resolved to a Flight Design CT and an
+/// airline nobody flew.
+pub const ADDON_DEVELOPER_PHRASES: &[&[&str]] = &[&["tfdi", "design"]];
+
+/// Remove any run of tokens matching a studio phrase, left to right.
+pub fn drop_developer_phrases(tokens: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        let hit = ADDON_DEVELOPER_PHRASES.iter().find(|phrase| {
+            tokens[i..].len() >= phrase.len()
+                && phrase.iter().enumerate().all(|(k, w)| tokens[i + k] == *w)
+        });
+        match hit {
+            Some(phrase) => i += phrase.len(),
+            None => {
+                out.push(tokens[i].clone());
+                i += 1;
+            }
+        }
+    }
+    out
+}
 
 /// Shortest ICAO code length considered when matching a code as the prefix of a word.
 const MIN_CODE_PREFIX_LEN: usize = 3;
@@ -149,12 +179,18 @@ pub struct IcaoIndex {
 /// character, applying alias canonicalization. Pure single-letter tokens are dropped as
 /// noise, but short tokens containing a digit (e.g. `8`, `a320`) are kept.
 fn tokenize(s: &str) -> Vec<String> {
-    s.to_lowercase()
+    // Phrases are dropped before the single-word stoplist, so a phrase whose
+    // first word is also a lone studio name still matches as a phrase.
+    let words: Vec<String> = s
+        .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
         .map(strip_addon_prefix)
         .map(canonicalize)
         .filter(|t| t.len() >= 2 || t.chars().any(|c| c.is_ascii_digit()))
+        .collect();
+    drop_developer_phrases(words)
+        .into_iter()
         .filter(|t| !ADDON_DEVELOPERS.contains(&t.as_str()))
         .collect()
 }
@@ -361,6 +397,8 @@ mod tests {
             ac("TL20", "TL ULTRALIGHT", "TL Ultralight Sting S4", "TL-2000 Sting"),
             ac("C17", "BOEING", "Boeing Globemaster III", "Boeing C-17 Globemaster III"),
             ac("DC10", "BOEING-MCDONNELL DOUGLAS", "Boeing (Douglas) DC 10-10/30/40", "McDonnell Douglas DC10-30"),
+            ac("MD11", "BOEING-MCDONNELL DOUGLAS", "Boeing (Douglas) MD-11", "McDonnell Douglas MD-11F"),
+            ac("FDCT", "FLIGHT DESIGN", "Flight Design CT", "Flight Design CT"),
             ac("PC6", "PILATUS", "Pilatus PC-6 Porter", "Pilatus PC-6/B2-H4"),
             ac("DA62", "DIAMOND", "Diamond DA62", "Diamond DA-62"),
             ac("DJET", "DIAMOND", "Diamond D-Jet", "Diamond D-JET"),
@@ -530,6 +568,8 @@ mod tests {
         assert!(idx.find("spaceship zzzqqq").is_none());
     }
 
+
+
     #[test]
     fn resolves_real_world_sim_titles() {
         let idx = IcaoIndex::build(&test_db());
@@ -679,6 +719,20 @@ mod tests {
         assert_eq!(top(&idx, "S12-G: Passengers"), "GLID");
         assert_eq!(top(&idx, "AT802 Firefighting"), "AT8T");
         assert_eq!(top(&idx, "Asobo PassiveAircraft Generic Glider 11S20M"), "GLID");
+    }
+
+    /// "TFDi Design" is a studio, but `design` is also the manufacturer of the
+    /// Flight Design CT — which out-scored the actual model, so an MD-11F was
+    /// logged as a light sport aircraft. Dropping the bare word would blind the
+    /// index to the real manufacturer, so the studio is matched as a phrase.
+    #[test]
+    fn studio_names_made_of_real_words_do_not_hijack_the_type() {
+        let idx = IcaoIndex::build(&test_db());
+        assert_eq!(top(&idx, "TFDi Design MD-11F GE"), "MD11");
+        assert_eq!(top(&idx, "TFDi Design MD-11F"), "MD11");
+        // The manufacturer itself must still resolve.
+        assert_eq!(top(&idx, "Flight Design CT"), "FDCT");
+        assert_eq!(top(&idx, "Design"), "FDCT");
     }
 
     #[test]
