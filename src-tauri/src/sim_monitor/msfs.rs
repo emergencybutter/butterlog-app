@@ -1306,7 +1306,7 @@ impl SimConnectMonitor {
                                                     .unwrap_or_default();
                                                 tauri::async_runtime::spawn(async move {
                                                     let cfg = app_share.state::<crate::config::ConfigManager>().get_config();
-                                                    if cfg.auto_share_flights && !fname_share.is_empty() {
+                                                    if cfg.is_logged_in() && !fname_share.is_empty() {
                                                         match crate::flight_log_manager::perform_share_flight(&app_share, &fname_share).await {
                                                             Ok(url) => crate::append_log(&app_share, format!("[AutoShare] {}", url)),
                                                             Err(e) => crate::append_log(&app_share, format!("[AutoShare] Failed: {}", e)),
@@ -1994,8 +1994,8 @@ fn drain_sim_commands(
     for cmd in pending {
         let outcome = match crate::sim_commands::allowed_by_settings(
             &cmd.kind,
-            config.allow_remote_commands,
-            config.allow_beta_commands,
+            config.is_logged_in(),
+            config.is_logged_in(),
         ) {
             Err(why) => crate::sim_commands::Outcome::Rejected(why),
             Ok(()) => match crate::sim_commands::msfs_event(&cmd.kind, &cmd.params) {

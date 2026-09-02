@@ -103,8 +103,8 @@ impl WebhookManager {
         // control strip rather than a row of dead buttons.
         let capabilities = serde_json::json!({
             "commands": crate::sim_commands::capabilities(
-                config.allow_remote_commands,
-                config.allow_beta_commands,
+                config.is_logged_in(),
+                config.is_logged_in(),
             ),
         });
 

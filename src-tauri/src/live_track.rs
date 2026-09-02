@@ -250,7 +250,7 @@ impl LiveTrackUploader {
     /// logged in, or the feature switched off.
     async fn tick(&self, app: &AppHandle) {
         let config = app.state::<crate::config::ConfigManager>().get_config();
-        if !config.enable_webhook || !config.share_live_flights {
+        if !config.enable_webhook || !config.is_logged_in() {
             return;
         }
         let Some((base_url, api_token)) = config.api_auth() else {

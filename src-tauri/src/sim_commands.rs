@@ -379,7 +379,7 @@ pub fn spawn_poller(app: AppHandle) {
                 .current_flight();
 
             let (Some((base_url, api_token)), true, Some((_, flight_id))) =
-                (config.api_auth(), config.allow_remote_commands, flight)
+                (config.api_auth(), config.is_logged_in(), flight)
             else {
                 // Nothing to poll for: no flight, logged out, or the user has
                 // remote control switched off.

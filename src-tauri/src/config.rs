@@ -33,26 +33,6 @@ pub struct Config {
     pub open_at_login: bool,
     pub start_minimized: bool,
     pub inject_butterlog_traffic: bool,
-    pub auto_share_flights: bool,
-    /// Stream the flight track to the service while airborne, so it can be
-    /// watched live on the web. Defaults to the auto-share setting on upgrade
-    /// so existing users get the behaviour they already expected.
-    #[serde(default = "default_share_live_flights")]
-    pub share_live_flights: bool,
-    /// Let the pilot act on their own simulator from the live flight page.
-    /// Off by default and deliberately not derived from any other setting:
-    /// logging in should not hand anyone a lever on a running sim.
-    #[serde(default)]
-    pub allow_remote_commands: bool,
-    /// Also allow the beta autopilot controls. Separate from the switch above
-    /// because those drive the *default* autopilot and do nothing on add-on
-    /// aircraft that run their own.
-    #[serde(default)]
-    pub allow_beta_commands: bool,
-}
-
-fn default_share_live_flights() -> bool {
-    true
 }
 
 pub fn default_service_url() -> String {
@@ -74,6 +54,16 @@ impl Config {
     /// Service API base (`{service}/api/v0`) and bearer token, or None when
     /// not logged in. A `--service-url` CLI override takes precedence over the
     /// saved service URL.
+    /// Whether the app is linked to the service.
+    ///
+    /// Sharing finished flights, streaming them live, and accepting sim
+    /// commands from the pilot's own flight page all follow from this rather
+    /// than from switches of their own: they are the point of signing in, and
+    /// the service only ever offers the controls to the flight's owner.
+    pub fn is_logged_in(&self) -> bool {
+        !self.api_token.trim().is_empty()
+    }
+
     pub fn api_auth(&self) -> Option<(String, String)> {
         if self.api_token.is_empty() {
             return None;
@@ -171,10 +161,6 @@ impl Config {
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            auto_share_flights: true,
-            share_live_flights: true,
-            allow_remote_commands: false,
-            allow_beta_commands: false,
         }
     }
 }
@@ -196,10 +182,6 @@ impl Default for Config {
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            auto_share_flights: true,
-            share_live_flights: true,
-            allow_remote_commands: false,
-            allow_beta_commands: false,
         }
     }
 }
