@@ -1,11 +1,11 @@
 {
-  "version": "0.3.26",
-  "notes": "Butterlog v0.3.26 Release",
-  "pub_date": "2026-09-01T19:22:24Z",
+  "version": "0.3.27",
+  "notes": "Butterlog v0.3.27 Release\nSharing and sim control now follow being signed in; the four toggles are gone.",
+  "pub_date": "2026-09-02T23:10:35Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG56VjNYRXB5OWtwdnB6dG9neUNRYkdQTFM3NnNZYlJOT2lwUmlMQWpLOWVoSENlZUxSeTJkY2RlNFhyckI3c205dXdzSGJpYXRZV1V0MkxnVXk1bFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjkwNTQ0CWZpbGU6YnV0dGVybG9nXzAuMy4yNl94NjQtc2V0dXAuZXhlCmFpZTlnRWEyRmdoOUpJN1VHV0dHZ0Y1dnBnN2RLbHQ3L1Bvc2hBSlVacTA3azEwMVZkRDZzbmZ1bmxpVXZPRk9la3FNaVAzWkZrTXdrbW9KcXlOakRRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.26_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGdqNGNDQlVmdGNkLzVyQWVRQXc2Z3l5Qit2L0xESldJTmhTUzlVYnkxTWlGZG10dkt6RjBoQmdyaUdnNlFrdE9MeHg0UEJSVzdVSThHU0l2Y0Y0cHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MzkwNjM1CWZpbGU6YnV0dGVybG9nXzAuMy4yN194NjQtc2V0dXAuZXhlCmRmN0pYdFZMdlNUSjlncU5LaktpNFFsNDFzYlk1eCs5Z2sxdmcrU2E4UjQ0VHd4VEtzVFgvUWdyTXRzcEZzeXFIbTlwVzQ2a3o3V2RSS1J1ekZaNkJRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.27_x64-setup.exe"
     }
   }
 }
