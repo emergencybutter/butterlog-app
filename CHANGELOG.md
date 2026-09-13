@@ -17,6 +17,9 @@ All notable changes to this project will be documented in this file.
 - The Multiplayer Debugging tab now shows each tracked peer's deduced ICAO type, airline (ICAO code + name), livery, and the local model chosen to represent them.
 - Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
 
+### Fixed
+- Waiting for MSFS no longer leaks a socket per attempt. Availability is probed by a short-lived child process (`butterlog --probe-simconnect`) that opens a SimConnect client, reports the result as its exit code and exits, so whatever the SDK holds onto after a failed open goes back to the OS with that process. The app only connects in-process once the probe says the sim is answering.
+
 ## [0.3.14] - 2026-06-15
 
 ### Changed
