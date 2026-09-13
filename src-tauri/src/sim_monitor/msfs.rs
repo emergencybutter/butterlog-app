@@ -1816,15 +1816,15 @@ fn find_best_multiplayer_model(
 }
 
 /// True when the MSFS SimConnect server pipe is present in the named-pipe
-/// namespace. Calling SimConnect_Open while the sim is down leaks a client
-/// inside the SDK that we can't free, so we probe `\\.\pipe\` first and only
-/// attempt to connect when MSFS is actually running. Cheap and dependency-free.
+/// namespace. A cheap, allocation-free gate in front of `simconnect_available`
+/// so we don't spawn a probe process every couple of seconds while the sim is
+/// plainly not running.
 ///
 /// The pipe is named `Microsoft Flight Simulator\SimConnect` (the default pipe
 /// SimConnect_Open connects to); we match on "flight simulator" specifically so
 /// an unrelated `Custom\SimConnect` pipe from another app doesn't read as MSFS.
 fn simconnect_pipe_present() -> bool {
-    match std::fs::read_dir(r"\\.\pipe\") {
+    match std::fs::read_dir(r"\.\pipe\") {
         Ok(entries) => entries.flatten().any(|entry| {
             entry
                 .file_name()
@@ -1832,9 +1832,97 @@ fn simconnect_pipe_present() -> bool {
                 .to_lowercase()
                 .contains("flight simulator")
         }),
-        // If the pipe namespace can't be read, fall back to attempting the
-        // connection rather than never connecting.
+        // If the pipe namespace can't be read, fall back to probing rather than
+        // never connecting.
         Err(_) => true,
+    }
+}
+
+/// Hidden CLI flag that turns a launch of our own executable into a one-shot
+/// SimConnect availability probe. See [`run_probe_child`].
+pub const PROBE_FLAG: &str = "--probe-simconnect";
+
+/// Exit codes the probe child uses to report its answer.
+const PROBE_AVAILABLE: i32 = 0;
+const PROBE_UNAVAILABLE: i32 = 1;
+
+/// Upper bound on how long we wait for a probe child. SimConnect_Open against a
+/// live sim answers in milliseconds; anything beyond this is a wedged SDK call,
+/// and killing the child is exactly the cleanup we spawned it for.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Body of the probe child process: open a SimConnect client, close it, and let
+/// the exit code carry the answer back to the parent. Never returns.
+///
+/// A failed `SimConnect_Open` leaks resources inside the MSFS SDK — a socket per
+/// attempt — that closing the handle does not reclaim, so the process that made
+/// the attempt exits immediately and the OS reclaims them. `lib::run` routes
+/// here before any other startup work when it sees [`PROBE_FLAG`].
+pub fn run_probe_child() -> ! {
+    let code = match SimConnect::open("ButterLogProbe") {
+        Ok(sc) => {
+            drop(sc);
+            PROBE_AVAILABLE
+        }
+        Err(_) => PROBE_UNAVAILABLE,
+    };
+    std::process::exit(code);
+}
+
+/// True when MSFS will accept a SimConnect connection right now.
+///
+/// The attempt is made in a short-lived child process (our own executable run
+/// with [`PROBE_FLAG`]) so the SDK's per-attempt leak dies with that process
+/// instead of accumulating in the app across hours of polling. Only once the
+/// child reports success does the caller open a connection in-process, where
+/// the open is expected to succeed and so leaks nothing.
+fn simconnect_available() -> bool {
+    if !simconnect_pipe_present() {
+        return false;
+    }
+
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        // Can't locate ourselves to spawn the probe: fall back to attempting the
+        // connection in-process rather than never connecting.
+        Err(_) => return true,
+    };
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg(PROBE_FLAG)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: no console flash on debug builds.
+        cmd.creation_flags(0x0800_0000);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(_) => return true,
+    };
+
+    let deadline = std::time::Instant::now() + PROBE_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code() == Some(PROBE_AVAILABLE),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return true;
+            }
+        }
     }
 }
 
@@ -1860,18 +1948,17 @@ impl SimMonitor for SimConnectMonitor {
             let available_aircraft = available_aircraft.clone();
             let available_helicopters = available_helicopters.clone();
             move || {
-                // Each failed SimConnect_Open leaks a client inside the MSFS SDK
-                // that we can't reclaim (open returns no handle to close). To avoid
-                // that we only call open() when a SimConnect pipe actually exists;
-                // the exponential backoff then covers the brief window where the
-                // pipe is up but the sim isn't ready to accept the connection yet.
+                // Each failed SimConnect_Open leaks resources inside the MSFS SDK
+                // (a socket per attempt) that we can't reclaim, so we never make a
+                // speculative open() here: `simconnect_available` does the trial
+                // connection in a child process that exits, and we only open
+                // in-process once it says the sim is answering.
                 let max_backoff = Duration::from_secs(30);
                 let mut backoff = Duration::from_secs(1);
                 loop {
                 if !*running_clone.lock() { break; }
-                if !simconnect_pipe_present() {
-                    // Sim not running: skip open() entirely so we don't leak, and
-                    // poll the pipe namespace again shortly.
+                if !simconnect_available() {
+                    // Sim not up (or not answering yet): poll again shortly.
                     thread::sleep(Duration::from_secs(2));
                     continue;
                 }

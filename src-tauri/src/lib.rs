@@ -442,6 +442,15 @@ fn show_main_window(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+
+    // One-shot SimConnect availability probe, launched by the MSFS monitor as a
+    // child of ourselves. Must run before any other startup work: it opens a
+    // SimConnect client, reports the result through its exit code, and exits so
+    // the SDK's per-attempt leak dies with the process. See `msfs::run_probe_child`.
+    if args.iter().any(|a| a == sim_monitor::msfs::PROBE_FLAG) {
+        sim_monitor::msfs::run_probe_child();
+    }
+
     let regenerate_summary = args.contains(&"--regenerate_summary".to_string());
 
     let mut custom_url = None;
