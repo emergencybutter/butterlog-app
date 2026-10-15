@@ -1,11 +1,11 @@
 {
-  "version": "0.3.30",
-  "notes": "Butterlog v0.3.30 Release\nFlights no longer start at 0,0 while MSFS is loading; the departure is the airport you spawn at",
-  "pub_date": "2026-10-08T17:51:33Z",
+  "version": "0.3.31",
+  "notes": "Butterlog v0.3.31 Release\nPhenom 300E and Lancair Legacy are now recognised correctly; no airline is guessed for pistons and light turboprops",
+  "pub_date": "2026-10-15T19:16:19Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHR2SFlVejRPNkNsTkN6RWFZV0RTVlE2VUI5WlFQRXBKWi8zd2hWazB2cnZMMnpOZS9Ca05XUllKaU1velp5cTFWL1JaSzMyajNaV1ZuRVVJN0hUUWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNDgxODkzCWZpbGU6YnV0dGVybG9nXzAuMy4zMF94NjQtc2V0dXAuZXhlCkwrYjNleG5RbnU1U2ZTc3kxZkd3Q1RlL3hzWUVEa2I5STF2dE1BL0NZYlA2OHJVdEQ3a0c4Tk15dEVIYkUwRitEQlpMVzdzTmJNcnAzek5Id2NpeERRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.30_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHBnRWpqOXBRSnBhc3gxMm53Qm9NMHdRVXRmS01aV3E4cmJTcC83QkRPSm0ycUoxTzB6VldPMSthSHl6Qk5ZcWE1VnpHaVhiaWM5a2JPREx4K0FLQnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDkxNzc4CWZpbGU6YnV0dGVybG9nXzAuMy4zMV94NjQtc2V0dXAuZXhlCjhyaVJhODZWQjdtRDhwenNKWFJoK3UxekZJMDF2SUc1V003a3QzdWVoQXJHRVJHT093T3RLaElGRk1EYjRYem92aWhSVlh4WWFPbFVsdmpIdWRGbERRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.31_x64-setup.exe"
     }
   }
 }
