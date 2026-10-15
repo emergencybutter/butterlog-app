@@ -138,7 +138,7 @@ fn resolve_and_log(
     let query = format!("{} {}", identity.title, identity.livery);
 
     if let Some(index) = icao_index {
-        match index.find(&query) {
+        match index.find_title_livery(&identity.title, &identity.livery) {
             Some(m) => {
                 crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> {} (score {:.2})", identity.title, identity.livery, m.icao, m.score));
                 identity.resolved_icao = m.icao;
@@ -147,7 +147,14 @@ fn resolve_and_log(
         }
     }
 
-    if let Some(index) = airline_index {
+    let may_fly_for_airline = app
+        .try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>()
+        .map_or(true, |db| db.type_may_fly_for_airline(&identity.resolved_icao));
+    if !may_fly_for_airline {
+        crate::append_log(app, format!("[X-Plane Airline] '{}' -> skipped, {} is a piston/light turboprop", identity.title, identity.resolved_icao));
+        identity.resolved_airline.clear();
+        identity.resolved_airline_icao.clear();
+    } else if let Some(index) = airline_index {
         match index.find(&query) {
             Some(m) => {
                 crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> {} {} (score {:.2})", identity.title, identity.livery, m.icao, m.name, m.score));

@@ -818,7 +818,7 @@ impl SimConnectMonitor {
                             aircraft_info.engine_type = engine_type.clone();
 
                             // Resolve an ICAO type from the title + livery via the word index.
-                            let resolved_icao = match icao_index.as_ref().and_then(|idx| idx.find(&format!("{} {}", title, livery))) {
+                            let resolved_icao = match icao_index.as_ref().and_then(|idx| idx.find_title_livery(&title, &livery)) {
                                 Some(m) => {
                                     crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> {} (score {:.2})", title, livery, m.icao, m.score));
                                     m.icao
@@ -829,7 +829,15 @@ impl SimConnectMonitor {
                                 }
                             };
                             aircraft_info.resolved_icao = resolved_icao.clone();
-                            let (resolved_airline_icao, resolved_airline) = log_airline_index_match(app, airline_index.as_ref(), "current", &title, &livery, true);
+                            let may_fly_for_airline = app
+                                .try_state::<CharacteristicsDatabase>()
+                                .map_or(true, |db| db.type_may_fly_for_airline(&resolved_icao));
+                            let (resolved_airline_icao, resolved_airline) = if may_fly_for_airline {
+                                log_airline_index_match(app, airline_index.as_ref(), "current", &title, &livery, true)
+                            } else {
+                                crate::append_log(app, format!("[MSFS Airline] current '{}' -> skipped, {} is a piston/light turboprop", title, resolved_icao));
+                                (String::new(), String::new())
+                            };
                             aircraft_info.resolved_airline = resolved_airline.clone();
                             aircraft_info.resolved_airline_icao = resolved_airline_icao.clone();
 

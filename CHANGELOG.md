@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
 
 ### Fixed
+- The aircraft title now outweighs the livery when deducing the ICAO type. FSReborn liveries end in a studio code such as "(S108)", which is the Stinson 108's type code, so the Phenom 300E was logged as an S108. Livery words now count for a quarter of title words; they still decide when the title names no type. "Phenom 300E" also resolves to E55P instead of tying with the Phenom 100.
+- No operating airline is deduced for pistons or light (WTC Light) turboprops such as the Caravan, King Air, PC-12 and TBM. A livery word that happens to match an airline name is noise on a privately flown aircraft. Regional turboprops (ATR, Dash 8, Saab 340, Beech 1900) still get one.
 - Lancair Legacy titles such as "LEGACY G3X GTN750 TURBO" now resolve to LEG2 instead of the Embraer E135. "Legacy" alone means the Lancair; Embraer Legacy titles still resolve from their model number (600, 450, 500).
 - Waiting for MSFS no longer leaks a socket per attempt. Availability is probed by a short-lived child process (`butterlog --probe-simconnect`) that opens a SimConnect client, reports the result as its exit code and exits, so whatever the SDK holds onto after a failed open goes back to the OS with that process. The app only connects in-process once the probe says the sim is answering.
 

@@ -29,6 +29,15 @@ impl AircraftCharacteristic {
             || (mfg.contains("embraer") && (model.contains("phenom") || model.contains("legacy") || model.contains("praetor")))
     }
 
+    /// Whether an operating airline is worth deducing for this type. Pistons and light
+    /// (WTC "Light") turboprops — Caravans, King Airs, PC-12s, TBMs — are flown privately,
+    /// so a livery word matching an airline is noise rather than an operator.
+    pub fn may_fly_for_airline(&self) -> bool {
+        let engine = self.engine_type.to_lowercase();
+        let light = self.wtc.trim().eq_ignore_ascii_case("light");
+        !(engine == "piston" || (engine == "turboprop" && light))
+    }
+
     pub fn is_fighter_jet(&self) -> bool {
         let icao = self.icao_code.to_uppercase();
         let model = self.model_faa.to_lowercase();
@@ -132,6 +141,14 @@ impl CharacteristicsDatabase {
             }
         }
         Ok(Self { characteristics: map })
+    }
+
+    /// [`AircraftCharacteristic::may_fly_for_airline`] for an ICAO type code. An empty or
+    /// unknown code gives no evidence either way, so the airline is still deduced.
+    pub fn type_may_fly_for_airline(&self, icao: &str) -> bool {
+        self.characteristics
+            .get(&icao.to_uppercase())
+            .map_or(true, |c| c.may_fly_for_airline())
     }
 
     pub fn resolve_title_characteristics(&self, title: &str) -> Option<AircraftCharacteristic> {
@@ -250,5 +267,21 @@ impl CharacteristicsDatabase {
         }
         
         score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn airline_deduced_only_for_types_airlines_fly() {
+        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv").unwrap();
+        for icao in ["C172", "S108", "C208", "PC12", "TBM9", "BE9L"] {
+            assert!(!db.type_may_fly_for_airline(icao), "{icao} should skip the airline");
+        }
+        for icao in ["B738", "E55P", "AT76", "DH8D", "SF34", "B190", "", "ZZZZ"] {
+            assert!(db.type_may_fly_for_airline(icao), "{icao} should deduce the airline");
+        }
     }
 }

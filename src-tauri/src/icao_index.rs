@@ -24,6 +24,10 @@ const W_MODEL: f32 = 1.0;
 const W_MFG: f32 = 0.6;
 const W_ALIAS: f32 = 3.0;
 
+/// Scale applied to livery tokens relative to title tokens; see
+/// [`IcaoIndex::find_title_livery`].
+const LIVERY_FACTOR: f32 = 0.25;
+
 /// Token-level synonyms applied to both the index and the query, so different spellings
 /// of the same brand collapse together. Keep entries that are unambiguous.
 const ALIASES: &[(&str, &str)] = &[
@@ -112,6 +116,9 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("CAP10", "CP10"),
     ("MT7", "M7"),
     ("S12-G", "GLID"),
+    // Phenom 300E: the glued "300E" matches no model token, leaving "Phenom" tied between
+    // the 100 (E50P) and the 300 (E55P).
+    ("300E", "E55P"),
 ];
 
 /// Weaker nicknames for words the model columns already share across several types, used
@@ -332,15 +339,27 @@ impl IcaoIndex {
 
     /// Return up to `limit` ICAO candidates for `query`, best score first.
     pub fn candidates(&self, query: &str, limit: usize) -> Vec<IcaoMatch> {
+        self.ranked(&[(query, 1.0)], limit)
+    }
+
+    /// Score each `(text, factor)` part, scaling its tokens by `factor`. A token counts
+    /// once, at the factor of the first part it appears in.
+    fn ranked(&self, parts: &[(&str, f32)], limit: usize) -> Vec<IcaoMatch> {
         let mut scores: HashMap<u32, f32> = HashMap::new();
         let mut seen: HashSet<String> = HashSet::new();
 
-        for token in tokenize(query) {
-            self.accumulate(&token, &mut scores, &mut seen);
-            // A type code that is an exact prefix of the word (with a non-neo/max suffix)
-            // implies that exact type — credit it as if the code appeared verbatim.
-            if let Some(code) = self.code_prefix_of(&token) {
-                self.accumulate(&code, &mut scores, &mut seen);
+        for (text, factor) in parts {
+            let mut part_scores: HashMap<u32, f32> = HashMap::new();
+            for token in tokenize(text) {
+                self.accumulate(&token, &mut part_scores, &mut seen);
+                // A type code that is an exact prefix of the word (with a non-neo/max suffix)
+                // implies that exact type — credit it as if the code appeared verbatim.
+                if let Some(code) = self.code_prefix_of(&token) {
+                    self.accumulate(&code, &mut part_scores, &mut seen);
+                }
+            }
+            for (idx, score) in part_scores {
+                *scores.entry(idx).or_insert(0.0) += score * factor;
             }
         }
 
@@ -365,6 +384,14 @@ impl IcaoIndex {
     /// Best single ICAO match for `query`, or `None` if nothing matched.
     pub fn find(&self, query: &str) -> Option<IcaoMatch> {
         self.candidates(query, 1).into_iter().next()
+    }
+
+    /// Best ICAO match for a sim aircraft, trusting the title over the livery. Livery
+    /// names carry registrations and studio livery codes that can spell an unrelated type
+    /// (FSReborn's "... (S108)" is a Stinson 108's code), so their tokens count for a
+    /// fraction; they still decide when the title has no type signal of its own.
+    pub fn find_title_livery(&self, title: &str, livery: &str) -> Option<IcaoMatch> {
+        self.ranked(&[(title, 1.0), (livery, LIVERY_FACTOR)], 1).into_iter().next()
     }
 }
 
@@ -473,6 +500,9 @@ mod tests {
             ac("U16", "GRUMMAN", "Grumman HU-16 Albatross", "Grumman HU-16 Albatross"),
             ac("JAS4", "JOBY AVIATION", "Joby Aviation S4", "Joby S4"),
             ac("E75S", "EMBRAER", "Embraer 175 short wing", "Embraer ERJ 170-200 IGW"),
+            ac("E50P", "EMBRAER", "Embraer 500 Phenom 100", "Embraer EMB-500 Phenom 100"),
+            ac("E55P", "EMBRAER", "Embraer Phenom 300", "Embraer EMB-505 Phenom 300"),
+            ac("S108", "STINSON", "Stinson 108 Voyager", "Stinson 108 Voyager"),
         ];
         let mut characteristics = HashMap::new();
         for r in rows {
@@ -759,6 +789,21 @@ mod tests {
         // The manufacturer itself must still resolve.
         assert_eq!(top(&idx, "Flight Design CT"), "FDCT");
         assert_eq!(top(&idx, "Design"), "FDCT");
+    }
+
+    /// FSReborn liveries end in a studio code like "(S108)" — the Stinson 108's ICAO code —
+    /// which out-scored the title's "Phenom 300E" when title and livery were one query.
+    #[test]
+    fn title_outweighs_livery() {
+        let idx = IcaoIndex::build(&test_db());
+        let top_tl = |t: &str, l: &str| idx.find_title_livery(t, l).map(|m| m.icao).unwrap_or_default();
+        assert_eq!(top(&idx, "FSReborn Phenom 300E PRO Oberon Interior"), "E55P");
+        assert_eq!(
+            top_tl("FSReborn Phenom 300E PRO Oberon Interior", "Voyager Aviation | S2 (Dynamic) (S108)"),
+            "E55P"
+        );
+        // A livery still decides when the title carries no type of its own.
+        assert_eq!(top_tl("Asobo PassiveAircraft", "Boeing 737-800 American"), "B738");
     }
 
     #[test]
