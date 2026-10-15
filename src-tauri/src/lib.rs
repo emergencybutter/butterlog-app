@@ -3,6 +3,7 @@ mod airline_index;
 mod airlines;
 mod airports;
 mod icao_index;
+mod legacy_autostart;
 mod config;
 mod flight_analyzer;
 mod flight_log_manager;
@@ -483,6 +484,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            legacy_autostart::cleanup();
+
             // Initialize ConfigManager
             let config_manager = ConfigManager::new(app.handle());
             app.manage(config_manager);

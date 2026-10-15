@@ -1,11 +1,11 @@
 {
-  "version": "0.3.28",
-  "notes": "Butterlog v0.3.28 Release\nMSFS availability is now probed in a child process, so failed connection attempts no longer leak sockets.",
-  "pub_date": "2026-09-13T18:41:09Z",
+  "version": "0.3.30",
+  "notes": "Butterlog v0.3.30 Release\nFlights no longer start at 0,0 while MSFS is loading; the departure is the airport you spawn at",
+  "pub_date": "2026-10-08T17:51:33Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGlqWWxWOEVmMGZ3M0VTdzNzQWE5dHo2V29GcG81b0EySWtHOEZxbVh0dVZnWldHWnRGc0tLN2ZieU5tdnJRUVRqTTZtTllLZTFPOFNMU2RVZzBzcndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzI0ODY4CWZpbGU6YnV0dGVybG9nXzAuMy4yOF94NjQtc2V0dXAuZXhlCnc4VmhLZjVSVGNGTnhqUjJHKzZJRnhyR0xOemczZktCK2RHNkJhZEVEaC90Ty9IdGt1OXhodVAyd0dIVHdPS3ZqM1VmTXcrTU0zem42Rld2aFdCeUJ3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.28_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHR2SFlVejRPNkNsTkN6RWFZV0RTVlE2VUI5WlFQRXBKWi8zd2hWazB2cnZMMnpOZS9Ca05XUllKaU1velp5cTFWL1JaSzMyajNaV1ZuRVVJN0hUUWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNDgxODkzCWZpbGU6YnV0dGVybG9nXzAuMy4zMF94NjQtc2V0dXAuZXhlCkwrYjNleG5RbnU1U2ZTc3kxZkd3Q1RlL3hzWUVEa2I5STF2dE1BL0NZYlA2OHJVdEQ3a0c4Tk15dEVIYkUwRitEQlpMVzdzTmJNcnAzek5Id2NpeERRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.30_x64-setup.exe"
     }
   }
 }

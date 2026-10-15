@@ -487,7 +487,7 @@ impl MultiplayerManager {
                 // Our current position so the service can return only nearby peers.
                 // Without a fix we send none and the service returns no peers.
                 let (latitude, longitude) = match monitor.get_connected_monitor().map(|m| m.get_metrics()) {
-                    Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
+                    Some(m) if m.has_position() => (Some(m.latitude), Some(m.longitude)),
                     _ => (None, None),
                 };
 
@@ -730,7 +730,7 @@ impl MultiplayerManager {
                                             if let Some(m) = connected.as_ref() {
                                                 if m.is_connected() && config.inject_butterlog_traffic {
                                                     let self_metrics = m.get_metrics();
-                                                    if self_metrics.latitude != 0.0 || self_metrics.longitude != 0.0 {
+                                                    if self_metrics.has_position() {
                                                         let dist = crate::sim_monitor::calculate_distance(
                                                             self_metrics.latitude,
                                                             self_metrics.longitude,
@@ -877,7 +877,7 @@ impl MultiplayerManager {
                         
                         for (id, ac) in tracked.iter() {
                             let age = now.duration_since(ac.last_seen);
-                            let dist = if self_metrics.latitude != 0.0 || self_metrics.longitude != 0.0 {
+                            let dist = if self_metrics.has_position() {
                                 crate::sim_monitor::calculate_distance(
                                     self_metrics.latitude,
                                     self_metrics.longitude,

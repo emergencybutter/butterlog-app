@@ -1,6 +1,6 @@
 [package]
 name = "butterlog"
-version = "0.3.28"
+version = "0.3.30"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -49,3 +49,6 @@ ts-rs = "12"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"

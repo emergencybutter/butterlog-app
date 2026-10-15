@@ -472,7 +472,7 @@ impl XPlaneMonitor {
                         // here is the reading from just before the gap (parsed later this loop).
                         const JUMP_SPEED_TOLERANCE: f64 = 8.0;   // covers up to ~8x time accel
                         const JUMP_BASE_MARGIN_NM: f64 = 3.0;    // floor: never flag sub-3nm moves
-                        if updated && m.latitude != 0.0 && m.longitude != 0.0 {
+                        if updated && m.has_position() {
                             let now_pos = std::time::Instant::now();
                             if let Some((l_lat, l_lon, l_time)) = last_pos {
                                 let d_lat = (m.latitude - l_lat).abs() * 60.0; // 1 deg lat = 60nm
@@ -640,6 +640,9 @@ impl XPlaneMonitor {
 
                         { let mut metrics_lock = metrics_mutex.lock(); *metrics_lock = m; }
 
+                        // No position yet (e.g. still loading): nothing to log or analyse.
+                        if !m.has_position() { continue; }
+
                         // While parked (no flight yet), try once a minute to identify the
                         // aircraft (name + livery) so it's known up front — the aircraft may
                         // still be loading right after connect. Stop once we have a title; the
@@ -741,7 +744,7 @@ impl XPlaneMonitor {
                                 }
 
                                 // Set initial departure if on ground and valid coordinates
-                                if !departure_set && m.is_on_ground > 0.5 && m.latitude != 0.0 && m.longitude != 0.0 {
+                                if !departure_set && m.is_on_ground > 0.5 && m.has_position() {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {
                                             crate::append_log(&app, format!("[X-Plane] Identified departure: {} ({})", nearest.ident, nearest.name));
@@ -793,7 +796,7 @@ impl XPlaneMonitor {
                             // Once airborne, the next time we're near the ground is the *arrival*
                             // field, so writing it here would mislabel the destination as the
                             // departure (mirrors FlightAnalyzer::find_end_icao's takeoff guard).
-                            if !departure_set && takeoff_time.is_none() && m.latitude != 0.0 && m.longitude != 0.0 && (m.is_on_ground > 0.5 || m.altitude_agl < 10.0) {
+                            if !departure_set && takeoff_time.is_none() && m.has_position() && (m.is_on_ground > 0.5 || m.altitude_agl < 10.0) {
                                 if let Some(ref conn) = db_conn {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(m.latitude, m.longitude, 1).first() {

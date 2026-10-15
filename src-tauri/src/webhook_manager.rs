@@ -120,7 +120,7 @@ impl WebhookManager {
             .try_state::<crate::UnifiedMonitor>()
             .and_then(|mon| mon.get_connected_monitor().map(|m| m.get_metrics()))
         {
-            Some(m) if m.latitude != 0.0 || m.longitude != 0.0 => (Some(m.latitude), Some(m.longitude)),
+            Some(m) if m.has_position() => (Some(m.latitude), Some(m.longitude)),
             _ => (None, None),
         };
 

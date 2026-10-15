@@ -589,7 +589,7 @@ impl SimConnectMonitor {
                             // Skip once takeoff is known (e.g. a resumed airborne flight): the
                             // <10ft AGL test could otherwise latch onto the arrival field.
                             let m_lock = metrics.lock();
-                            if !departure_set && takeoff_time.is_none() && (m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0) && m_lock.latitude != 0.0 && m_lock.longitude != 0.0 {
+                            if !departure_set && takeoff_time.is_none() && (m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0) && m_lock.has_position() {
                                 if let Some(db) = app.try_state::<AirportsDatabase>() {
                                     if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
                                         crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
@@ -891,7 +891,7 @@ impl SimConnectMonitor {
                             *m = *data;
                         }
 
-                        if data.latitude == 0.0 && data.longitude == 0.0 {
+                        if !data.has_position() {
                             // Invalid GPS data, skip processing
                             continue;
                         }
@@ -953,7 +953,7 @@ impl SimConnectMonitor {
                                 departure_set = has_dep.is_ok();
 
                                 // Set initial departure if on ground and valid coordinates
-                                if !departure_set && data.is_on_ground > 0.5 && data.latitude != 0.0 && data.longitude != 0.0 {
+                                if !departure_set && data.is_on_ground > 0.5 && data.has_position() {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
                                             crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
@@ -1003,7 +1003,7 @@ impl SimConnectMonitor {
                             // Once airborne, the next time we're near the ground is the *arrival*
                             // field, so writing it here would mislabel the destination as the
                             // departure (mirrors FlightAnalyzer::find_end_icao's takeoff guard).
-                            if !departure_set && takeoff_time.is_none() && data.latitude != 0.0 && data.longitude != 0.0 && (data.is_on_ground > 0.5 || data.altitude_agl < 10.0) {
+                            if !departure_set && takeoff_time.is_none() && data.has_position() && (data.is_on_ground > 0.5 || data.altitude_agl < 10.0) {
                                 if let Some(ref conn) = db_conn {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {

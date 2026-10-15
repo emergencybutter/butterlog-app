@@ -150,7 +150,22 @@ pub struct FlightMetrics {
     pub landing_lights: f64,
 }
 
+/// See [`FlightMetrics::has_position`].
+pub fn has_position(latitude: f64, longitude: f64) -> bool {
+    const NULL_ISLAND_DEG: f64 = 0.01;
+    !(latitude.abs() < NULL_ISLAND_DEG && longitude.abs() < NULL_ISLAND_DEG)
+}
+
 impl FlightMetrics {
+    /// Whether the sim has given us a real position yet. While MSFS loads a
+    /// flight it parks the user aircraft at "null island" - 0,0 at ~54,000 ft -
+    /// and the coordinates are only *nearly* zero (a longitude of 1e-5 has been
+    /// seen), so an exact `== 0.0` test lets those samples through. No airport
+    /// is within 0.01 degrees (~1 km) of 0,0, so nothing real is lost.
+    pub fn has_position(&self) -> bool {
+        has_position(self.latitude, self.longitude)
+    }
+
     pub fn update_max(&mut self, other: &Self) {
         self.latitude = self.latitude.max(other.latitude);
         self.longitude = self.longitude.max(other.longitude);
@@ -372,5 +387,24 @@ impl FlightEvent {
         }
 
         Some(score)
+    }
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::has_position;
+
+    #[test]
+    fn null_island_is_not_a_position() {
+        assert!(!has_position(0.0, 0.0));
+        // Seen from MSFS while a flight loads.
+        assert!(!has_position(0.0, 1.139614354883633e-05));
+    }
+
+    #[test]
+    fn real_positions_are_kept() {
+        assert!(has_position(39.723220567447314, -86.30493499662506)); // KIND
+        assert!(has_position(4.896, -1.775)); // DGTK, the closest real airport to 0,0
+        assert!(has_position(0.0, 0.5));
     }
 }
