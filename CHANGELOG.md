@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
 
 ### Fixed
+- Lancair Legacy titles such as "LEGACY G3X GTN750 TURBO" now resolve to LEG2 instead of the Embraer E135. "Legacy" alone means the Lancair; Embraer Legacy titles still resolve from their model number (600, 450, 500).
 - Waiting for MSFS no longer leaks a socket per attempt. Availability is probed by a short-lived child process (`butterlog --probe-simconnect`) that opens a SimConnect client, reports the result as its exit code and exits, so whatever the SDK holds onto after a failed open goes back to the OS with that process. The app only connects in-process once the probe says the sim is answering.
 
 ## [0.3.14] - 2026-06-15

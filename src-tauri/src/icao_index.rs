@@ -114,6 +114,17 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("S12-G", "GLID"),
 ];
 
+/// Weaker nicknames for words the model columns already share across several types, used
+/// to break the tie toward the type a bare word most likely means in a sim title. Weighted
+/// just above a model word, so a title that also carries a distinguishing model token (e.g.
+/// "Embraer Legacy 600") still resolves to that type.
+const W_WEAK_ALIAS: f32 = 1.5;
+const WEAK_NICKNAMES: &[(&str, &str)] = &[
+    // Sim titles like "LEGACY G3X GTN750 TURBO" are the Lancair Legacy; the Embraer
+    // bizjets also listing "Legacy" (E135, E35L, E545, E550) carry a model number or brand.
+    ("Legacy", "LEG2"),
+];
+
 /// Third-party add-on developer / studio names (MSFS & X-Plane) that frequently appear in
 /// aircraft titles and livery paths but identify neither the aircraft type nor the operating
 /// airline. Dropped during tokenization for both the ICAO-type and airline indexes.
@@ -254,6 +265,11 @@ impl IcaoIndex {
         for (nick, code) in NICKNAMES {
             if let Some(&idx) = by_code.get(&code.to_lowercase()) {
                 add_tokens(&mut per_icao[idx], nick, W_ALIAS);
+            }
+        }
+        for (nick, code) in WEAK_NICKNAMES {
+            if let Some(&idx) = by_code.get(&code.to_lowercase()) {
+                add_tokens(&mut per_icao[idx], nick, W_WEAK_ALIAS);
             }
         }
 
@@ -429,6 +445,9 @@ mod tests {
             ac("VL3", "JMB", "JMB VL-3", "JMB Aircraft VL-3"),
             ac("CD2", "DORNIER", "Dornier Seastar", "Dornier Seastar CD2"),
             ac("E135", "EMBRAER", "Embraer ERJ 135/140/Legacy", "Embraer EMB-135LR"),
+            ac("E35L", "EMBRAER", "Embraer 135BJ Legacy 600", "Embraer EMB-135BJ Legacy 600"),
+            ac("E545", "EMBRAER", "Embraer EMB-545 Legacy 450", "Embraer EMB-545 Legacy 450"),
+            ac("E550", "EMBRAER", "Legacy 500/Praetor 600", "Embraer EMB-550 Legacy 500"),
             ac("TNDR", "GOT FRIENDS", "Got Friends Tundra", "Tundra"),
             ac("LEG2", "LANCAIR", "Lancair Legacy", "Lancair Legacy 2000"),
             ac("P212", "TECNAM", "Tecnam P2012 Traveller", "Tecnam P2012"),
@@ -650,6 +669,13 @@ mod tests {
         // "Vertigo" is a Lancair Legacy edition name carried by a nickname (the model columns
         // say "Lancair Legacy", which this title doesn't mention).
         assert_eq!(top(&idx, "Vertigo: Inferno"), "LEG2");
+        // A bare "Legacy" title is the Lancair, not the Embraer ERJ/bizjets that also list
+        // the word; Embraer titles still win on their model number.
+        assert_eq!(top(&idx, "LEGACY G3X GTN750 TURBO"), "LEG2");
+        assert_eq!(top(&idx, "LEGACY ANALOG IFD5 TURBO"), "LEG2");
+        assert_eq!(top(&idx, "LEGACY ANALOG GTN750"), "LEG2");
+        assert_eq!(top(&idx, "Embraer Legacy 600"), "E35L");
+        assert_eq!(top(&idx, "Embraer Legacy 450"), "E545");
         // No Fokker collides in the DB, so the brand word alone pins the trimotor.
         assert_eq!(top(&idx, "Fokker F-VIIa/3m Skis"), "F7");
         assert_eq!(top(&idx, "Fokker Replica Cargo"), "F7");
