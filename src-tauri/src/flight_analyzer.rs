@@ -171,7 +171,7 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::TaxiOut;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                    self.takeoff_timestamp = Some(timestamp.to_string());
+                    self.takeoff_timestamp.get_or_insert_with(|| timestamp.to_string());
                     self.airborne_start = true;
                 }
             }
@@ -180,13 +180,15 @@ impl FlightAnalyzer {
                     self.current_phase = FlightPhase::Takeoff;
                 } else if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                    self.takeoff_timestamp = Some(timestamp.to_string());
+                    self.takeoff_timestamp.get_or_insert_with(|| timestamp.to_string());
                 }
             }
+            // A takeoff after a touchdown (a bounce, a touch-and-go, a go-around)
+            // comes back through here; `get_or_insert_with` keeps the first one.
             FlightPhase::Takeoff => {
                 if !on_ground {
                     self.current_phase = FlightPhase::Climb;
-                    self.takeoff_timestamp = Some(timestamp.to_string());
+                    self.takeoff_timestamp.get_or_insert_with(|| timestamp.to_string());
                     self.add_event("takeoff", metrics.latitude, metrics.longitude, timestamp, None, None, None, None, None);
                 }
             }
@@ -791,6 +793,31 @@ mod tests {
         metrics.ground_speed = 10.0;
         analyzer.update(&metrics, "2026-04-30 12:00:28");
         assert_eq!(analyzer.current_phase, FlightPhase::TaxiIn);
+    }
+
+    #[test]
+    fn a_touch_and_go_keeps_the_first_takeoff() {
+        let mut analyzer = FlightAnalyzer::new();
+        let mut metrics = mock_metrics();
+        metrics.ground_speed = 5.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:01");
+        metrics.indicated_airspeed = 50.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:02");
+        metrics.is_on_ground = 0.0;
+        metrics.vertical_speed = 500.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:03");
+        assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-04-30 12:00:03"));
+
+        // Down at the far end, still rolling fast, and off again.
+        analyzer.current_phase = FlightPhase::Landing;
+        metrics.is_on_ground = 1.0;
+        metrics.ground_speed = 65.0;
+        analyzer.update(&metrics, "2026-04-30 12:40:00");
+        metrics.is_on_ground = 0.0;
+        assert_eq!(analyzer.update(&metrics, "2026-04-30 12:40:20"), Some(FlightPhase::Takeoff));
+        analyzer.update(&metrics, "2026-04-30 12:40:21");
+        assert_eq!(analyzer.current_phase, FlightPhase::Climb);
+        assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-04-30 12:00:03"));
     }
 
     #[test]

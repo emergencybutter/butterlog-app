@@ -1086,29 +1086,36 @@ impl SimConnectMonitor {
                                     if let Some(new_phase) = analyzer.update(data, &now_str) {
                                         let _ = app.emit("flight-phase-change", new_phase);
                                         if new_phase == crate::models::FlightPhase::Takeoff {
-                                            takeoff_snapshot = Some(*data);
-                                            takeoff_time = Some(now_str.clone());
                                             force_sync = true;
                                             auto_finalized = false;
 
-                                            // Immediate takeoff event in summary
-                                            if let Some(ref conn) = db_conn {
-                                                let takeoff_event = crate::models::FlightEvent {
-                                                    timestamp: now_str.clone(),
-                                                    event_type: "takeoff".to_string(),
-                                                    latitude: data.latitude,
-                                                    longitude: data.longitude,
-                                                    touchdown_fpm: None,
-                                                    landing_g: None,
-                                                    offset_percent: None,
-                                                    threshold_dist_ft: None,
-                                                    vs_variance: None,
-                                                    ias_variance: None,
-                                                    approach_stability: None,
-                                                    heading: None,
-                                                };
-                                                if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
-                                                    let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
+                                            // The first takeoff is the flight's. Leaving the ground again after a
+                                            // touchdown (a bounce, a touch-and-go, a go-around) must not move it to
+                                            // the arrival field: the feed measures distance from this snapshot, and a
+                                            // KTYS-KTHA leg with a touch-and-go at KTHA logged 0.4 nm.
+                                            if takeoff_time.is_none() {
+                                                takeoff_snapshot = Some(*data);
+                                                takeoff_time = Some(now_str.clone());
+
+                                                // Immediate takeoff event in summary
+                                                if let Some(ref conn) = db_conn {
+                                                    let takeoff_event = crate::models::FlightEvent {
+                                                        timestamp: now_str.clone(),
+                                                        event_type: "takeoff".to_string(),
+                                                        latitude: data.latitude,
+                                                        longitude: data.longitude,
+                                                        touchdown_fpm: None,
+                                                        landing_g: None,
+                                                        offset_percent: None,
+                                                        threshold_dist_ft: None,
+                                                        vs_variance: None,
+                                                        ias_variance: None,
+                                                        approach_stability: None,
+                                                        heading: None,
+                                                    };
+                                                    if let Ok(event_json) = serde_json::to_string(&vec![takeoff_event]) {
+                                                        let _ = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('takeoff_event', ?1)", params![event_json]);
+                                                    }
                                                 }
                                             }
                                             let _ = app.emit("flight-logs-updated", ());
