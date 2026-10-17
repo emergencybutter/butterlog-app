@@ -1,11 +1,11 @@
 {
-  "version": "0.3.31",
-  "notes": "Butterlog v0.3.31 Release\nPhenom 300E and Lancair Legacy are now recognised correctly; no airline is guessed for pistons and light turboprops",
-  "pub_date": "2026-10-15T19:16:19Z",
+  "version": "0.3.32",
+  "notes": "Butterlog v0.3.32 Release\nNo more empty Airborne to Airborne flights after loading a new flight in MSFS",
+  "pub_date": "2026-10-17T00:17:37Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHBnRWpqOXBRSnBhc3gxMm53Qm9NMHdRVXRmS01aV3E4cmJTcC83QkRPSm0ycUoxTzB6VldPMSthSHl6Qk5ZcWE1VnpHaVhiaWM5a2JPREx4K0FLQnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDkxNzc4CWZpbGU6YnV0dGVybG9nXzAuMy4zMV94NjQtc2V0dXAuZXhlCjhyaVJhODZWQjdtRDhwenNKWFJoK3UxekZJMDF2SUc1V003a3QzdWVoQXJHRVJHT093T3RLaElGRk1EYjRYem92aWhSVlh4WWFPbFVsdmpIdWRGbERRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.31_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGttQXRjMGxHR2hMY2dhZUdGZFNrdTJWTXZ1aDc4TE1CcEt0SElTWVBhT0lJZ1htQ0FDUFhEbS9hV0NqYkRnQldwY2ZWREUzemYyaGw5SkhVcFFvSVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTk2MjU3CWZpbGU6YnV0dGVybG9nXzAuMy4zMl94NjQtc2V0dXAuZXhlCkt5aXd4Z0lYSVo3YkNMTGY2S2JsTTBiUE5rRG4ySFUwOXE3K2ptZFgrY01rRTJKaTdzY3NDZEYxbVJGUXZUQlRxbFRoR050eUJyZm1RY3dIL0xpUkN3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.32_x64-setup.exe"
     }
   }
 }
