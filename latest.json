@@ -1,11 +1,11 @@
 {
-  "version": "0.3.32",
-  "notes": "Butterlog v0.3.32 Release\nNo more empty Airborne to Airborne flights after loading a new flight in MSFS",
-  "pub_date": "2026-10-17T00:17:37Z",
+  "version": "0.3.33",
+  "notes": "Butterlog v0.3.33 Release\nA touch-and-go or go-around no longer becomes the flight's takeoff, so distance and flight time are right again",
+  "pub_date": "2026-10-17T23:02:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGttQXRjMGxHR2hMY2dhZUdGZFNrdTJWTXZ1aDc4TE1CcEt0SElTWVBhT0lJZ1htQ0FDUFhEbS9hV0NqYkRnQldwY2ZWREUzemYyaGw5SkhVcFFvSVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMTk2MjU3CWZpbGU6YnV0dGVybG9nXzAuMy4zMl94NjQtc2V0dXAuZXhlCkt5aXd4Z0lYSVo3YkNMTGY2S2JsTTBiUE5rRG4ySFUwOXE3K2ptZFgrY01rRTJKaTdzY3NDZEYxbVJGUXZUQlRxbFRoR050eUJyZm1RY3dIL0xpUkN3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.32_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHY0Y1p1Zm9TczNpSnptYXMzWmF1QWhGR2F5cXZadDhEQnBZaGJtMWE1dG5tVm9zOTZ6WWhGV2tTUG5paTZOcEQyWTFUWWtzYmdObzhnbGlZdGpDMkE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjc4MTIwCWZpbGU6YnV0dGVybG9nXzAuMy4zM194NjQtc2V0dXAuZXhlCnpBSVdqZ21hMGV6Tnc2WWhqbWcvZld2L1FHdEkzTUFFbTE1dC8vSGVLSytneUVCc1NmTkQxY2g3U1puNHQ2OUNzYUhyMlBubzRwQnM4eCswSzl0Y0NnPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.33_x64-setup.exe"
     }
   }
 }
