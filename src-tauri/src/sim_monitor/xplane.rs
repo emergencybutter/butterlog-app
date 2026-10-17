@@ -673,6 +673,18 @@ impl XPlaneMonitor {
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
                             last_parking_brake = None;
+                            // Carried over, a stale takeoff_time makes the new log sync to
+                            // the service at once.
+                            takeoff_time = None;
+                            landing_time = None;
+                            takeoff_snapshot = None;
+                            landing_snapshot = None;
+                            auto_finalized = false;
+                            on_ground_since = None;
+                            stationary_since = None;
+                            last_agl = 0.0;
+                            touchdown_time = None;
+                            touchdown_update_done = false;
 
                             // Refresh aircraft identity on movement. Strings/config datarefs
                             // aren't subscribable, so these are one-shot REST reads.
@@ -1245,8 +1257,9 @@ impl XPlaneMonitor {
                 let duration_mins = analyzer.get_duration_minutes();
                 let has_movement = analyzer.max_gs > 5.0 || analyzer.max_alt > 50.0;
                 let is_very_short = duration_mins < 2;
-                
-                if is_very_short || !has_movement {
+                let too_few_samples = current_log_path.as_deref().map(super::has_too_few_samples).unwrap_or(false);
+
+                if is_very_short || !has_movement || too_few_samples {
                     if let Some(path) = current_log_path.take() {
                         let _ = std::fs::remove_file(&path);
                         crate::append_log(&app, format!("[X-Plane] Deleted short/empty flight log: {}", path.display()));

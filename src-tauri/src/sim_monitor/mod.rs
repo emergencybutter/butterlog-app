@@ -66,6 +66,21 @@ pub trait SimMonitor: Send + Sync {
     }
 }
 
+/// Fewest logged samples a closed flight must hold to be kept. Samples are
+/// written at 1 Hz or faster while moving, so this is about a minute of
+/// movement. Duration alone is not enough: the end time is "now", so a single
+/// loading sample followed by 20 idle minutes passes as a 20-minute flight.
+const MIN_FLIGHT_SAMPLES: i64 = 60;
+
+/// Whether the closed flight log at `path` holds too few samples to keep.
+/// An unreadable log counts as worth keeping.
+pub fn has_too_few_samples(path: &std::path::Path) -> bool {
+    rusqlite::Connection::open(path)
+        .and_then(|conn| conn.query_row("SELECT COUNT(*) FROM metrics", [], |r| r.get::<_, i64>(0)))
+        .map(|n| n < MIN_FLIGHT_SAMPLES)
+        .unwrap_or(false)
+}
+
 pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let r = 3440.065; // Earth radius in nautical miles
     let d_lat = (lat2 - lat1).to_radians();

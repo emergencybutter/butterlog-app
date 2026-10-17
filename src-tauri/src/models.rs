@@ -162,8 +162,15 @@ impl FlightMetrics {
     /// and the coordinates are only *nearly* zero (a longitude of 1e-5 has been
     /// seen), so an exact `== 0.0` test lets those samples through. No airport
     /// is within 0.01 degrees (~1 km) of 0,0, so nothing real is lost.
+    ///
+    /// Loading samples are not always at null island: 0,90 with an indicated
+    /// altitude of -9,404,658 ft has been seen. No real aircraft indicates far
+    /// below the Dead Sea (-1,400 ft), so such an altitude marks the whole
+    /// sample as garbage.
     pub fn has_position(&self) -> bool {
+        const MIN_INDICATED_ALTITUDE_FT: f64 = -5000.0;
         has_position(self.latitude, self.longitude)
+            && self.indicated_altitude > MIN_INDICATED_ALTITUDE_FT
     }
 
     pub fn update_max(&mut self, other: &Self) {
@@ -392,7 +399,21 @@ impl FlightEvent {
 
 #[cfg(test)]
 mod position_tests {
-    use super::has_position;
+    use super::{has_position, FlightMetrics};
+
+    #[test]
+    fn loading_garbage_is_not_a_position() {
+        // Seen from MSFS while a flight loads: off null island, but the
+        // indicated altitude gives it away.
+        let mut m = FlightMetrics::default();
+        m.latitude = -2.1556893808986427e-07;
+        m.longitude = 90.00032277330374;
+        m.indicated_altitude = -9404658.0;
+        assert!(!m.has_position());
+
+        m.indicated_altitude = -1400.0; // Dead Sea
+        assert!(m.has_position());
+    }
 
     #[test]
     fn null_island_is_not_a_position() {

@@ -762,8 +762,9 @@ impl SimConnectMonitor {
                                 let duration_mins = analyzer.get_duration_minutes();
                                 let has_movement = analyzer.max_gs > 5.0 || analyzer.max_alt > 50.0;
                                 let is_very_short = duration_mins < 2;
-                                
-                                if is_very_short || !has_movement {
+                                let too_few_samples = current_log_path.as_deref().map(super::has_too_few_samples).unwrap_or(false);
+
+                                if is_very_short || !has_movement || too_few_samples {
                                     if let Some(path) = current_log_path.take() {
                                         let _ = std::fs::remove_file(&path);
                                         crate::append_log(app, format!("[MSFS] Deleted short/empty flight log: {}", path.display()));
@@ -913,6 +914,18 @@ impl SimConnectMonitor {
                             max_metrics = None;
                             start_time = Some(Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
                             last_parking_brake = None;
+                            // A flight ended by SimStop leaves these set. Carried over, a stale
+                            // takeoff_time makes the new log sync to the service at once.
+                            takeoff_time = None;
+                            landing_time = None;
+                            takeoff_snapshot = None;
+                            landing_snapshot = None;
+                            auto_finalized = false;
+                            on_ground_since = None;
+                            stationary_since = None;
+                            last_agl = 0.0;
+                            touchdown_time = None;
+                            touchdown_update_done = false;
 
                             let mut resumed_path = None;
                             if !aircraft_info.title.is_empty() && data.is_on_ground < 0.5 {
@@ -951,6 +964,15 @@ impl SimConnectMonitor {
                                     |row| row.get(0)
                                 );
                                 departure_set = has_dep.is_ok();
+
+                                if resumed_path.is_some() {
+                                    if let Err(e) = analyzer.restore(&conn) {
+                                        crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
+                                    } else {
+                                        start_time = analyzer.first_timestamp.clone().or(start_time);
+                                        takeoff_time = analyzer.takeoff_timestamp.clone();
+                                    }
+                                }
 
                                 // Set initial departure if on ground and valid coordinates
                                 if !departure_set && data.is_on_ground > 0.5 && data.has_position() {
