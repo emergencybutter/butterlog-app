@@ -6,6 +6,8 @@ use std::collections::{HashMap, VecDeque};
 
 pub struct FlightAnalyzer {
     start_coords: Vec<(f64, f64)>,
+    /// The latest stretch on the ground: from a touchdown through the rollout
+    /// and the taxi in. Never the approach — see [`Self::find_end_icao`].
     end_coords: VecDeque<(f64, f64)>,
     pub current_phase: FlightPhase,
     last_phase_change: std::time::Instant,
@@ -125,7 +127,8 @@ impl FlightAnalyzer {
 
         let old_phase = self.current_phase;
 
-        self.add_point(metrics.latitude, metrics.longitude);
+        let on_ground = metrics.is_on_ground > 0.5;
+        self.add_point(metrics.latitude, metrics.longitude, on_ground);
 
         if metrics.gps_altitude_msl > self.max_alt {
             self.max_alt = metrics.gps_altitude_msl;
@@ -140,8 +143,6 @@ impl FlightAnalyzer {
             self.initial_fuel = current_fuel;
         }
         self.final_fuel = current_fuel;
-
-        let on_ground = metrics.is_on_ground > 0.5;
 
         let current_g = if metrics.gforce != 0.0 { metrics.gforce } else { metrics.normal_acceleration };
 
@@ -347,11 +348,19 @@ impl FlightAnalyzer {
         });
     }
 
-    fn add_point(&mut self, lat: f64, lon: f64) {
+    fn add_point(&mut self, lat: f64, lon: f64, on_ground: bool) {
         if self.start_coords.len() < 300 {
             self.start_coords.push((lat, lon));
         }
 
+        // A touchdown starts the stretch over, so a touch-and-go's field gives
+        // way to the next one.
+        if !on_ground {
+            return;
+        }
+        if !self.last_on_ground {
+            self.end_coords.clear();
+        }
         if self.end_coords.len() >= 300 {
             self.end_coords.pop_front();
         }
@@ -365,6 +374,14 @@ impl FlightAnalyzer {
         self.find_dominant_icao(&self.start_coords, db)
     }
 
+    /// The field the aircraft is on, or last was, after takeoff: the airport
+    /// most of the latest stretch on the ground was nearest to.
+    ///
+    /// Only the ground counts. This used to be the last 300 samples, wherever
+    /// they were, and five minutes of final approach outvoted the runway: a
+    /// KCVG-KINT Falcon 8X flown from X-Plane on 2026-10-23, landing from the
+    /// southeast, logged its arrival at NC63, a closed strip 1.8 nm east of
+    /// KINT, 224 samples to 76.
     pub fn find_end_icao(&self, db: &AirportsDatabase) -> String {
         // Before takeoff the rolling end-coordinate buffer only holds points at
         // the departure field, so resolving an arrival here would surface the
@@ -818,6 +835,70 @@ mod tests {
         analyzer.update(&metrics, "2026-04-30 12:40:21");
         assert_eq!(analyzer.current_phase, FlightPhase::Climb);
         assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-04-30 12:00:03"));
+    }
+
+    #[test]
+    fn the_arrival_is_where_it_rolled_out_not_what_it_flew_over() {
+        // KINT and the closed strip east of it that a long final passes nearer.
+        let db = crate::airports::mock_db(&[("KCVG", 39.0488, -84.6678), ("KINT", 36.1337, -80.2220), ("NC63", 36.1351, -80.1848)]);
+        let mut analyzer = FlightAnalyzer::new();
+        let mut metrics = mock_metrics();
+        (metrics.latitude, metrics.longitude) = (39.0488, -84.6678);
+        metrics.ground_speed = 5.0;
+        analyzer.update(&metrics, "2026-10-23 14:50:00");
+        metrics.indicated_airspeed = 50.0;
+        analyzer.update(&metrics, "2026-10-23 14:53:00");
+        metrics.is_on_ground = 0.0;
+        metrics.vertical_speed = 2000.0;
+        analyzer.update(&metrics, "2026-10-23 14:53:01");
+        assert_eq!(analyzer.find_end_icao(&db), "Airborne");
+
+        // Final, nearer NC63 all the way down: plenty of samples of it.
+        metrics.vertical_speed = -700.0;
+        for i in 0..250 {
+            (metrics.latitude, metrics.longitude) = (36.08 + i as f64 * 0.0002, -80.17 - i as f64 * 0.0001);
+            analyzer.update(&metrics, &format!("2026-10-23 15:{:02}:{:02}", 45 + i / 60, i % 60));
+        }
+        // Touchdown and a short rollout on KINT's runway.
+        metrics.is_on_ground = 1.0;
+        metrics.ground_speed = 120.0;
+        for i in 0..40 {
+            (metrics.latitude, metrics.longitude) = (36.127 + i as f64 * 0.0002, -80.216 - i as f64 * 0.0001);
+            analyzer.update(&metrics, &format!("2026-10-23 15:50:{:02}", i));
+        }
+        assert_eq!(analyzer.find_end_icao(&db), "KINT");
+    }
+
+    #[test]
+    fn a_touch_and_go_gives_way_to_the_next_field() {
+        let db = crate::airports::mock_db(&[("A1", 40.0, 5.0), ("A2", 41.0, 5.0), ("A3", 42.0, 5.0)]);
+        let mut analyzer = FlightAnalyzer::new();
+        let mut metrics = mock_metrics();
+        (metrics.latitude, metrics.longitude) = (40.0, 5.0);
+        metrics.ground_speed = 5.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:00");
+        metrics.indicated_airspeed = 50.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:01");
+        metrics.is_on_ground = 0.0;
+        analyzer.update(&metrics, "2026-04-30 12:00:02");
+
+        // A long touch-and-go at A2, then off again.
+        metrics.latitude = 41.0;
+        metrics.is_on_ground = 1.0;
+        for i in 0..100 {
+            analyzer.update(&metrics, &format!("2026-04-30 12:20:{:02}", i % 60));
+        }
+        assert_eq!(analyzer.find_end_icao(&db), "A2");
+        metrics.is_on_ground = 0.0;
+        analyzer.update(&metrics, "2026-04-30 12:22:00");
+
+        // A brief stop at A3 outweighs the hundred samples at A2.
+        metrics.latitude = 42.0;
+        metrics.is_on_ground = 1.0;
+        for i in 0..5 {
+            analyzer.update(&metrics, &format!("2026-04-30 12:40:{:02}", i));
+        }
+        assert_eq!(analyzer.find_end_icao(&db), "A3");
     }
 
     #[test]

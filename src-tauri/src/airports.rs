@@ -180,12 +180,20 @@ impl AirportsDatabase {
     }
 }
 
+/// A database of small airports at these positions, for other modules' tests.
+#[cfg(test)]
+pub(crate) fn mock_db(fields: &[(&str, f64, f64)]) -> AirportsDatabase {
+    tests::db_from(
+        fields.iter().enumerate().map(|(i, (ident, lat, lon))| tests::mock_airport(i as i64, ident, *lat, *lon)).collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Helper function to quickly create a mock airport for testing
-    fn mock_airport(id: i64, ident: &str, lat: f64, lon: f64) -> Airport {
+    pub(super) fn mock_airport(id: i64, ident: &str, lat: f64, lon: f64) -> Airport {
         Airport {
             id,
             ident: ident.to_string(),
@@ -296,7 +304,7 @@ mod tests {
         assert!(!is_placeholder_ident("1A2"));
     }
 
-    fn db_from(airports: Vec<Airport>) -> AirportsDatabase {
+    pub(super) fn db_from(airports: Vec<Airport>) -> AirportsDatabase {
         let mut by_ident = HashMap::new();
         let mut locs = Vec::new();
         for (i, a) in airports.iter().enumerate() {
