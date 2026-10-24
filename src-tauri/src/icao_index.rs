@@ -60,6 +60,9 @@ const NICKNAMES: &[(&str, &str)] = &[
     ("MAX7", "B37M"),
     ("MAX8", "B38M"),
     ("MAX9", "B39M"),
+    // Add-on "737-800X" titles: the glued "800x" matches no model token, leaving only
+    // "737", which ties across the whole family and falls to an arbitrary variant.
+    ("800X", "B738"),
     // Other glued model/variant shorthands the model columns store split or under a
     // different code, so the joined query token would otherwise match nothing: the ATR
     // family ("ATR72" vs code AT72), the neo suffix (the code is A20N/A21N, not A320/A321),
@@ -561,6 +564,8 @@ mod tests {
         let idx = IcaoIndex::build(&test_db());
         // A glued "MAX8" suffix should pin the specific MAX variant, not an arbitrary 737.
         assert_eq!(top(&idx, "iFly 737-MAX8 Alaska Airlines N801AK (178Seat)"), "B38M");
+        // Likewise a glued "800X" suffix pins the -800.
+        assert_eq!(top(&idx, "Boeing 737-800X"), "B738");
     }
 
     #[test]
