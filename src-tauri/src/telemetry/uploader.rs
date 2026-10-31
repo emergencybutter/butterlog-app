@@ -551,6 +551,65 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// Against a real service, as an anonymous account: `BUTTERLOG_E2E_URL` is its API base,
+    /// e.g. `http://127.0.0.1:18080/api/v0`. Run with `--ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn end_to_end_against_a_real_service() {
+        let base_url = std::env::var("BUTTERLOG_E2E_URL").expect("BUTTERLOG_E2E_URL");
+        let client = Client::new();
+        let account: serde_json::Value = client
+            .post(format!("{base_url}/anonymous"))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let service = HttpService {
+            client: client.clone(),
+            base_url: base_url.clone(),
+            token: account["token"].as_str().unwrap().to_string(),
+        };
+
+        let dir = temp_dir("e2e");
+        let telemetry = recorder(&dir);
+        let id = telemetry.start(&open()).unwrap();
+        for tick in ticks(0, 15) {
+            telemetry.record(tick).unwrap();
+        }
+        let mut state = PassState::default();
+        let mut log = |line: String| println!("{line}");
+        upload_pass(telemetry.spool(), &service, &mut state, &mut log).await.unwrap();
+        assert!(telemetry.spool().chunks(id).is_empty(), "the service decoded both chunks");
+
+        // A crash: the rest is spooled, and a fresh run sends it and ends the session.
+        for tick in ticks(15, 15) {
+            telemetry.record(tick).unwrap();
+        }
+        drop(telemetry);
+        let spool = Spool::open(dir.clone(), SPOOL_MAX_BYTES).unwrap();
+        upload_pass(&spool, &service, &mut PassState::default(), &mut log).await.unwrap();
+        assert!(spool.sessions().is_empty());
+
+        let cursor: serde_json::Value = client
+            .get(format!("{base_url}/sessions/{id}"))
+            .bearer_auth(&service.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(cursor["status"], "ended");
+        assert_eq!(cursor["nextSeq"], 5);
+        assert_eq!(cursor["chunkCount"], 5);
+        std::fs::remove_dir_all(dir).unwrap();
+        println!("session {id} for user {}", account["userId"]);
+    }
+
     #[tokio::test]
     async fn a_compacted_session_is_dropped() {
         let dir = temp_dir("upload-gone");
