@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Optional remote control of your own simulator from your live flight page: pause and resume, plus beta autopilot controls (heading bug, altitude, vertical speed, HDG and NAV modes). Off by default behind "Allow remote commands", with the beta controls behind a second opt-in. Only you can command your own flight.
 - The Multiplayer Debugging tab now shows each tracked peer's deduced ICAO type, airline (ICAO code + name), livery, and the local model chosen to represent them.
 - Testcase for Phenom 300E Voyager Aviation livery/airline detection mapping to VYA.
+- Groundwork for sim-native telemetry: a bounded, crash-safe spool (`telemetry_spool` in the app data directory) and an uploader that sends it to the service's session endpoints, deleting each chunk once the service has decoded it. Nothing records into it yet, so it stays empty and idle.
 
 ### Fixed
 - The aircraft title now outweighs the livery when deducing the ICAO type. FSReborn liveries end in a studio code such as "(S108)", which is the Stinson 108's type code, so the Phenom 300E was logged as an S108. Livery words now count for a quarter of title words; they still decide when the title names no type. "Phenom 300E" also resolves to E55P instead of tying with the Phenom 100.

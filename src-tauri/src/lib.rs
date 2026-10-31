@@ -14,6 +14,7 @@ mod runways;
 mod screenshot_manager;
 mod sim_commands;
 mod sim_monitor;
+mod telemetry;
 mod webhook_manager;
 
 use std::sync::Arc;
@@ -501,6 +502,19 @@ pub fn run() {
             // a flight is being synced and the user has live sharing enabled.
             app.manage(live_track::LiveTrackUploader::new());
             live_track::spawn(app.handle().clone());
+
+            // Sim-native telemetry: the spool and its uploader. Idle until a sampler
+            // records a session, or while a previous run left one unsent.
+            match app.path().app_data_dir().map_err(|e| e.to_string()).and_then(|d| {
+                telemetry::spool::Spool::open(d.join(telemetry::SPOOL_DIR_NAME), telemetry::SPOOL_MAX_BYTES)
+                    .map_err(|e| e.to_string())
+            }) {
+                Ok(spool) => {
+                    app.manage(telemetry::Telemetry::new(spool));
+                }
+                Err(e) => append_log(app.handle(), format!("[Telemetry] Spool unavailable: {}", e)),
+            }
+            telemetry::uploader::spawn(app.handle().clone());
 
             // Web-issued sim commands. The poller is a no-op until the user
             // turns remote control on, which is off by default.
