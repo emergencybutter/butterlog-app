@@ -367,6 +367,7 @@ name = "butterlog"
 version = "0.3.33"
 dependencies = [
  "anyhow",
+ "butterlog-wire",
  "chrono",
  "chrono-tz",
  "csv",
@@ -398,6 +399,10 @@ dependencies = [
  "webp",
  "winreg 0.55.0",
 ]
+
+[[package]]
+name = "butterlog-wire"
+version = "0.1.0"
 
 [[package]]
 name = "bytemuck"

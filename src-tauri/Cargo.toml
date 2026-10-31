@@ -26,6 +26,7 @@ csv = "1.3"
 rstar = "0.11"
 simplesimconnect = { path = "../../simplesimconnect" }
 simplesimconnect-sys = { path = "../../simplesimconnect-sys" }
+butterlog-wire = { path = "../../butterlog-service/wire" }
 chrono = "0.4"
 anyhow = "1.0"
 directories = "6.0.0"
