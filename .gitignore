@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# The staged X-Plane plugin (tools/stage-xp-plugin.ps1)
+src-tauri/xp_plugin/*
+!src-tauri/xp_plugin/README.md

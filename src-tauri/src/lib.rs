@@ -17,6 +17,7 @@ mod sim_commands;
 mod sim_monitor;
 mod telemetry;
 mod webhook_manager;
+mod xp_plugin_install;
 
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -520,6 +521,10 @@ pub fn run() {
 
             legacy_autostart::cleanup();
 
+            // Keep the X-Plane plugin in step with this app where it's installed.
+            let plugin_app = app.handle().clone();
+            std::thread::spawn(move || xp_plugin_install::update_installed(&plugin_app));
+
             // Initialize ConfigManager
             let config_manager = ConfigManager::new(app.handle());
             app.manage(config_manager);
@@ -748,6 +753,8 @@ pub fn run() {
             greet,
             get_logs,
             reveal_log_file,
+            xp_plugin_install::get_xplane_plugin_status,
+            xp_plugin_install::install_xplane_plugin,
             find_nearest_airports,
             start_monitoring,
             stop_monitoring,

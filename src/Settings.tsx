@@ -4,6 +4,7 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { Config } from "./models";
+import { XPlanePluginSettings } from "./XPlanePluginSettings";
 
 function isValidRegex(pattern: string): boolean {
     try { new RegExp(pattern); return true; } catch { return false; }
@@ -282,6 +283,8 @@ export function Settings() {
                 </section>
 
 
+
+                <XPlanePluginSettings />
 
                 <section>
                     <h4>Multiplayer</h4>

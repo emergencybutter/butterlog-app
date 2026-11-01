@@ -41,7 +41,8 @@
       "../public/airports.csv",
       "../public/runways.csv",
       "../public/aircraft-characteristics.csv",
-      "../public/airlines.csv"
+      "../public/airlines.csv",
+      "xp_plugin/"
     ],
     "icon": [
       "icons/32x32.png",
