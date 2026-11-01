@@ -8,6 +8,7 @@ mod config;
 mod flight_analyzer;
 mod flight_log_manager;
 mod live_track;
+mod log_file;
 mod models;
 mod multiplayer;
 mod runways;
@@ -85,6 +86,9 @@ pub(crate) fn append_log(app: &AppHandle, message: String) {
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let formatted = format!("[{}] {}", timestamp, message);
     println!("{}", formatted);
+    if let Some(file) = app.try_state::<log_file::LogFile>() {
+        file.write(&formatted);
+    }
     let state = app.state::<LogState>();
     let mut logs = state.0.lock();
     logs.push(formatted.clone());
@@ -390,6 +394,19 @@ fn get_logs(state: State<'_, LogState>) -> Vec<String> {
     state.0.lock().clone()
 }
 
+/// Shows today's log file in the file manager (its folder, when nothing was written yet).
+#[tauri::command]
+fn reveal_log_file(app: AppHandle, file: State<'_, log_file::LogFile>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let current = file.current();
+    if current.exists() {
+        app.opener().reveal_item_in_dir(&current).map_err(|e| e.to_string())
+    } else {
+        std::fs::create_dir_all(file.dir()).map_err(|e| e.to_string())?;
+        app.opener().open_path(file.dir().to_string_lossy(), None::<String>).map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 fn find_nearest_airports(
     lat: f64,
@@ -485,6 +502,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // The log file first, so everything after is in it.
+            match app.path().app_data_dir() {
+                Ok(data) => {
+                    let args: Vec<String> = std::env::args().collect();
+                    let file = log_file::LogFile::new(data.join(log_file::dir_name_from_args(&args)));
+                    let path = file.current();
+                    app.manage(file);
+                    append_log(app.handle(), format!(
+                        "ButterLog {} starting; logging to {}",
+                        app.package_info().version,
+                        path.display()
+                    ));
+                }
+                Err(e) => eprintln!("No app data directory, so no log file: {e}"),
+            }
+
             legacy_autostart::cleanup();
 
             // Initialize ConfigManager
@@ -714,6 +747,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_logs,
+            reveal_log_file,
             find_nearest_airports,
             start_monitoring,
             stop_monitoring,

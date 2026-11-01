@@ -506,6 +506,23 @@ function App() {
               <div className="logs-container" style={{ textAlign: "left" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                   <h3 style={{ margin: 0 }}>Backend Logs</h3>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={() => invoke("reveal_log_file").catch(console.error)}
+                    title="Show the log file, which keeps the last 7 days"
+                    style={{
+                      background: "#14181a",
+                      color: "#eee",
+                      border: "1px solid #444",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: "bold",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Open Log File
+                  </button>
                   <button
                     onClick={handleCopyLogs}
                     style={{
@@ -537,6 +554,7 @@ function App() {
                       </>
                     )}
                   </button>
+                  </div>
                 </div>
                 <div style={{ background: "#0e1113", padding: "1rem", borderRadius: "8px", maxHeight: "400px", overflowY: "auto" }}>
                   {logs.length === 0 ? <p style={{ color: "#888" }}>No logs yet...</p> : null}
