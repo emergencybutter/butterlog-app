@@ -126,6 +126,12 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
     AircraftInfo { title, livery, resolved_icao: String::new(), resolved_airline: String::new(), resolved_airline_icao: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
 }
 
+/// A pitch or roll from the logs' MSFS signs (nose down, left wing down positive) to
+/// X-Plane's (nose up, right wing down positive), for traffic drawn by the plugin.
+fn to_xplane_attitude(degrees: f64) -> f64 {
+    -degrees
+}
+
 /// Resolve an ICAO type from the title + livery via the word index (setting it on
 /// `identity`), identify the operating airline, and log both. No-ops per index when it
 /// is unavailable.
@@ -212,7 +218,7 @@ impl XPlaneMonitor {
             "sim/flightmodel/position/vh_ind",
             "sim/flightmodel/failures/onground_any",
             "sim/flightmodel/position/y_agl",
-            "sim/flightmodel/position/mag_psi",
+            "sim/flightmodel/position/psi",
             "sim/cockpit2/fuel/fuel_quantity",
             "sim/flightmodel/forces/g_nrml",
             "sim/cockpit2/gauges/indicators/altitude_ft_pilot",
@@ -518,15 +524,18 @@ impl XPlaneMonitor {
                         }
                         
                         if let Some(v) = get_path_double("sim/flightmodel/position/y_agl") { m.altitude_agl = v * 3.28084; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/position/mag_psi") { m.heading = v; updated = true; }
+                        // True heading, as MSFS reports it and runway headings are; `mag_psi` is magnetic.
+                        if let Some(v) = get_path_double("sim/flightmodel/position/psi") { m.heading = v; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 0) { m.fuel_quantity_left = v * 2.20462 * 0.1498; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/fuel/fuel_quantity", 1) { m.fuel_quantity_right = v * 2.20462 * 0.1498; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_nrml") { m.normal_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/gauges/indicators/altitude_ft_pilot") { m.indicated_altitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit/misc/barometer_setting") { m.altimeter_setting = v; updated = true; }
                         if let Some(v) = get_path_double("sim/weather/temperature_ambient_c") { m.outside_air_temp = v; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/position/theta") { m.pitch_angle = v; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = v; updated = true; }
+                        // Logs use MSFS's signs, nose down and left wing down positive; X-Plane's are the
+                        // opposite. See `to_xplane_attitude` for traffic going the other way.
+                        if let Some(v) = get_path_double("sim/flightmodel/position/theta") { m.pitch_angle = -v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = -v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_side") { m.lateral_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/hpath") { m.track = v; updated = true; }
 
@@ -571,15 +580,16 @@ impl XPlaneMonitor {
                             m.autopilot_active = if v > 0.5 { 1.0 } else { 0.0 };
                             updated = true;
                         }
-                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = v; updated = true; }
-                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = -v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = -v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/vvi_dial_fpm") { m.vertical_speed_target = v; updated = true; }
 
                         // Frequencies
-                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com1_frequency_hz_833") { m.com_1_frequency = v / 1_000_000.0; updated = true; }
-                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com2_frequency_hz_833") { m.com_2_frequency = v / 1_000_000.0; updated = true; }
-                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav1_frequency_hz") { m.nav_1_frequency = v / 1_000_000.0; updated = true; }
-                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav2_frequency_hz") { m.nav_2_frequency = v / 1_000_000.0; updated = true; }
+                        // In MHz, as MSFS reports them: X-Plane's COM datarefs are in kHz, NAV in tens of kHz.
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com1_frequency_hz_833") { m.com_1_frequency = v / 1_000.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/com2_frequency_hz_833") { m.com_2_frequency = v / 1_000.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav1_frequency_hz") { m.nav_1_frequency = v / 100.0; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/nav2_frequency_hz") { m.nav_2_frequency = v / 100.0; updated = true; }
 
                         // OBS / HSI Source
                         if let Some(v) = get_path_double("sim/cockpit2/radios/actuators/HSI_source_select_pilot") { m.hsi_source = v; updated = true; }
@@ -1374,9 +1384,9 @@ impl SimMonitor for XPlaneMonitor {
             "latitude": metrics.latitude,
             "longitude": metrics.longitude,
             "elevation": metrics.gps_altitude_msl * 0.3048, // convert feet to meters
-            "pitch": metrics.pitch_angle as f32,
+            "pitch": to_xplane_attitude(metrics.pitch_angle) as f32,
             "heading": metrics.heading as f32,
-            "roll": metrics.roll_angle as f32,
+            "roll": to_xplane_attitude(metrics.roll_angle) as f32,
             "on_ground": metrics.is_on_ground > 0.5,
             "gear_ratio": metrics.xp_gear_ratio,
             "nav_lights": metrics.nav_lights,
@@ -1426,5 +1436,17 @@ async fn drain_sim_commands(app: &AppHandle) {
         if let Some(flight_id) = flight_id {
             crate::sim_commands::ack(app, flight_id, &cmd.id, outcome).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attitude_round_trips_between_log_and_xplane_signs() {
+        // Climbing at 7° nose up in X-Plane is logged as -7 and drawn at 7 again.
+        let logged = -7.0;
+        assert_eq!(to_xplane_attitude(logged), 7.0);
     }
 }
