@@ -456,9 +456,10 @@ impl SimConnectMonitor {
                         continue;
                     }
                     if let Some(event) = msg.as_event() {
-                        if event.event_id == crate::telemetry::msfs::EVENT_PAUSE {
-                            ts.on_pause(event.data != 0);
-                        }
+                        ts.on_event(event.event_id, event.data, None);
+                    }
+                    if let Some((event_id, file)) = msg.as_event_filename() {
+                        ts.on_event(event_id, 0, Some(file));
                     }
                 }
                 
@@ -659,9 +660,6 @@ impl SimConnectMonitor {
                         }
                     } else if event.event_id == event_sim_stop {
                         crate::append_log(app, "Received SimStop event. Closing and analyzing flight log.".to_string());
-                        if let Some(ts) = telemetry_sampler.as_mut() {
-                            ts.stop();
-                        }
                         flight_ongoing = false;
                         last_parking_brake = None;
                         {

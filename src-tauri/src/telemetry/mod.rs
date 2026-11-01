@@ -184,6 +184,7 @@ pub(crate) mod tests {
                 wall_time_ms: 1_700_000_000_000 + s * 1000,
                 flags: 0,
                 values: vec![(1, Value::Int(s))],
+                events: Vec::new(),
             })
             .collect()
     }

@@ -6,14 +6,18 @@
 //! arrives, and ends on `SimStop`, when another aircraft loads, or when the connection
 //! closes (on drop).
 //!
+//! The sim's system events (`SimStart`, `Crashed`, `FlightLoaded`...) travel in the ticks as
+//! [`Event`]s. Those that arrive between sessions, such as the `FlightLoaded` before the
+//! aircraft's title, go with the next session's first tick.
+//!
 //! Behind a hidden switch while the pipeline runs in shadow mode: a file named
 //! [`SWITCH_FILE`] in the app's data directory, and being signed in.
 
 use super::{RecordError, Telemetry};
 use crate::models::AircraftInfo;
 use butterlog_wire::{
-    flags, Aircraft, Channel, DeltaOrder, Kind, PhaseInputs, RateClass, Sampler, SessionHeader,
-    SessionOpen, PROTOCOL_VERSION,
+    flags, Aircraft, Channel, DeltaOrder, Event, EventKind, Kind, PhaseInputs, RateClass, Sampler,
+    SessionHeader, SessionOpen, PROTOCOL_VERSION,
 };
 use simplesimconnect::{
     SimConnect, SimInfo, DATA_REQUEST_FLAG_CHANGED, DATA_REQUEST_FLAG_TAGGED, DWORD,
@@ -24,7 +28,18 @@ use tauri::{AppHandle, Manager};
 /// Ids on the monitor's SimConnect connection, clear of the monitor's own.
 pub const DEFINE_ID: DWORD = 20;
 pub const REQUEST_ID: DWORD = 20;
-pub const EVENT_PAUSE: DWORD = 20;
+
+/// System events recorded, by client event id. `Pause` sets the PAUSED flag as well.
+const SYSTEM_EVENTS: &[(DWORD, &str)] = &[
+    (20, "Pause"),
+    (21, "SimStart"),
+    (22, "SimStop"),
+    (23, "Crashed"),
+    (24, "CrashReset"),
+    (25, "FlightLoaded"),
+    (26, "AircraftLoaded"),
+    (27, "PositionChanged"),
+];
 
 /// The datum id of `SIMULATION TIME`, which goes in each tick's header, not a channel.
 const SIM_TIME_DATUM: DWORD = 0xFFFF;
@@ -167,7 +182,9 @@ impl MsfsSampler {
             // Half a quantum: the sim reports a move before it changes the quantised value.
             sc.add_tagged_f64_to_data_definition(DEFINE_ID, name, unit, (quantum / 2.0) as f32, n as DWORD)?;
         }
-        sc.subscribe_to_system_event(EVENT_PAUSE, "Pause")?;
+        for (event_id, name) in SYSTEM_EVENTS {
+            sc.subscribe_to_system_event(*event_id, name)?;
+        }
         sc.request_data_on_sim_object_with_flags(
             REQUEST_ID,
             DEFINE_ID,
@@ -229,9 +246,31 @@ impl MsfsSampler {
         self.tick();
     }
 
-    pub fn on_pause(&mut self, paused: bool) {
-        self.paused = paused;
+    /// A system event, if it is one of ours: `data` is the event's value, `file` the path a
+    /// `FlightLoaded` or `AircraftLoaded` names.
+    pub fn on_event(&mut self, event_id: DWORD, data: DWORD, file: Option<String>) {
+        let Some((_, name)) = SYSTEM_EVENTS.iter().find(|(id, _)| *id == event_id) else {
+            return;
+        };
+        let kind = match *name {
+            "Pause" if data != 0 => EventKind::Paused,
+            "Pause" => EventKind::Unpaused,
+            "SimStart" => EventKind::SimStart,
+            "SimStop" => EventKind::SimStop,
+            "Crashed" => EventKind::Crashed,
+            "CrashReset" => EventKind::CrashReset,
+            "FlightLoaded" => EventKind::FlightLoaded,
+            "AircraftLoaded" => EventKind::AircraftLoaded,
+            _ => EventKind::PositionChanged,
+        };
+        if *name == "Pause" {
+            self.paused = data != 0;
+        }
+        self.sampler.event(Event { kind, detail: file.unwrap_or_default() });
         self.tick();
+        if kind == EventKind::SimStop {
+            self.stop();
+        }
     }
 
     fn tick(&mut self) {
@@ -299,6 +338,9 @@ impl MsfsSampler {
 
     /// Ends the session being recorded, if any.
     pub fn stop(&mut self) {
+        // Already sent with the last tick, or from before the session: either way, not the
+        // next session's.
+        self.sampler.discard_events();
         if self.recording.take().is_none() {
             return;
         }
