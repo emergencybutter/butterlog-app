@@ -106,12 +106,12 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
     // X-Plane's livery identifier; may be empty if the aircraft has no liveries.
     let livery = fetch_xplane_dataref_string(client, rest_url, "sim/aircraft/view/acf_livery_path").await.unwrap_or_default();
 
-    let class_val = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/view/acf_class").await.unwrap_or(0.0) as i32;
-    let (object_class, category) = match class_val {
-        1 => ("helicopter".to_string(), "helicopter".to_string()),
-        2 => ("glider".to_string(), "glider".to_string()),
-        _ => ("airplane".to_string(), "airplane".to_string()),
-    };
+    // X-Plane 12 has no `acf_class`; these flags replace it.
+    let flag = |v: Option<f64>| v.is_some_and(|v| v > 0.5);
+    let helicopter = flag(fetch_xplane_dataref_double(client, rest_url, "sim/aircraft2/metadata/is_helicopter").await);
+    let glider = flag(fetch_xplane_dataref_double(client, rest_url, "sim/aircraft2/metadata/is_glider").await);
+    let class = if helicopter { "helicopter" } else if glider { "glider" } else { "airplane" };
+    let (object_class, category) = (class.to_string(), class.to_string());
 
     let num_engines = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/engine/acf_num_engines").await.unwrap_or(1.0) as i32;
 
@@ -209,7 +209,7 @@ impl XPlaneMonitor {
         let mut max_hp = 180.0;
 
         // Required dataref paths for flight tracking
-        let paths = vec![
+        let mut paths = vec![
             "sim/flightmodel/position/latitude",
             "sim/flightmodel/position/longitude",
             "sim/flightmodel/position/elevation",
@@ -231,12 +231,12 @@ impl XPlaneMonitor {
             "sim/cockpit2/electrical/bus_volts",
             "sim/cockpit2/electrical/generator_amps",
             "sim/cockpit2/engine/indicators/fuel_flow_kg_sec",
-            "sim/cockpit2/engine/indicators/oil_temp_deg_C",
+            "sim/cockpit2/engine/indicators/oil_temperature_deg_C",
             "sim/cockpit2/engine/indicators/oil_pressure_psi",
-            "sim/cockpit2/engine/indicators/MP_in_hg",
+            "sim/cockpit2/engine/indicators/MPR_in_hg",
             "sim/cockpit2/engine/indicators/engine_speed_rpm",
-            "sim/cockpit2/engine/indicators/CHT_deg_C",
-            "sim/cockpit2/engine/indicators/EGT_deg_C",
+            "sim/cockpit2/engine/indicators/CHT_deg_cel",
+            "sim/cockpit2/engine/indicators/EGT_deg_cel",
             "sim/cockpit2/autopilot/autopilot_on",
             "sim/cockpit2/autopilot/sync_hold_pitch_deg",
             "sim/cockpit2/autopilot/sync_hold_roll_deg",
@@ -251,7 +251,7 @@ impl XPlaneMonitor {
             "sim/cockpit2/radios/actuators/com2_frequency_hz_833",
             "sim/flightmodel2/position/pressure_altitude",
             "sim/aircraft/parts/acf_gear_deploy",
-            "sim/flightmodel/engine/ENGHP",
+            "sim/cockpit2/engine/indicators/power_watts",
             "sim/cockpit2/engine/indicators/ITT_deg_C",
             "sim/cockpit2/radios/indicators/nav1_hdef_dots_pilot",
             "sim/cockpit2/radios/indicators/nav1_vdef_dots_pilot",
@@ -270,6 +270,14 @@ impl XPlaneMonitor {
             "sim/cockpit2/switches/taxi_light_on",
             "sim/cockpit2/switches/landing_lights_on",
         ];
+
+        if crate::telemetry::recorder::enabled(&app) {
+            for dataref in crate::telemetry::xplane::datarefs() {
+                if !paths.contains(&dataref) {
+                    paths.push(dataref);
+                }
+            }
+        }
 
         // 1. Discovery Phase: Fetch session-specific IDs via REST discovery
         let client = reqwest::Client::new();
@@ -329,6 +337,9 @@ impl XPlaneMonitor {
                 }
             }
         }
+
+        let xplane_version = fetch_xplane_dataref_double(&client, &rest_url, "sim/version/xplane_internal_version").await;
+        let mut telemetry_sampler = crate::telemetry::xplane::XplaneSampler::register(&app, &path_to_id, xplane_version);
 
         // 2. Connection Phase: Open WebSocket
         let (mut ws_stream, _) = match connect_async(&ws_url).await {
@@ -437,6 +448,9 @@ impl XPlaneMonitor {
                 Ok(Message::Text(text)) => {
                     if let Ok(data) = serde_json::from_str::<Value>(&text) {
                         if data["type"] != "dataref_update_values" { continue; }
+                        if let (Some(ts), Some(values)) = (telemetry_sampler.as_mut(), data["data"].as_object()) {
+                            ts.on_update(values);
+                        }
                         let data_values = &data["data"];
                         let mut updated = false;
 
@@ -494,6 +508,9 @@ impl XPlaneMonitor {
                                     crate::append_log(&app, format!(
                                         "[X-Plane] Position jump detected: {:.2}nm in {:.1}s (max plausible {:.2}nm at GS {:.0}kt). Resetting flight.",
                                         actual_nm, elapsed_s, max_plausible_nm, m.ground_speed));
+                                    if let Some(ts) = telemetry_sampler.as_mut() {
+                                        ts.on_teleport();
+                                    }
                                     ws_stream.close(None).await.ok();
                                     return Ok(()); // Loop in start() will restart discovery and new flight
                                 }
@@ -546,13 +563,13 @@ impl XPlaneMonitor {
 
                         // Engine
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/fuel_flow_kg_sec", 0) { m.engine_1_fuel_flow = v * 3600.0 * 2.20462 * 0.1498; updated = true; }
-                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_temp_deg_C", 0) { m.engine_1_oil_temp = v * 1.8 + 32.0; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_temperature_deg_C", 0) { m.engine_1_oil_temp = v * 1.8 + 32.0; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/oil_pressure_psi", 0) { m.engine_1_oil_pressure = v; updated = true; }
-                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/MP_in_hg", 0) { m.engine_1_manifold_pressure = v; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/MPR_in_hg", 0) { m.engine_1_manifold_pressure = v; updated = true; }
                         if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/engine_speed_rpm", 0) { m.engine_1_rpm = v; updated = true; }
-                        if let Some(v) = get_path_double_idx("sim/flightmodel/engine/ENGHP", 0) { m.engine_1_percent_power = (v / max_hp) * 100.0; updated = true; }
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/power_watts", 0) { m.engine_1_percent_power = (v / 745.7 / max_hp) * 100.0; updated = true; }
 
-                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/CHT_deg_C", 0) {
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/CHT_deg_cel", 0) {
                             let temp_f = v * 1.8 + 32.0;
                             m.engine_1_cht_1 = temp_f;
                             m.engine_1_cht_2 = temp_f;
@@ -563,7 +580,7 @@ impl XPlaneMonitor {
                             updated = true;
                         }
 
-                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/EGT_deg_C", 0) {
+                        if let Some(v) = get_path_double_idx("sim/cockpit2/engine/indicators/EGT_deg_cel", 0) {
                             let temp_f = v * 1.8 + 32.0;
                             m.engine_1_egt_1 = temp_f;
                             m.engine_1_egt_2 = temp_f;
@@ -666,6 +683,9 @@ impl XPlaneMonitor {
                             if !identity.title.is_empty() {
                                 resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
                                 aircraft_info = identity.clone();
+                                if let Some(ts) = telemetry_sampler.as_mut() {
+                                    ts.aircraft_loaded(&aircraft_info);
+                                }
                                 { let mut info = aircraft_info_mutex.lock(); *info = identity; }
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft (pre-flight): {} [Model: {}, ID: {}, Livery: {}]", aircraft_info.title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery));
                             }
@@ -717,6 +737,9 @@ impl XPlaneMonitor {
                                 last_known_title = identity.title.clone();
                                 resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
                                 aircraft_info = identity;
+                                if let Some(ts) = telemetry_sampler.as_mut() {
+                                    ts.aircraft_loaded(&aircraft_info);
+                                }
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Livery: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery, aircraft_info.num_engines, aircraft_info.engine_type));
                             }
 

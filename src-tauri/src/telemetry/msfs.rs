@@ -10,20 +10,19 @@
 //! [`Event`]s. Those that arrive between sessions, such as the `FlightLoaded` before the
 //! aircraft's title, go with the next session's first tick.
 //!
-//! Behind a hidden switch while the pipeline runs in shadow mode: a file named
-//! [`SWITCH_FILE`] in the app's data directory, and being signed in.
+//! Behind the hidden switch of [`super::recorder::enabled`].
 
-use super::{RecordError, Telemetry};
+use super::recorder::{aircraft, enabled, Recorder};
 use crate::models::AircraftInfo;
 use butterlog_wire::{
-    flags, Aircraft, Channel, DeltaOrder, Event, EventKind, Kind, PhaseInputs, RateClass, Sampler,
-    SessionHeader, SessionOpen, PROTOCOL_VERSION,
+    flags, Channel, DeltaOrder, Event, EventKind, Kind, PhaseInputs, RateClass, SessionHeader,
+    SessionOpen, PROTOCOL_VERSION,
 };
 use simplesimconnect::{
     SimConnect, SimInfo, DATA_REQUEST_FLAG_CHANGED, DATA_REQUEST_FLAG_TAGGED, DWORD,
     OBJECT_ID_USER, PERIOD_SIM_FRAME,
 };
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// Ids on the monitor's SimConnect connection, clear of the monitor's own.
 pub const DEFINE_ID: DWORD = 20;
@@ -43,8 +42,6 @@ const SYSTEM_EVENTS: &[(DWORD, &str)] = &[
 
 /// The datum id of `SIMULATION TIME`, which goes in each tick's header, not a channel.
 const SIM_TIME_DATUM: DWORD = 0xFFFF;
-
-pub const SWITCH_FILE: &str = "telemetry_beta";
 
 use DeltaOrder::{Delta, DeltaOfDelta};
 use RateClass::{Frame, OnChange, Slow};
@@ -147,27 +144,12 @@ fn sim_name(info: &SimInfo) -> &'static str {
     }
 }
 
-/// Whether to record: the hidden switch, a signed-in app, and a spool.
-fn enabled(app: &AppHandle) -> bool {
-    let switch = app
-        .path()
-        .app_data_dir()
-        .is_ok_and(|d| d.join(SWITCH_FILE).exists());
-    switch
-        && app.state::<crate::config::ConfigManager>().get_config().is_logged_in()
-        && app.try_state::<Telemetry>().is_some()
-}
-
 pub struct MsfsSampler {
-    app: AppHandle,
-    sampler: Sampler,
+    recorder: Recorder,
     sim: Option<SimInfo>,
-    sim_time: Option<f64>,
     paused: bool,
     slew: bool,
     sim_rate: f64,
-    /// Title and livery of the aircraft being recorded.
-    recording: Option<(String, String)>,
 }
 
 impl MsfsSampler {
@@ -200,14 +182,11 @@ impl MsfsSampler {
             id("PLANE BANK DEGREES"),
         );
         Ok(Some(Self {
-            app: app.clone(),
-            sampler: Sampler::new(&channels(), phase),
+            recorder: Recorder::new(app, &channels(), phase),
             sim: None,
-            sim_time: None,
             paused: false,
             slew: false,
             sim_rate: 1.0,
-            recording: None,
         }))
     }
 
@@ -229,18 +208,23 @@ impl MsfsSampler {
         f
     }
 
+    fn tick(&mut self) {
+        let flags = self.flags();
+        self.recorder.tick(flags);
+    }
+
     /// One SimConnect message: the datums that changed this frame.
     pub fn on_data(&mut self, data: &[(DWORD, f64)]) {
         let (slew, rate) = (id("IS SLEW ACTIVE") as DWORD, id("SIMULATION RATE") as DWORD);
         for (datum, value) in data {
             match *datum {
-                SIM_TIME_DATUM => self.sim_time = Some(*value),
+                SIM_TIME_DATUM => self.recorder.set_sim_time(*value),
                 d if d == slew => self.slew = *value != 0.0,
                 d if d == rate => self.sim_rate = *value,
                 _ => {}
             }
             if let Ok(channel) = u16::try_from(*datum) {
-                self.sampler.set(channel, *value);
+                self.recorder.set(channel, *value);
             }
         }
         self.tick();
@@ -266,93 +250,30 @@ impl MsfsSampler {
         if *name == "Pause" {
             self.paused = data != 0;
         }
-        self.sampler.event(Event { kind, detail: file.unwrap_or_default() });
+        self.recorder.event(Event { kind, detail: file.unwrap_or_default() });
         self.tick();
         if kind == EventKind::SimStop {
-            self.stop();
-        }
-    }
-
-    fn tick(&mut self) {
-        let (Some(sim_time), Some(_)) = (self.sim_time, &self.recording) else {
-            return;
-        };
-        let wall_ms = chrono::Utc::now().timestamp_millis();
-        let Some(tick) = self.sampler.tick(sim_time, wall_ms, self.flags()) else {
-            return;
-        };
-        let telemetry = self.app.state::<Telemetry>();
-        match telemetry.record(tick) {
-            Ok(()) => {}
-            Err(e @ RecordError::Encode(_)) => {
-                crate::append_log(&self.app, format!("[Telemetry] {e}"));
-            }
-            Err(e @ RecordError::Spool(_)) => {
-                crate::append_log(&self.app, format!("[Telemetry] {e}"));
-                self.recording = None;
-            }
+            self.recorder.stop();
         }
     }
 
     /// The aircraft's identity arrived: starts a session unless this aircraft is already
     /// being recorded.
     pub fn aircraft_loaded(&mut self, info: &AircraftInfo) {
-        let key = (info.title.clone(), info.livery.clone());
-        if info.title.is_empty() || self.recording.as_ref() == Some(&key) || !enabled(&self.app) {
-            return;
-        }
         let sim = self.sim.as_ref();
         let open = SessionOpen {
             header: SessionHeader {
                 protocol_version: PROTOCOL_VERSION,
                 sim: sim.map_or("msfs", sim_name).into(),
-                sim_version: sim
-                    .map(|s| s.version.map(|v| v.to_string()).join("."))
-                    .unwrap_or_default(),
+                sim_version: sim.map(|s| s.version.map(|v| v.to_string()).join(".")).unwrap_or_default(),
                 capture: "simconnect".into(),
-                client_version: self.app.package_info().version.to_string(),
-                aircraft: Aircraft {
-                    title: info.title.clone(),
-                    icao: info.atc_model.clone(),
-                    tail: info.atc_id.clone(),
-                    livery: info.livery.clone(),
-                    engine_type: info.engine_type.clone(),
-                    engine_count: info.num_engines.clamp(0, 255) as u8,
-                },
+                client_version: self.recorder.app_version(),
+                aircraft: aircraft(info),
             },
             channels: channels(),
         };
-        match self.app.state::<Telemetry>().start(&open) {
-            Ok(session) => {
-                crate::append_log(&self.app, format!("[Telemetry] Session {session} started: {}", info.title));
-                self.sampler.restart();
-                self.recording = Some(key);
-                self.tick();
-            }
-            Err(e) => {
-                crate::append_log(&self.app, format!("[Telemetry] Could not start a session: {e}"));
-                self.recording = None;
-            }
-        }
-    }
-
-    /// Ends the session being recorded, if any.
-    pub fn stop(&mut self) {
-        // Already sent with the last tick, or from before the session: either way, not the
-        // next session's.
-        self.sampler.discard_events();
-        if self.recording.take().is_none() {
-            return;
-        }
-        if let Err(e) = self.app.state::<Telemetry>().stop() {
-            crate::append_log(&self.app, format!("[Telemetry] Could not end the session: {e}"));
-        }
-    }
-}
-
-impl Drop for MsfsSampler {
-    fn drop(&mut self) {
-        self.stop();
+        let flags = self.flags();
+        self.recorder.start(info, &open, flags);
     }
 }
 

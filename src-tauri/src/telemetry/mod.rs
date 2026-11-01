@@ -2,13 +2,15 @@
 //! encodes what the sim exposes into chunks, spools them, and uploads them to the service,
 //! which stores and analyses them.
 //!
-//! The recorder here takes ticks from a sampler (`msfs.rs` for SimConnect) and writes a
-//! chunk to the spool every [`CHUNK_MS`]; the uploader sends the spool. Runs beside
-//! `live_track.rs`.
+//! The recorder here takes ticks from a sampler (`msfs.rs` for SimConnect, `xplane.rs` for
+//! the X-Plane Web API, both through `recorder.rs`) and writes a chunk to the spool every
+//! [`CHUNK_MS`]; the uploader sends the spool. Runs beside `live_track.rs`.
 
 pub mod msfs;
+pub mod recorder;
 pub mod spool;
 pub mod uploader;
+pub mod xplane;
 
 use butterlog_wire::{compress, EncodeError, SessionEncoder, SessionOpen, Tick};
 use parking_lot::Mutex;
