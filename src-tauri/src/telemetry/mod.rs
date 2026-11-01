@@ -2,13 +2,11 @@
 //! encodes what the sim exposes into chunks, spools them, and uploads them to the service,
 //! which stores and analyses them.
 //!
-//! The recorder here takes ticks from a sampler and writes a chunk to the spool every
-//! [`CHUNK_MS`]; the uploader sends the spool. No sampler feeds it yet: until one does,
-//! the spool stays empty and the uploader idles. Runs beside `live_track.rs`.
+//! The recorder here takes ticks from a sampler (`msfs.rs` for SimConnect) and writes a
+//! chunk to the spool every [`CHUNK_MS`]; the uploader sends the spool. Runs beside
+//! `live_track.rs`.
 
-// The recording side has no caller until the SimConnect sampler (rollout phase 2).
-#![cfg_attr(not(test), allow(dead_code))]
-
+pub mod msfs;
 pub mod spool;
 pub mod uploader;
 

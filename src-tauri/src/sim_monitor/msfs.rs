@@ -261,6 +261,14 @@ impl SimConnectMonitor {
         sc.request_data_on_sim_object(aircraft_request_id, aircraft_define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE)?;
         sc.request_data_on_sim_object(request_id, define_id, OBJECT_ID_USER, SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND)?;
 
+        // Sim-native telemetry, in shadow mode beside the flight log. Its failure never
+        // stops the monitor. Dropped with the connection, which ends its session.
+        let mut telemetry_sampler = crate::telemetry::msfs::MsfsSampler::register(app, &sc)
+            .unwrap_or_else(|e| {
+                crate::append_log(app, format!("[Telemetry] MSFS telemetry unavailable: {}", e));
+                None
+            });
+
         let mut current_log_path: Option<PathBuf> = None;
         let mut db_conn: Option<Connection> = None;
         let mut aircraft_info = AircraftInfo::default();
@@ -433,6 +441,25 @@ impl SimConnectMonitor {
             while let Some(msg) = get_next_dispatch_with_retry(&sc, app)? {
                 if msg.is_quit() {
                     return Err(anyhow::anyhow!("SimConnect connection lost: simulator exited (received QUIT message)"));
+                }
+
+                if let Some(ts) = telemetry_sampler.as_mut() {
+                    if let Some(info) = msg.as_open() {
+                        ts.on_open(info);
+                    }
+                    // Before anything reads the message as a `FlightMetrics`, which these
+                    // shorter messages aren't.
+                    if msg.request_id() == Some(crate::telemetry::msfs::REQUEST_ID) {
+                        if let Some(data) = msg.as_tagged_f64() {
+                            ts.on_data(&data);
+                        }
+                        continue;
+                    }
+                    if let Some(event) = msg.as_event() {
+                        if event.event_id == crate::telemetry::msfs::EVENT_PAUSE {
+                            ts.on_pause(event.data != 0);
+                        }
+                    }
                 }
                 
                 // Track assigned object IDs
@@ -632,6 +659,9 @@ impl SimConnectMonitor {
                         }
                     } else if event.event_id == event_sim_stop {
                         crate::append_log(app, "Received SimStop event. Closing and analyzing flight log.".to_string());
+                        if let Some(ts) = telemetry_sampler.as_mut() {
+                            ts.stop();
+                        }
                         flight_ongoing = false;
                         last_parking_brake = None;
                         {
@@ -862,6 +892,10 @@ impl SimConnectMonitor {
                                 if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('atc_id', ?1)", params![atc_id.clone()]) {
                                     crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
                                 }
+                            }
+
+                            if let Some(ts) = telemetry_sampler.as_mut() {
+                                ts.aircraft_loaded(&aircraft_info);
                             }
 
                             let mut info = aircraft_info_mutex.lock();
