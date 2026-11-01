@@ -339,7 +339,31 @@ impl XPlaneMonitor {
         }
 
         let xplane_version = fetch_xplane_dataref_double(&client, &rest_url, "sim/version/xplane_internal_version").await;
-        let mut telemetry_sampler = crate::telemetry::xplane::XplaneSampler::register(&app, &path_to_id, xplane_version);
+        // Telemetry comes from the plugin's link when it's there (every sim frame), from
+        // this connection's Web API updates otherwise.
+        let plugin_link = if crate::telemetry::recorder::enabled(&app) {
+            let link_app = app.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::telemetry::xp_plugin::connect(&link_app, &crate::telemetry::xplane::plugin_entries())
+            })
+            .await
+            .ok()
+            .flatten()
+        } else {
+            None
+        };
+        let telemetry_sampler = crate::telemetry::xplane::XplaneSampler::register(
+            &app,
+            &path_to_id,
+            xplane_version,
+            plugin_link.is_some(),
+        )
+        .map(|s| std::sync::Arc::new(parking_lot::Mutex::new(s)));
+        // Streams until dropped with this connection.
+        let _plugin_link = match (plugin_link, &telemetry_sampler) {
+            (Some(link), Some(sampler)) => link.run(app.clone(), sampler.clone()),
+            _ => None,
+        };
 
         // 2. Connection Phase: Open WebSocket
         let (mut ws_stream, _) = match connect_async(&ws_url).await {
@@ -448,8 +472,8 @@ impl XPlaneMonitor {
                 Ok(Message::Text(text)) => {
                     if let Ok(data) = serde_json::from_str::<Value>(&text) {
                         if data["type"] != "dataref_update_values" { continue; }
-                        if let (Some(ts), Some(values)) = (telemetry_sampler.as_mut(), data["data"].as_object()) {
-                            ts.on_update(values);
+                        if let (Some(ts), Some(values)) = (&telemetry_sampler, data["data"].as_object()) {
+                            ts.lock().on_update(values);
                         }
                         let data_values = &data["data"];
                         let mut updated = false;
@@ -508,8 +532,8 @@ impl XPlaneMonitor {
                                     crate::append_log(&app, format!(
                                         "[X-Plane] Position jump detected: {:.2}nm in {:.1}s (max plausible {:.2}nm at GS {:.0}kt). Resetting flight.",
                                         actual_nm, elapsed_s, max_plausible_nm, m.ground_speed));
-                                    if let Some(ts) = telemetry_sampler.as_mut() {
-                                        ts.on_teleport();
+                                    if let Some(ts) = &telemetry_sampler {
+                                        ts.lock().on_teleport();
                                     }
                                     ws_stream.close(None).await.ok();
                                     return Ok(()); // Loop in start() will restart discovery and new flight
@@ -683,8 +707,8 @@ impl XPlaneMonitor {
                             if !identity.title.is_empty() {
                                 resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
                                 aircraft_info = identity.clone();
-                                if let Some(ts) = telemetry_sampler.as_mut() {
-                                    ts.aircraft_loaded(&aircraft_info);
+                                if let Some(ts) = &telemetry_sampler {
+                                    ts.lock().aircraft_loaded(&aircraft_info);
                                 }
                                 { let mut info = aircraft_info_mutex.lock(); *info = identity; }
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft (pre-flight): {} [Model: {}, ID: {}, Livery: {}]", aircraft_info.title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery));
@@ -737,8 +761,8 @@ impl XPlaneMonitor {
                                 last_known_title = identity.title.clone();
                                 resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
                                 aircraft_info = identity;
-                                if let Some(ts) = telemetry_sampler.as_mut() {
-                                    ts.aircraft_loaded(&aircraft_info);
+                                if let Some(ts) = &telemetry_sampler {
+                                    ts.lock().aircraft_loaded(&aircraft_info);
                                 }
                                 crate::append_log(&app, format!("[X-Plane] Identified aircraft: {} [Model: {}, ID: {}, Livery: {}, Engines: {} {}]", last_known_title, aircraft_info.atc_model, aircraft_info.atc_id, aircraft_info.livery, aircraft_info.num_engines, aircraft_info.engine_type));
                             }

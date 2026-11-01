@@ -1,12 +1,16 @@
-//! The X-Plane sampler over the Web API (design §4.1, the `xp_webapi` fallback): the
-//! monitor's WebSocket subscription carries the datarefs below, and each update goes
-//! through the shared sampler. Until the plugin captures every frame (rollout phase 4),
-//! this is how X-Plane sessions reach the service.
+//! The X-Plane sampler. Its datarefs come from one of two captures:
 //!
-//! The Web API sends about 8 updates a second, only for datarefs that changed exactly,
-//! and nothing while paused. X-Plane reports no events over it, so they are inferred:
-//! pause, replay and crash from their datarefs changing, a position change from the
-//! monitor's teleport check. A session is one aircraft on one connection, as for MSFS.
+//! - `xp_plugin` (design §4.2): `butterlog_xp_plugin` reads them every sim frame, stamped
+//!   with the sim clock, and sends them over its telemetry link (`xp_plugin.rs`).
+//! - `xp_webapi` (design §4.1, the fallback without the plugin): the monitor's WebSocket
+//!   subscription, about 8 updates a second, only for datarefs that changed exactly, and
+//!   nothing while paused.
+//!
+//! Either way the values go through the shared sampler. Pause, replay and crash are
+//! inferred from their datarefs changing, a position change from the monitor's teleport
+//! check; the plugin adds aircraft and airport loads. A session is one aircraft on one
+//! connection, as for MSFS. If the plugin link drops mid-session, the session ends and a
+//! new one goes on through the Web API.
 //!
 //! Channel names are the datarefs, with `[i]` for an array element, as the plugin's
 //! capture names them and the service's normaliser reads them.
@@ -165,8 +169,31 @@ fn sim_name(version: Option<f64>) -> &'static str {
     }
 }
 
+/// What the plugin link subscribes to: each channel's dataref and element, in channel order.
+pub fn plugin_entries() -> Vec<(&'static str, Option<usize>)> {
+    elements().into_iter().map(|(_, dataref, element)| (dataref, element)).collect()
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Capture {
+    Plugin,
+    WebApi,
+}
+
+impl Capture {
+    fn name(self) -> &'static str {
+        match self {
+            Capture::Plugin => "xp_plugin",
+            Capture::WebApi => "xp_webapi",
+        }
+    }
+}
+
 pub struct XplaneSampler {
     recorder: Recorder,
+    capture: Capture,
+    /// The aircraft being recorded, to start again when the capture changes.
+    info: Option<AircraftInfo>,
     /// Web API dataref id to the channels it feeds: (element, channel id).
     by_id: HashMap<String, Vec<(Option<usize>, u16)>>,
     sim_time_id: Option<String>,
@@ -176,12 +203,28 @@ pub struct XplaneSampler {
     crashed: Option<bool>,
     sim_rate: f64,
     time_rate: f64,
+    ids: StateIds,
+}
+
+/// The channels that carry sim state.
+struct StateIds {
+    paused: u16,
+    replay: u16,
+    crashed: u16,
+    sim_speed: u16,
+    time_speed: u16,
 }
 
 impl XplaneSampler {
     /// Records over this connection when recording is switched on. `path_to_id` is the
-    /// Web API's ids for the datarefs it found; `version` X-Plane's internal version.
-    pub fn register(app: &AppHandle, path_to_id: &HashMap<String, String>, version: Option<f64>) -> Option<Self> {
+    /// Web API's ids for the datarefs it found; `version` X-Plane's internal version;
+    /// `plugin` whether the plugin link is up and frames will come from it.
+    pub fn register(
+        app: &AppHandle,
+        path_to_id: &HashMap<String, String>,
+        version: Option<f64>,
+        plugin: bool,
+    ) -> Option<Self> {
         if !enabled(app) {
             return None;
         }
@@ -194,11 +237,14 @@ impl XplaneSampler {
             }
         }
         let sim_time_id = path_to_id.get(SIM_TIME).cloned();
-        if sim_time_id.is_none() {
+        if sim_time_id.is_none() && !plugin {
             crate::append_log(app, format!("[Telemetry] {SIM_TIME} not found; not recording."));
             return None;
         }
-        crate::append_log(app, format!("[Telemetry] Recording X-Plane telemetry ({found} of {} channels).", elements().len()));
+        let capture = if plugin { Capture::Plugin } else { Capture::WebApi };
+        if !plugin {
+            crate::append_log(app, format!("[Telemetry] Recording X-Plane telemetry ({found} of {} channels).", elements().len()));
+        }
         let phase = PhaseInputs::xplane(
             id("sim/flightmodel/position/y_agl"),
             id("sim/flightmodel/failures/onground_any"),
@@ -207,6 +253,8 @@ impl XplaneSampler {
         );
         Some(Self {
             recorder: Recorder::new(app, &channels(), phase),
+            capture,
+            info: None,
             by_id,
             sim_time_id,
             version,
@@ -215,6 +263,13 @@ impl XplaneSampler {
             crashed: None,
             sim_rate: 1.0,
             time_rate: 1.0,
+            ids: StateIds {
+                paused: id(PAUSED),
+                replay: id(REPLAY),
+                crashed: id(CRASHED),
+                sim_speed: id(SIM_SPEED),
+                time_speed: id(TIME_SPEED),
+            },
         })
     }
 
@@ -239,10 +294,35 @@ impl XplaneSampler {
         }
     }
 
+    /// A channel's new value, noting the sim state it carries.
+    fn apply(&mut self, channel: u16, v: f64) {
+        self.recorder.set(channel, v);
+        let on = v != 0.0;
+        match channel {
+            c if c == self.ids.paused => {
+                self.state(self.paused, on, EventKind::Paused, EventKind::Unpaused);
+                self.paused = Some(on);
+            }
+            c if c == self.ids.replay => {
+                self.state(self.replay, on, EventKind::ReplayStarted, EventKind::ReplayEnded);
+                self.replay = Some(on);
+            }
+            c if c == self.ids.crashed => {
+                self.state(self.crashed, on, EventKind::Crashed, EventKind::CrashReset);
+                self.crashed = Some(on);
+            }
+            c if c == self.ids.sim_speed => self.sim_rate = v,
+            c if c == self.ids.time_speed => self.time_rate = v,
+            _ => {}
+        }
+    }
+
     /// One `dataref_update_values` message: dataref id to value, for those that changed.
+    /// Ignored while the plugin captures.
     pub fn on_update(&mut self, data: &serde_json::Map<String, Value>) {
-        let (paused, replay, crashed) = (id(PAUSED), id(REPLAY), id(CRASHED));
-        let (sim_speed, time_speed) = (id(SIM_SPEED), id(TIME_SPEED));
+        if self.capture != Capture::WebApi {
+            return;
+        }
         for (api_id, value) in data {
             if Some(api_id) == self.sim_time_id.as_ref() {
                 if let Some(t) = number(value, None) {
@@ -252,30 +332,56 @@ impl XplaneSampler {
             }
             let Some(targets) = self.by_id.get(api_id).cloned() else { continue };
             for (element, channel) in targets {
-                let Some(v) = number(value, element) else { continue };
-                self.recorder.set(channel, v);
-                let on = v != 0.0;
-                match channel {
-                    c if c == paused => {
-                        self.state(self.paused, on, EventKind::Paused, EventKind::Unpaused);
-                        self.paused = Some(on);
-                    }
-                    c if c == replay => {
-                        self.state(self.replay, on, EventKind::ReplayStarted, EventKind::ReplayEnded);
-                        self.replay = Some(on);
-                    }
-                    c if c == crashed => {
-                        self.state(self.crashed, on, EventKind::Crashed, EventKind::CrashReset);
-                        self.crashed = Some(on);
-                    }
-                    c if c == sim_speed => self.sim_rate = v,
-                    c if c == time_speed => self.time_rate = v,
-                    _ => {}
+                if let Some(v) = number(value, element) {
+                    self.apply(channel, v);
                 }
             }
         }
         let flags = self.flags();
         self.recorder.tick(flags);
+    }
+
+    /// One frame from the plugin: a value per channel, in channel order, and whether X-Plane
+    /// has each one's dataref.
+    pub fn on_frame(&mut self, sim_time: f64, wall_ms: i64, values: &[f64], found: &[bool]) {
+        if self.capture != Capture::Plugin {
+            return;
+        }
+        for (channel, (v, found)) in values.iter().zip(found).enumerate() {
+            if *found {
+                self.apply(channel as u16, *v);
+            }
+        }
+        self.recorder.set_sim_time(sim_time);
+        self.recorder.set_wall_time(wall_ms);
+        let flags = self.flags();
+        self.recorder.tick(flags);
+    }
+
+    /// A sim event from the plugin (`xp_plugin::EVENT_*`).
+    pub fn on_plugin_event(&mut self, kind: u8, detail: String) {
+        let kind = match kind {
+            super::xp_plugin::EVENT_AIRCRAFT_LOADED => EventKind::AircraftLoaded,
+            super::xp_plugin::EVENT_AIRPORT_LOADED => EventKind::FlightLoaded,
+            _ => return,
+        };
+        self.recorder.event(Event { kind, detail });
+    }
+
+    /// The plugin link went away: the session ends, and the aircraft is recorded again
+    /// through the Web API, in a new session, so each session has one capture.
+    pub fn plugin_lost(&mut self) {
+        if self.capture != Capture::Plugin {
+            return;
+        }
+        self.recorder.stop();
+        self.capture = Capture::WebApi;
+        if self.sim_time_id.is_none() {
+            return;
+        }
+        if let Some(info) = self.info.clone() {
+            self.aircraft_loaded(&info);
+        }
     }
 
     /// The monitor saw the aircraft jump: recorded, then the session ends with the
@@ -290,12 +396,13 @@ impl XplaneSampler {
     /// The aircraft's identity arrived: starts a session unless this aircraft is already
     /// being recorded.
     pub fn aircraft_loaded(&mut self, info: &AircraftInfo) {
+        self.info = Some(info.clone());
         let open = SessionOpen {
             header: SessionHeader {
                 protocol_version: PROTOCOL_VERSION,
                 sim: sim_name(self.version).into(),
                 sim_version: self.version.map(|v| format!("{v:.0}")).unwrap_or_default(),
-                capture: "xp_webapi".into(),
+                capture: self.capture.name().into(),
                 client_version: self.recorder.app_version(),
                 aircraft: aircraft(info),
             },

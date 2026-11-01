@@ -34,13 +34,15 @@ pub struct Recorder {
     app: AppHandle,
     sampler: Sampler,
     sim_time: Option<f64>,
+    /// The next tick's wall time, when the sim stamped it; otherwise the time of the tick.
+    wall_ms: Option<i64>,
     /// Title and livery of the aircraft being recorded.
     recording: Option<(String, String)>,
 }
 
 impl Recorder {
     pub fn new(app: &AppHandle, channels: &[Channel], phase: PhaseInputs) -> Self {
-        Self { app: app.clone(), sampler: Sampler::new(channels, phase), sim_time: None, recording: None }
+        Self { app: app.clone(), sampler: Sampler::new(channels, phase), sim_time: None, wall_ms: None, recording: None }
     }
 
     /// For the session header.
@@ -56,6 +58,11 @@ impl Recorder {
         self.sim_time = Some(sim_time);
     }
 
+    /// For the next tick only.
+    pub fn set_wall_time(&mut self, wall_ms: i64) {
+        self.wall_ms = Some(wall_ms);
+    }
+
     /// Goes with the next tick. Before a session starts, with its first.
     pub fn event(&mut self, event: Event) {
         self.sampler.event(event);
@@ -66,7 +73,7 @@ impl Recorder {
         let (Some(sim_time), Some(_)) = (self.sim_time, &self.recording) else {
             return;
         };
-        let wall_ms = chrono::Utc::now().timestamp_millis();
+        let wall_ms = self.wall_ms.take().unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let Some(tick) = self.sampler.tick(sim_time, wall_ms, flags) else {
             return;
         };
