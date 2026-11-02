@@ -140,43 +140,29 @@ fn to_xplane_attitude(degrees: f64) -> f64 {
     -degrees
 }
 
-/// Resolve an ICAO type from the title + livery via the word index (setting it on
-/// `identity`), identify the operating airline, and log both. No-ops per index when it
-/// is unavailable.
-fn resolve_and_log(
-    app: &AppHandle,
-    icao_index: Option<&crate::icao_index::IcaoIndex>,
-    airline_index: Option<&crate::airline_index::AirlineIndex>,
-    identity: &mut AircraftInfo,
-) {
-    let query = format!("{} {}", identity.title, identity.livery);
-
-    if let Some(index) = icao_index {
-        match index.find_title_livery(&identity.title, &identity.livery) {
-            Some(m) => {
-                crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> {} (score {:.2})", identity.title, identity.livery, m.icao, m.score));
-                identity.resolved_icao = m.icao;
-            }
-            None => crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> no ICAO match", identity.title, identity.livery)),
-        }
+/// Resolve the ICAO type and operating airline from the title + livery, as the service
+/// does (`butterlog-identity`), set them on `identity` and log them. The service's answer
+/// replaces this one for traffic peers once the session opens (`crate::identity`).
+fn resolve_and_log(app: &AppHandle, identity: &mut AircraftInfo) {
+    let r = butterlog_identity::Resolver::embedded().resolve(&identity.title, &identity.livery);
+    match &r.icao {
+        Some(m) => crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> {} (score {:.2})", identity.title, identity.livery, m.icao, m.score)),
+        None => crate::append_log(app, format!("[X-Plane Index] '{}' [{}] -> no ICAO match", identity.title, identity.livery)),
     }
-
-    let may_fly_for_airline = app
-        .try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>()
-        .map_or(true, |db| db.type_may_fly_for_airline(&identity.resolved_icao));
-    if !may_fly_for_airline {
-        crate::append_log(app, format!("[X-Plane Airline] '{}' -> skipped, {} is a piston/light turboprop", identity.title, identity.resolved_icao));
+    if let Some(m) = &r.icao {
+        identity.resolved_icao = m.icao.clone();
+    }
+    match &r.airline {
+        Some(m) => crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> {} {} (score {:.2})", identity.title, identity.livery, m.icao, m.name, m.score)),
+        None if r.airline_skipped => crate::append_log(app, format!("[X-Plane Airline] '{}' -> skipped, {} is a piston/light turboprop", identity.title, identity.resolved_icao)),
+        None => crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> no airline match", identity.title, identity.livery)),
+    }
+    if r.airline_skipped {
         identity.resolved_airline.clear();
         identity.resolved_airline_icao.clear();
-    } else if let Some(index) = airline_index {
-        match index.find(&query) {
-            Some(m) => {
-                crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> {} {} (score {:.2})", identity.title, identity.livery, m.icao, m.name, m.score));
-                identity.resolved_airline = m.name;
-                identity.resolved_airline_icao = m.icao;
-            }
-            None => crate::append_log(app, format!("[X-Plane Airline] '{}' [{}] -> no airline match", identity.title, identity.livery)),
-        }
+    } else if let Some(m) = r.airline {
+        identity.resolved_airline = m.name;
+        identity.resolved_airline_icao = m.icao;
     }
 }
 
@@ -438,12 +424,6 @@ impl XPlaneMonitor {
         let mut last_known_title = String::new();
         let mut last_identify_attempt: Option<std::time::Instant> = None;
 
-        // Word indexes for resolving an ICAO type and operating airline from the title +
-        // livery. Their backing CSVs load on background threads at startup and may not be
-        // ready when the connection begins, so each is built lazily in the loop once its
-        // database appears (mirroring how airports/runways are read on demand).
-        let mut icao_index: Option<crate::icao_index::IcaoIndex> = None;
-        let mut airline_index: Option<crate::airline_index::AirlineIndex> = None;
         let mut last_parking_brake: Option<bool> = None;
         let mut departure_set = false;
 
@@ -453,28 +433,6 @@ impl XPlaneMonitor {
             // Web-issued commands. X-Plane needs no plugin for these: the same
             // Web API this monitor reads through also writes.
             drain_sim_commands(&app).await;
-
-            // Lazily build the word indexes once their databases finish loading, so a
-            // connection that started before the background CSV load isn't stuck without
-            // type/airline resolution for its whole duration.
-            if icao_index.is_none() {
-                if let Some(db) = app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>() {
-                    crate::append_log(&app, format!(
-                        "[X-Plane] Aircraft characteristics ready ({} entries); building ICAO type index.",
-                        db.characteristics.len()
-                    ));
-                    icao_index = Some(crate::icao_index::IcaoIndex::build(&db));
-                }
-            }
-            if airline_index.is_none() {
-                if let Some(db) = app.try_state::<crate::airlines::AirlinesDatabase>() {
-                    crate::append_log(&app, format!(
-                        "[X-Plane] Airlines ready ({} entries); building airline index.",
-                        db.airlines.len()
-                    ));
-                    airline_index = Some(crate::airline_index::AirlineIndex::build(&db));
-                }
-            }
 
             match msg {
                 Ok(Message::Text(text)) => {
@@ -713,7 +671,7 @@ impl XPlaneMonitor {
                             last_identify_attempt = Some(std::time::Instant::now());
                             let mut identity = fetch_xplane_aircraft_identity(&client, &rest_url).await;
                             if !identity.title.is_empty() {
-                                resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
+                                resolve_and_log(&app, &mut identity);
                                 aircraft_info = identity.clone();
                                 if let Some(ts) = &telemetry_sampler {
                                     ts.lock().aircraft_loaded(&aircraft_info);
@@ -767,7 +725,7 @@ impl XPlaneMonitor {
                                 }
 
                                 last_known_title = identity.title.clone();
-                                resolve_and_log(&app, icao_index.as_ref(), airline_index.as_ref(), &mut identity);
+                                resolve_and_log(&app, &mut identity);
                                 aircraft_info = identity;
                                 if let Some(ts) = &telemetry_sampler {
                                     ts.lock().aircraft_loaded(&aircraft_info);

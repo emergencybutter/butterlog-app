@@ -367,6 +367,7 @@ name = "butterlog"
 version = "0.3.34"
 dependencies = [
  "anyhow",
+ "butterlog-identity",
  "butterlog-wire",
  "chrono",
  "chrono-tz",
@@ -399,6 +400,14 @@ dependencies = [
  "uuid",
  "webp",
  "winreg 0.55.0",
+]
+
+[[package]]
+name = "butterlog-identity"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "serde",
 ]
 
 [[package]]

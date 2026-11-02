@@ -40,8 +40,6 @@
     "resources": [
       "../public/airports.csv",
       "../public/runways.csv",
-      "../public/aircraft-characteristics.csv",
-      "../public/airlines.csv",
       "xp_plugin/"
     ],
     "icon": [

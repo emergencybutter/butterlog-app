@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Traffic peers get the aircraft type and airline the service resolved, when a telemetry session opens, instead of the app's own guess. The app still resolves locally, and peers get that until the service answers, or when telemetry is off or the service is unreachable. The first time the two disagree for an aircraft, the log says so (`[Identity]`). Both now use one crate, `butterlog-identity` (`butterlog-service/identity`), which builds in the aircraft and airline tables: `aircraft-characteristics.csv` and `airlines.csv` are no longer app resources, and the MSFS and X-Plane monitors share one set of indexes, built at startup, instead of each building its own once the tables loaded.
+
 ## [0.3.34] - 2026-11-02
 
 ### Added

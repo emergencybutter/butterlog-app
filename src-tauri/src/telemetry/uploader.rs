@@ -8,6 +8,7 @@
 
 use super::spool::Spool;
 use super::Telemetry;
+use crate::identity::ServiceIdentity;
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -27,6 +28,8 @@ pub(crate) enum Reply {
     Ok {
         next_seq: u32,
         status: String,
+        /// The aircraft's type and airline, in the reply to opening.
+        identity: Option<ServiceIdentity>,
     },
     Unauthorized,
     /// No such session for this user.
@@ -84,8 +87,15 @@ pub(crate) async fn upload_pass<S: Service>(
                     continue;
                 }
             };
-            match service.open(id, body).await {
-                Reply::Ok { next_seq, status } => {
+            match service.open(id, body.clone()).await {
+                Reply::Ok { next_seq, status, identity } => {
+                    if let Some(identity) = identity {
+                        // For traffic peers; see `crate::identity`.
+                        if let Ok((opening, _)) = butterlog_wire::SessionOpen::decode(&body) {
+                            let a = &opening.header.aircraft;
+                            crate::identity::record(&a.title, &a.livery, identity);
+                        }
+                    }
                     if status == "compacted" {
                         log(format!(
                             "[Telemetry] Session {id} already compacted; dropped"
@@ -191,6 +201,8 @@ struct Ack {
     next_seq: i64,
     #[serde(default)]
     status: Option<String>,
+    #[serde(default)]
+    identity: Option<ServiceIdentity>,
 }
 
 /// The service over HTTP, with the app's Bearer token.
@@ -212,6 +224,7 @@ impl HttpService {
                 Ok(ack) => Reply::Ok {
                     next_seq: ack.next_seq.max(0) as u32,
                     status: ack.status.unwrap_or_else(|| "open".to_string()),
+                    identity: ack.identity,
                 },
                 Err(e) => Reply::Unavailable(format!("unreadable reply: {e}")),
             },
@@ -396,6 +409,10 @@ mod tests {
             Reply::Ok {
                 next_seq: s.next_seq,
                 status: s.status.clone(),
+                identity: Some(ServiceIdentity {
+                    icao: format!("FAKE {}", opening.header.aircraft.title),
+                    ..Default::default()
+                }),
             }
         }
 
@@ -420,6 +437,7 @@ mod tests {
             Reply::Ok {
                 next_seq: s.next_seq,
                 status: s.status.clone(),
+                identity: None,
             }
         }
 
@@ -433,8 +451,25 @@ mod tests {
             Reply::Ok {
                 next_seq: s.next_seq,
                 status: s.status.clone(),
+                identity: None,
             }
         }
+    }
+
+    /// As the service sends it (`sessions.rs`, `the_open_reply_carries_the_identity`).
+    #[test]
+    fn the_open_reply_carries_the_identity() {
+        let ack: Ack = serde_json::from_str(
+            r#"{"sessionId":"00000000-0000-0000-0000-000000000000","status":"open","nextSeq":0,
+                "chunkCount":0,"identity":{"icao":"B738","airlineIcao":"RYR","airline":"Ryanair"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            ack.identity,
+            Some(ServiceIdentity { icao: "B738".into(), airline_icao: "RYR".into(), airline: "Ryanair".into() })
+        );
+        let older: Ack = serde_json::from_str(r#"{"nextSeq":3,"status":"open"}"#).unwrap();
+        assert_eq!((older.next_seq, older.identity), (3, None));
     }
 
     fn recorder(dir: &std::path::Path) -> Telemetry {
@@ -462,6 +497,9 @@ mod tests {
         assert_eq!(fake.ticks(id), ticks(0, 23));
         assert_eq!(fake.status(id), "ended");
         assert!(telemetry.spool().sessions().is_empty());
+        // The service's identity is kept for traffic peers.
+        let info = crate::models::AircraftInfo { title: "Test".into(), ..Default::default() };
+        assert_eq!(crate::identity::for_peers(&info, |_| {}).resolved_icao, "FAKE Test");
         assert_eq!(telemetry.spool().used_bytes(), 0);
         std::fs::remove_dir_all(dir).unwrap();
     }

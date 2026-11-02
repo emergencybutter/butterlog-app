@@ -381,11 +381,7 @@ impl MultiplayerManager {
 
                         let monitor = resolver_app.state::<UnifiedMonitor>();
                         let connected = monitor.get_connected_monitor();
-                        let empty_db = crate::aircraft_characteristics::CharacteristicsDatabase {
-                            characteristics: std::collections::HashMap::new(),
-                        };
-                        let db_ref = resolver_app.try_state::<crate::aircraft_characteristics::CharacteristicsDatabase>();
-                        let db = db_ref.as_deref().unwrap_or(&empty_db);
+                        let db = crate::aircraft_characteristics::CharacteristicsDatabase::embedded();
                         let resolved = connected.as_ref().and_then(|m| m.choose_remote_model(&identity, db));
 
                         resolver_multiplayer.model_cache.lock().insert(identity.clone(), resolved.clone());
@@ -679,9 +675,9 @@ impl MultiplayerManager {
                                             let livery = payload.get("livery").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                             // The wire carries the airline as a portable ICAO code; map it back to a
                                             // name against our own table so we can match it in local livery titles.
-                                            let resolved_airline = recv_app
-                                                .try_state::<crate::airlines::AirlinesDatabase>()
-                                                .and_then(|db| db.name_for_icao(&resolved_airline_icao).map(|s| s.to_string()))
+                                            let resolved_airline = crate::airlines::AirlinesDatabase::embedded()
+                                                .name_for_icao(&resolved_airline_icao)
+                                                .map(|s| s.to_string())
                                                 .unwrap_or_default();
 
                                             let identity = crate::sim_monitor::RemoteAircraftIdentity {
@@ -914,7 +910,10 @@ impl MultiplayerManager {
                     let monitor = app.state::<UnifiedMonitor>();
                     if let Some(m) = monitor.get_connected_monitor() {
                         let metrics = m.get_metrics();
-                        let aircraft = m.get_aircraft_info();
+                        // The service's type and airline once a session is open.
+                        let aircraft = crate::identity::for_peers(&m.get_aircraft_info(), |line| {
+                            crate::append_log(&app, line)
+                        });
 
                         let payload = serde_json::json!({
                             "aircraft": aircraft.title,

@@ -1,8 +1,5 @@
-mod aircraft_characteristics;
-mod airline_index;
-mod airlines;
 mod airports;
-mod icao_index;
+mod identity;
 mod legacy_autostart;
 mod config;
 mod flight_analyzer;
@@ -18,6 +15,9 @@ mod sim_monitor;
 mod telemetry;
 mod webhook_manager;
 mod xp_plugin_install;
+
+// Type and airline resolution, shared with the service (butterlog-service/identity).
+use butterlog_identity::{aircraft_characteristics, airlines};
 
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -674,57 +674,11 @@ pub fn run() {
                 }
             });
 
-            let chars_app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                // Load aircraft-characteristics.csv and register into Tauri managed state
-                let chars_path = chars_app_handle
-                    .path()
-                    .resolve("../public/aircraft-characteristics.csv", BaseDirectory::Resource)
-                    .expect("Failed to resolve aircraft-characteristics.csv resource");
-
-                match aircraft_characteristics::CharacteristicsDatabase::load_from_csv(&chars_path) {
-                    Ok(db) => {
-                        append_log(
-                            &chars_app_handle,
-                            format!(
-                                "Successfully loaded {} aircraft characteristics into backend memory.",
-                                db.characteristics.len()
-                            ),
-                        );
-                        chars_app_handle.manage(db);
-                    }
-                    Err(err) => {
-                        append_log(
-                            &chars_app_handle,
-                            format!("Failed to load aircraft-characteristics.csv at {:?}: {}", chars_path, err),
-                        );
-                    }
-                }
-            });
-
-            let airlines_app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                // Load airlines.csv and register into Tauri managed state
-                let airlines_path = airlines_app_handle
-                    .path()
-                    .resolve("../public/airlines.csv", BaseDirectory::Resource)
-                    .expect("Failed to resolve airlines.csv resource");
-
-                match airlines::AirlinesDatabase::load_from_csv(&airlines_path) {
-                    Ok(db) => {
-                        append_log(
-                            &airlines_app_handle,
-                            format!("Successfully loaded {} airlines into backend memory.", db.airlines.len()),
-                        );
-                        airlines_app_handle.manage(db);
-                    }
-                    Err(err) => {
-                        append_log(
-                            &airlines_app_handle,
-                            format!("Failed to load airlines.csv at {:?}: {}", airlines_path, err),
-                        );
-                    }
-                }
+            // The aircraft and airline tables are built in; parsing them and building the
+            // type and airline indexes takes a moment, so do it now rather than on the
+            // first aircraft load.
+            std::thread::spawn(|| {
+                butterlog_identity::Resolver::embedded();
             });
 
             // Automatically start monitoring based on config

@@ -60,7 +60,9 @@ jobs:
         with:
           repository: emergencybutter/butterlog-service
           path: butterlog-service
-          sparse-checkout: wire
+          sparse-checkout: |
+            wire
+            identity
 
       - name: Linux packages
         if: runner.os == 'Linux'

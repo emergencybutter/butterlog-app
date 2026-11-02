@@ -281,13 +281,9 @@ impl SimConnectMonitor {
         let mut flight_ongoing = false;
         let mut departure_set = false;
 
-        // Word indexes for resolving an ICAO type and operating airline from a title +
-        // livery. Their backing CSVs load on background threads at startup, so they may
-        // not be ready when monitoring begins; each is built lazily in the loop once its
-        // database appears (mirroring how airports/runways are read on demand). Until then
-        // resolution is disabled and the use-site logs the misses.
-        let mut icao_index: Option<crate::icao_index::IcaoIndex> = None;
-        let mut airline_index: Option<crate::airline_index::AirlineIndex> = None;
+        // Type and airline resolution, as the service does it (`butterlog-identity`). The
+        // service's answer replaces this one for traffic peers once the session opens.
+        let resolver = butterlog_identity::Resolver::embedded();
 
         let mut takeoff_snapshot: Option<FlightMetrics> = None;
         let mut landing_snapshot: Option<FlightMetrics> = None;
@@ -329,28 +325,6 @@ impl SimConnectMonitor {
         loop {
             if !*running.lock() {
                 break;
-            }
-
-            // Lazily build the word indexes once their databases finish loading, so a
-            // session that started before the background CSV load isn't stuck without
-            // type/airline resolution for its whole duration.
-            if icao_index.is_none() {
-                if let Some(db) = app.try_state::<CharacteristicsDatabase>() {
-                    crate::append_log(app, format!(
-                        "[MSFS] Aircraft characteristics ready ({} entries); building ICAO type index.",
-                        db.characteristics.len()
-                    ));
-                    icao_index = Some(crate::icao_index::IcaoIndex::build(&db));
-                }
-            }
-            if airline_index.is_none() {
-                if let Some(db) = app.try_state::<crate::airlines::AirlinesDatabase>() {
-                    crate::append_log(app, format!(
-                        "[MSFS] Airlines ready ({} entries); building airline index.",
-                        db.airlines.len()
-                    ));
-                    airline_index = Some(crate::airline_index::AirlineIndex::build(&db));
-                }
             }
 
             // Web-issued commands. Executed here rather than from the poller
@@ -498,8 +472,8 @@ impl SimConnectMonitor {
                             let title = c_char_array_to_string(&entry.AircraftTitle);
                             let livery = c_char_array_to_string(&entry.LiveryName);
                             if !title.is_empty() && !ac.contains(&title) {
-                                log_icao_index_match(app, icao_index.as_ref(), "aircraft", &title);
-                                log_airline_index_match(app, airline_index.as_ref(), "aircraft", &title, &livery, false);
+                                log_icao_index_match(app, Some(&resolver.types), "aircraft", &title);
+                                log_airline_index_match(app, Some(&resolver.airlines), "aircraft", &title, &livery, false);
                                 ac.push(title);
                             }
                         }
@@ -512,8 +486,8 @@ impl SimConnectMonitor {
                             let title = c_char_array_to_string(&entry.AircraftTitle);
                             let livery = c_char_array_to_string(&entry.LiveryName);
                             if !title.is_empty() && !hc.contains(&title) {
-                                log_icao_index_match(app, icao_index.as_ref(), "helicopter", &title);
-                                log_airline_index_match(app, airline_index.as_ref(), "helicopter", &title, &livery, false);
+                                log_icao_index_match(app, Some(&resolver.types), "helicopter", &title);
+                                log_airline_index_match(app, Some(&resolver.airlines), "helicopter", &title, &livery, false);
                                 hc.push(title);
                             }
                         }
@@ -837,26 +811,20 @@ impl SimConnectMonitor {
                             aircraft_info.engine_type = engine_type.clone();
 
                             // Resolve an ICAO type from the title + livery via the word index.
-                            let resolved_icao = match icao_index.as_ref().and_then(|idx| idx.find_title_livery(&title, &livery)) {
-                                Some(m) => {
-                                    crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> {} (score {:.2})", title, livery, m.icao, m.score));
-                                    m.icao
-                                }
-                                None => {
-                                    crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> no ICAO match", title, livery));
-                                    String::new()
-                                }
-                            };
+                            let r = resolver.resolve(&title, &livery);
+                            match &r.icao {
+                                Some(m) => crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> {} (score {:.2})", title, livery, m.icao, m.score)),
+                                None => crate::append_log(app, format!("[MSFS Index] '{}' [{}] -> no ICAO match", title, livery)),
+                            }
+                            let resolved_icao = r.icao_code().to_string();
                             aircraft_info.resolved_icao = resolved_icao.clone();
-                            let may_fly_for_airline = app
-                                .try_state::<CharacteristicsDatabase>()
-                                .map_or(true, |db| db.type_may_fly_for_airline(&resolved_icao));
-                            let (resolved_airline_icao, resolved_airline) = if may_fly_for_airline {
-                                log_airline_index_match(app, airline_index.as_ref(), "current", &title, &livery, true)
-                            } else {
-                                crate::append_log(app, format!("[MSFS Airline] current '{}' -> skipped, {} is a piston/light turboprop", title, resolved_icao));
-                                (String::new(), String::new())
-                            };
+                            match &r.airline {
+                                Some(m) => crate::append_log(app, format!("[MSFS Airline] current '{}' [{}] -> {} {} (score {:.2})", title, livery, m.icao, m.name, m.score)),
+                                None if r.airline_skipped => crate::append_log(app, format!("[MSFS Airline] current '{}' -> skipped, {} is a piston/light turboprop", title, resolved_icao)),
+                                None => {}
+                            }
+                            let (resolved_airline_icao, resolved_airline) =
+                                (r.airline_icao().to_string(), r.airline_name().to_string());
                             aircraft_info.resolved_airline = resolved_airline.clone();
                             aircraft_info.resolved_airline_icao = resolved_airline_icao.clone();
 
@@ -1501,7 +1469,7 @@ impl SimConnectMonitor {
 /// logged, since resolved ones are the expected (and noisy) common case.
 fn log_icao_index_match(
     app: &AppHandle,
-    index: Option<&crate::icao_index::IcaoIndex>,
+    index: Option<&butterlog_identity::icao_index::IcaoIndex>,
     kind: &str,
     title: &str,
 ) {
@@ -1521,7 +1489,7 @@ fn log_icao_index_match(
 /// log its match.
 fn log_airline_index_match(
     app: &AppHandle,
-    index: Option<&crate::airline_index::AirlineIndex>,
+    index: Option<&butterlog_identity::airline_index::AirlineIndex>,
     kind: &str,
     title: &str,
     livery: &str,
@@ -2269,7 +2237,7 @@ mod tests {
 
     #[test]
     fn matches_gulfstream_g650() {
-        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+        let db = CharacteristicsDatabase::parse(butterlog_identity::aircraft_characteristics::CSV)
             .expect("Failed to load characteristics DB for tests");
 
         let available_aircraft = vec![
@@ -2333,7 +2301,7 @@ mod tests {
 
     #[test]
     fn test_find_best_multiplayer_model() {
-        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+        let db = CharacteristicsDatabase::parse(butterlog_identity::aircraft_characteristics::CSV)
             .expect("Failed to load characteristics DB for tests");
 
         let available_aircraft = vec![
@@ -2429,7 +2397,7 @@ mod tests {
 
     #[test]
     fn prefers_deduced_icao_over_atc_model() {
-        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+        let db = CharacteristicsDatabase::parse(butterlog_identity::aircraft_characteristics::CSV)
             .expect("Failed to load characteristics DB for tests");
         let available_aircraft = vec![
             "Cessna Skyhawk G1000".to_string(),
@@ -2452,7 +2420,7 @@ mod tests {
 
     #[test]
     fn airline_aware_livery_selection() {
-        let db = CharacteristicsDatabase::load_from_csv("../public/aircraft-characteristics.csv")
+        let db = CharacteristicsDatabase::parse(butterlog_identity::aircraft_characteristics::CSV)
             .expect("Failed to load characteristics DB for tests");
         // Two installed liveries of the same type, encoded as separate titles.
         let available_aircraft = vec![
