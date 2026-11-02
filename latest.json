@@ -1,11 +1,11 @@
 {
-  "version": "0.3.33",
-  "notes": "Butterlog v0.3.33 Release\nA touch-and-go or go-around no longer becomes the flight's takeoff, so distance and flight time are right again",
-  "pub_date": "2026-10-17T23:02:00Z",
+  "version": "0.3.34",
+  "notes": "Butterlog v0.3.34 Release\nX-Plane: ButterLog now installs and updates its plugin (Settings > X-Plane Plugin), and logs pitch, roll, heading, frequencies, engine data and aircraft type correctly. Arrival airports come from the runway, not the approach. Daily log files (Backend Logs > Open Log File).",
+  "pub_date": "2026-11-02T12:21:19Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHY0Y1p1Zm9TczNpSnptYXMzWmF1QWhGR2F5cXZadDhEQnBZaGJtMWE1dG5tVm9zOTZ6WWhGV2tTUG5paTZOcEQyWTFUWWtzYmdObzhnbGlZdGpDMkE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMjc4MTIwCWZpbGU6YnV0dGVybG9nXzAuMy4zM194NjQtc2V0dXAuZXhlCnpBSVdqZ21hMGV6Tnc2WWhqbWcvZld2L1FHdEkzTUFFbTE1dC8vSGVLSytneUVCc1NmTkQxY2g3U1puNHQ2OUNzYUhyMlBubzRwQnM4eCswSzl0Y0NnPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.33_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG4zMCt0b3dwMWczNHpyOGJDR0JsMTlOaW1GK2l0c1BRUUVpUkpDR2g3Wis2SWZhTEZFY3NadGR0Q2kvTlhXYk1uRFlnU2loaHp1RjR1VlFtY3dKb2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjIyMDc5CWZpbGU6YnV0dGVybG9nXzAuMy4zNF94NjQtc2V0dXAuZXhlCjh0YnRTOHdscFptS3JZSFJCMFhtY1NZZVZUTUhrTk9FSUJBbkN4NytxVjBLcU1TbHd6TzhjVmtXWFk4Nmt0c3VnbGNIMHJKYkxSVFVZdjlFa2FUVEJ3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.34_x64-setup.exe"
     }
   }
 }
