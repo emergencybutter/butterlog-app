@@ -109,6 +109,12 @@ const REPLAY: &str = "sim/operation/prefs/replay_mode";
 const SIM_SPEED: &str = "sim/time/sim_speed";
 const TIME_SPEED: &str = "sim/time/ground_speed";
 const CRASHED: &str = "sim/flightmodel2/misc/has_crashed";
+const GROUNDSPEED: &str = "sim/flightmodel/position/groundspeed";
+const HPATH: &str = "sim/flightmodel/position/hpath";
+/// Below this groundspeed (m/s, about 2 kt) `hpath`, the direction of travel, is held at its
+/// last value: X-Plane derives it from a near-zero velocity, so it jitters through every
+/// heading while the aircraft stands still, and that made almost every frame a change.
+const HPATH_MIN_GROUNDSPEED: f64 = 1.0;
 
 /// One channel per scalar dataref or array element: (channel name, dataref, element).
 fn elements() -> Vec<(String, &'static str, Option<usize>)> {
@@ -203,6 +209,8 @@ pub struct XplaneSampler {
     crashed: Option<bool>,
     sim_rate: f64,
     time_rate: f64,
+    /// The latest groundspeed, m/s; see [`HPATH_MIN_GROUNDSPEED`].
+    groundspeed: f64,
     ids: StateIds,
 }
 
@@ -213,6 +221,8 @@ struct StateIds {
     crashed: u16,
     sim_speed: u16,
     time_speed: u16,
+    groundspeed: u16,
+    hpath: u16,
 }
 
 impl XplaneSampler {
@@ -263,12 +273,15 @@ impl XplaneSampler {
             crashed: None,
             sim_rate: 1.0,
             time_rate: 1.0,
+            groundspeed: 0.0,
             ids: StateIds {
                 paused: id(PAUSED),
                 replay: id(REPLAY),
                 crashed: id(CRASHED),
                 sim_speed: id(SIM_SPEED),
                 time_speed: id(TIME_SPEED),
+                groundspeed: id(GROUNDSPEED),
+                hpath: id(HPATH),
             },
         })
     }
@@ -296,6 +309,12 @@ impl XplaneSampler {
 
     /// A channel's new value, noting the sim state it carries.
     fn apply(&mut self, channel: u16, v: f64) {
+        if channel == self.ids.groundspeed {
+            self.groundspeed = v;
+        }
+        if !keeps(channel, self.ids.hpath, self.groundspeed) {
+            return;
+        }
         self.recorder.set(channel, v);
         let on = v != 0.0;
         match channel {
@@ -413,9 +432,25 @@ impl XplaneSampler {
     }
 }
 
+/// Whether a channel's new value is recorded: all are but `hpath` when nearly stopped.
+fn keeps(channel: u16, hpath: u16, groundspeed: f64) -> bool {
+    channel != hpath || groundspeed >= HPATH_MIN_GROUNDSPEED
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_track_is_held_while_nearly_stopped() {
+        let (hpath, gs) = (id(HPATH), id(GROUNDSPEED));
+        assert!(!keeps(hpath, hpath, 0.0), "parked");
+        assert!(!keeps(hpath, hpath, 0.9));
+        assert!(keeps(hpath, hpath, 1.0), "taxiing at 2 kt");
+        assert!(keeps(gs, hpath, 0.0), "other channels always");
+        // Frames come in channel order: groundspeed is applied before hpath.
+        assert!(gs < hpath);
+    }
 
     #[test]
     fn the_table_is_valid_and_has_the_phase_inputs() {

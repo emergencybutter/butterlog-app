@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- X-Plane telemetry recorded almost every frame while the aircraft stood still: X-Plane's direction of travel (`hpath`) jitters through every heading when the aircraft isn't moving, so each frame looked like a change. It's now held below 1 m/s groundspeed (about 2 kt), which halves the ticks of a recent short flight and cuts those while stopped by about 70%.
 - X-Plane telemetry always fell back to the Web API: plugin 0.3.0 never answered the app's subscription (fixed in plugin 0.3.1). The app now also waits up to 2 minutes for that answer, since it comes from X-Plane's flight loop, which doesn't run while X-Plane is loading; a plugin that doesn't say hello within 3 seconds still falls back at once.
 - After a flight ended, live tracking kept uploading to it every 20 seconds ("already ended") until the next flight: the sim monitor's periodic sync read the ended flight's id back from its log and made it current again. Syncs for an ended flight's log are now dropped.
 - X-Plane aircraft with fuel-injected piston engines (such as the C172 SP) were reported as turboprops; X-Plane's turboprops were reported as jets.
