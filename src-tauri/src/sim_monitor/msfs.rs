@@ -17,6 +17,10 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// The departure is the airport nearest the aircraft when it first moves faster than this
+/// on the ground (knots): a taxi, not the sim settling or loading.
+const DEPARTURE_MIN_GROUNDSPEED_KT: f64 = 3.0;
+
 /// Simvars in the injected-aircraft (`remote_define_id`) data definition, in
 /// registration order. Used to label SimConnect exceptions by datum name.
 /// MUST stay in sync with the `add_to_data_definition` calls below.
@@ -613,24 +617,10 @@ impl SimConnectMonitor {
                                 takeoff_time = analyzer.takeoff_timestamp.clone();
                             }
                             }
-                            // Set initial departure if on ground and valid coordinates.
-                            // Skip once takeoff is known (e.g. a resumed airborne flight): the
-                            // <10ft AGL test could otherwise latch onto the arrival field.
-                            let m_lock = metrics.lock();
-                            if !departure_set && takeoff_time.is_none() && (m_lock.is_on_ground > 0.5 || m_lock.altitude_agl < 10.0) && m_lock.has_position() {
-                                if let Some(db) = app.try_state::<AirportsDatabase>() {
-                                    if let Some(nearest) = db.find_nearest(m_lock.latitude, m_lock.longitude, 1).first() {
-                                        crate::append_log(app, format!("[MSFS] Identified departure: {} ({})", nearest.ident, nearest.name));
-                                        if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_icao', ?1)", params![nearest.ident]) {
-                                            crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
-                                        }
-                                        if let Err(e) = conn.execute("INSERT OR REPLACE INTO summary (key, value) VALUES ('departure_name', ?1)", params![nearest.name]) {
-                                            crate::append_log(app, format!("[MSFS] Error writing to DB: {}", e));
-                                        }
-                                        departure_set = true;
-                                    }
-                                }
-                            }
+                            // The departure isn't identified here: at SimStart the position is still
+                            // where the sim was before it loaded the flight (a flight from PHOG on
+                            // 2026-11-01 was logged as departing KBFI, where the sim had been). It's
+                            // taken from the first frame of the aircraft moving, below.
 
                             // Set aircraft title if already known
                             if !aircraft_info.title.is_empty() {
@@ -1057,7 +1047,8 @@ impl SimConnectMonitor {
                             // Once airborne, the next time we're near the ground is the *arrival*
                             // field, so writing it here would mislabel the destination as the
                             // departure (mirrors FlightAnalyzer::find_end_icao's takeoff guard).
-                            if !departure_set && takeoff_time.is_none() && data.has_position() && (data.is_on_ground > 0.5 || data.altitude_agl < 10.0) {
+                            // Moving under its own power, so the flight is loaded and the position real.
+                            if !departure_set && takeoff_time.is_none() && data.has_position() && data.ground_speed > DEPARTURE_MIN_GROUNDSPEED_KT && (data.is_on_ground > 0.5 || data.altitude_agl < 10.0) {
                                 if let Some(ref conn) = db_conn {
                                     if let Some(db) = app.try_state::<AirportsDatabase>() {
                                         if let Some(nearest) = db.find_nearest(data.latitude, data.longitude, 1).first() {
