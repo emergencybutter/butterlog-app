@@ -1,5 +1,6 @@
 mod airports;
 mod identity;
+mod traffic;
 mod legacy_autostart;
 mod config;
 mod flight_analyzer;

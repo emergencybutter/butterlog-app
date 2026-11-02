@@ -13,6 +13,10 @@ const STUN_TX_ID: [u8; 12] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78, 0x
 /// Render/track peers within this range (nautical miles) of our aircraft.
 const RANGE_NM: f64 = 100.0;
 
+/// How long a peer that showed it speaks `TrafficState` keeps getting it without showing
+/// it again. A peer that downgrades gets JSON again after this.
+const TRAFFIC_STATE_MEMORY: Duration = Duration::from_secs(60);
+
 /// Best-effort LAN address: the OS's chosen source IP toward a public host (no
 /// packet is actually sent by `connect` on a UDP socket), paired with the
 /// multiplayer socket's port. Used as a same-NAT (LAN) candidate.
@@ -186,6 +190,9 @@ pub struct MultiplayerManager {
     resolving: Mutex<HashSet<crate::sim_monitor::RemoteAircraftIdentity>>,
     last_received_log: Mutex<Option<std::time::Instant>>,
     last_emitted_log: Mutex<Option<std::time::Instant>>,
+    /// Peers that showed they speak `TrafficState`, and when they last did. They are sent
+    /// it instead of the JSON packet (`crate::traffic`).
+    traffic_state_peers: Mutex<HashMap<SocketAddr, std::time::Instant>>,
 }
 
 impl MultiplayerManager {
@@ -201,6 +208,7 @@ impl MultiplayerManager {
             resolving: Mutex::new(HashSet::new()),
             last_received_log: Mutex::new(None),
             last_emitted_log: Mutex::new(None),
+            traffic_state_peers: Mutex::new(HashMap::new()),
         }
     }
 
@@ -656,156 +664,131 @@ impl MultiplayerManager {
                                     continue;
                                 }
 
-                                // Parse as JSON payload
-                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(data) {
-                                    if let (Some(aircraft), Some(metrics_val)) = (payload["aircraft"].as_str(), payload.get("metrics")) {
-                                        match serde_json::from_value::<FlightMetrics>(metrics_val.clone()) {
-                                            Err(e) => {
-                                                crate::append_log(&recv_app, format!("[Multiplayer RECV] Failed to deserialize FlightMetrics from {}: {}", addr, e));
+                                // Either packet format; see `crate::traffic`.
+                                let update = match crate::traffic::parse(data) {
+                                    Ok(Some(update)) => update,
+                                    Ok(None) => continue,
+                                    Err(e) => {
+                                        crate::append_log(&recv_app, format!("[Multiplayer RECV] Dropped packet from {}: {}", addr, e));
+                                        continue;
+                                    }
+                                };
+                                if update.speaks_traffic_state {
+                                    recv_multiplayer.traffic_state_peers.lock().insert(addr, std::time::Instant::now());
+                                }
+                                let crate::traffic::Update { identity, metrics, .. } = update;
+                                let aircraft = identity.title.clone();
+                                let atc_model = identity.atc_model.clone();
+
+                                let config = recv_app.state::<ConfigManager>().get_config();
+                                let monitor = recv_app.state::<UnifiedMonitor>();
+                                
+                                // Throttled logging of received peer telemetry (every 10s)
+                                if config.inject_butterlog_traffic {
+                                    let now = std::time::Instant::now();
+                                    let should_log = {
+                                        let mut last_log = recv_multiplayer.last_received_log.lock();
+                                        match *last_log {
+                                            Some(t) if now.duration_since(t).as_secs() < 60 => false,
+                                            _ => {
+                                                *last_log = Some(now);
+                                                true
                                             }
-                                            Ok(metrics) => {
-                                            let atc_model = payload.get("atc_model").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let object_class = payload.get("object_class").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let category = payload.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let num_engines = payload.get("num_engines").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                                            let engine_type = payload.get("engine_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            // Sender's deduced canonical identity (v2 payload; absent from older peers).
-                                            let resolved_icao = payload.get("resolved_icao").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let resolved_airline_icao = payload.get("airline_icao").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            let livery = payload.get("livery").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                            // The wire carries the airline as a portable ICAO code; map it back to a
-                                            // name against our own table so we can match it in local livery titles.
-                                            let resolved_airline = crate::airlines::AirlinesDatabase::embedded()
-                                                .name_for_icao(&resolved_airline_icao)
-                                                .map(|s| s.to_string())
-                                                .unwrap_or_default();
-
-                                            let identity = crate::sim_monitor::RemoteAircraftIdentity {
-                                                title: aircraft.to_string(),
-                                                atc_model: atc_model.clone(),
-                                                resolved_icao,
-                                                resolved_airline,
-                                                resolved_airline_icao,
-                                                livery,
-                                                object_class,
-                                                category,
-                                                num_engines,
-                                                engine_type,
-                                            };
-
-                                            let config = recv_app.state::<ConfigManager>().get_config();
-                                            let monitor = recv_app.state::<UnifiedMonitor>();
-                                            
-                                            // Throttled logging of received peer telemetry (every 10s)
-                                            if config.inject_butterlog_traffic {
-                                                let now = std::time::Instant::now();
-                                                let should_log = {
-                                                    let mut last_log = recv_multiplayer.last_received_log.lock();
-                                                    match *last_log {
-                                                        Some(t) if now.duration_since(t).as_secs() < 60 => false,
-                                                        _ => {
-                                                            *last_log = Some(now);
-                                                            true
-                                                        }
-                                                    }
-                                                };
-                                                if should_log {
-                                                    crate::append_log(
-                                                        &recv_app,
-                                                        format!(
-                                                            "[Multiplayer RECV] Update from {}: {} [{}] at Lat={:.6}, Lon={:.6}, Alt={:.1} ft MSL, Hdg={:.1}",
-                                                            addr, aircraft, atc_model, metrics.latitude, metrics.longitude, metrics.gps_altitude_msl, metrics.heading
-                                                        )
-                                                    );
-                                                }
+                                        }
+                                    };
+                                    if should_log {
+                                        crate::append_log(
+                                            &recv_app,
+                                            format!(
+                                                "[Multiplayer RECV] Update from {}: {} [{}] at Lat={:.6}, Lon={:.6}, Alt={:.1} ft MSL, Hdg={:.1}",
+                                                addr, aircraft, atc_model, metrics.latitude, metrics.longitude, metrics.gps_altitude_msl, metrics.heading
+                                            )
+                                        );
+                                    }
+                                }
+                                
+                                // Determine if we should process this aircraft.
+                                let connected = monitor.get_connected_monitor();
+                                let mut should_process = false;
+                                if let Some(m) = connected.as_ref() {
+                                    if m.is_connected() && config.inject_butterlog_traffic {
+                                        let self_metrics = m.get_metrics();
+                                        if self_metrics.has_position() {
+                                            let dist = crate::sim_monitor::calculate_distance(
+                                                self_metrics.latitude,
+                                                self_metrics.longitude,
+                                                metrics.latitude,
+                                                metrics.longitude,
+                                            );
+                                            if dist <= RANGE_NM {
+                                                should_process = true;
                                             }
-                                            
-                                            // Determine if we should process this aircraft.
-                                            let connected = monitor.get_connected_monitor();
-                                            let mut should_process = false;
-                                            if let Some(m) = connected.as_ref() {
-                                                if m.is_connected() && config.inject_butterlog_traffic {
-                                                    let self_metrics = m.get_metrics();
-                                                    if self_metrics.has_position() {
-                                                        let dist = crate::sim_monitor::calculate_distance(
-                                                            self_metrics.latitude,
-                                                            self_metrics.longitude,
-                                                            metrics.latitude,
-                                                            metrics.longitude,
-                                                        );
-                                                        if dist <= RANGE_NM {
-                                                            should_process = true;
-                                                        }
-                                                    }
-                                                }
+                                        }
+                                    }
+                                }
+
+                                if should_process {
+                                    let now = std::time::Instant::now();
+                                    let key = addr.to_string();
+
+                                    // The local model the connected sim would render for this peer is
+                                    // resolved off-thread by the resolver pool — scanning the installed
+                                    // library is far too slow to run on the receive loop. Use the cached
+                                    // model when it's ready; otherwise enqueue the identity and leave the
+                                    // model unset for now. A worker patches `tracked_aircrafts` shortly,
+                                    // and the 50ms injection loop spawns the AI once a model is available.
+                                    let needs_resolution = {
+                                        let tracked = recv_multiplayer.tracked_aircrafts.lock();
+                                        match tracked.get(&key) {
+                                            Some(ac) => ac.identity != identity,
+                                            None => true,
+                                        }
+                                    };
+
+                                    let chosen_model = if needs_resolution {
+                                        let cached = recv_multiplayer.model_cache.lock().get(&identity).cloned();
+                                        match cached {
+                                            Some(m) => m, // already resolved (possibly None for "no match")
+                                            None => {
+                                                recv_multiplayer.enqueue_model_resolution(identity.clone());
+                                                None
                                             }
+                                        }
+                                    } else {
+                                        None // unused; identity unchanged so the stored model is kept
+                                    };
 
-                                            if should_process {
-                                                let now = std::time::Instant::now();
-                                                let key = addr.to_string();
+                                    let mut tracked = recv_multiplayer.tracked_aircrafts.lock();
+                                    if let Some(ac) = tracked.get_mut(&key) {
+                                        let elapsed = now.duration_since(ac.last_seen);
+                                        let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
 
-                                                // The local model the connected sim would render for this peer is
-                                                // resolved off-thread by the resolver pool — scanning the installed
-                                                // library is far too slow to run on the receive loop. Use the cached
-                                                // model when it's ready; otherwise enqueue the identity and leave the
-                                                // model unset for now. A worker patches `tracked_aircrafts` shortly,
-                                                // and the 50ms injection loop spawns the AI once a model is available.
-                                                let needs_resolution = {
-                                                    let tracked = recv_multiplayer.tracked_aircrafts.lock();
-                                                    match tracked.get(&key) {
-                                                        Some(ac) => ac.identity != identity,
-                                                        None => true,
-                                                    }
-                                                };
+                                        ac.start_metrics = ac.current_metrics;
+                                        ac.target_metrics = metrics;
+                                        ac.start_time = now;
+                                        ac.expected_duration = expected_duration;
+                                        ac.last_seen = now;
 
-                                                let chosen_model = if needs_resolution {
-                                                    let cached = recv_multiplayer.model_cache.lock().get(&identity).cloned();
-                                                    match cached {
-                                                        Some(m) => m, // already resolved (possibly None for "no match")
-                                                        None => {
-                                                            recv_multiplayer.enqueue_model_resolution(identity.clone());
-                                                            None
-                                                        }
-                                                    }
-                                                } else {
-                                                    None // unused; identity unchanged so the stored model is kept
-                                                };
-
-                                                let mut tracked = recv_multiplayer.tracked_aircrafts.lock();
-                                                if let Some(ac) = tracked.get_mut(&key) {
-                                                    let elapsed = now.duration_since(ac.last_seen);
-                                                    let expected_duration = elapsed.clamp(Duration::from_millis(50), Duration::from_secs(2));
-
-                                                    ac.start_metrics = ac.current_metrics;
-                                                    ac.target_metrics = metrics;
-                                                    ac.start_time = now;
-                                                    ac.expected_duration = expected_duration;
-                                                    ac.last_seen = now;
-
-                                                    if ac.identity != identity {
-                                                        ac.chosen_model = chosen_model;
-                                                        ac.identity = identity;
-                                                    }
-                                                } else {
-                                                    // Re-inserting (e.g. the entry was pruned between the peek
-                                                    // and here): fall back to the cached model so we don't lose it.
-                                                    let chosen_model = chosen_model.or_else(|| {
-                                                        recv_multiplayer.model_cache.lock().get(&identity).cloned().flatten()
-                                                    });
-                                                    tracked.insert(key, TrackedAircraft {
-                                                        last_seen: now,
-                                                        identity,
-                                                        chosen_model,
-                                                        start_time: now,
-                                                        expected_duration: Duration::from_millis(250),
-                                                        start_metrics: metrics,
-                                                        target_metrics: metrics,
-                                                        current_metrics: metrics,
-                                                    });
-                                                }
-                                            }
-                                            }
-                                        } // match
+                                        if ac.identity != identity {
+                                            ac.chosen_model = chosen_model;
+                                            ac.identity = identity;
+                                        }
+                                    } else {
+                                        // Re-inserting (e.g. the entry was pruned between the peek
+                                        // and here): fall back to the cached model so we don't lose it.
+                                        let chosen_model = chosen_model.or_else(|| {
+                                            recv_multiplayer.model_cache.lock().get(&identity).cloned().flatten()
+                                        });
+                                        tracked.insert(key, TrackedAircraft {
+                                            last_seen: now,
+                                            identity,
+                                            chosen_model,
+                                            start_time: now,
+                                            expected_duration: Duration::from_millis(250),
+                                            start_metrics: metrics,
+                                            target_metrics: metrics,
+                                            current_metrics: metrics,
+                                        });
                                     }
                                 }
                             }
@@ -914,27 +897,24 @@ impl MultiplayerManager {
                         let aircraft = crate::identity::for_peers(&m.get_aircraft_info(), |line| {
                             crate::append_log(&app, line)
                         });
+                        let state = crate::traffic::to_state(&metrics, &aircraft).encode();
+                        let mut json: Option<Vec<u8>> = None;
 
-                        let payload = serde_json::json!({
-                            "aircraft": aircraft.title,
-                            "atc_model": aircraft.atc_model,
-                            // Deduced canonical identity so receivers can pick a good model + livery.
-                            // The airline is carried as a portable ICAO code; the receiver maps it
-                            // back to a name against its own table (names/livery paths aren't portable).
-                            "resolved_icao": aircraft.resolved_icao,
-                            "airline_icao": aircraft.resolved_airline_icao,
-                            "livery": aircraft.livery,
-                            "object_class": aircraft.object_class,
-                            "category": aircraft.category,
-                            "num_engines": aircraft.num_engines,
-                            "engine_type": aircraft.engine_type,
-                            "metrics": metrics
-                        });
-
-                        if let Ok(data) = serde_json::to_vec(&payload) {
-                            let peers = multiplayer.peers.lock().clone();
-                            for peer in peers.iter() {
-                                let _ = socket.send_to(&data, peer);
+                        let peers = multiplayer.peers.lock().clone();
+                        let speaks = {
+                            let mut known = multiplayer.traffic_state_peers.lock();
+                            known.retain(|_, seen| now.duration_since(*seen) < TRAFFIC_STATE_MEMORY);
+                            known.clone()
+                        };
+                        for peer in peers.iter() {
+                            if speaks.contains_key(peer) {
+                                let _ = socket.send_to(&state, peer);
+                            } else {
+                                let data = json.get_or_insert_with(|| {
+                                    serde_json::to_vec(&crate::traffic::json_packet(&metrics, &aircraft))
+                                        .unwrap_or_default()
+                                });
+                                let _ = socket.send_to(data, peer);
                             }
                         }
                     }
