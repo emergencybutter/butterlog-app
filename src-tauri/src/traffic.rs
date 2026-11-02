@@ -3,9 +3,9 @@
 //!
 //! Two formats are on the wire while older apps are around (design §6.1 in the service):
 //!
-//! - **`TrafficState`** (`butterlog-wire`): about 100 bytes, sim-neutral, versioned.
-//! - **The JSON packet** older apps send and understand: the full `FlightMetrics` (about
-//!   3 kB) and the identity. Apps that speak `TrafficState` add `"traffic_state": <version>`
+//! - **`TrafficState`** (`butterlog-wire`): about 120 bytes, sim-neutral, versioned.
+//! - **The JSON packet** older apps send and understand: the full `FlightMetrics` (1.3 kB
+//!   or more) and the identity. Apps that speak `TrafficState` add `"traffic_state": <version>`
 //!   to it, which older apps ignore.
 //!
 //! A peer gets `TrafficState` once it has shown it speaks it (either way), JSON until then,

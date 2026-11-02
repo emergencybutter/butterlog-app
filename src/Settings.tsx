@@ -366,6 +366,23 @@ export function Settings() {
                                 fly, and lets you drive your own simulator from its flight page.
                             </span>
                         )}
+                        {isLoggedIn && (
+                            <div className="setting-control">
+                                <label>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.telemetryBeta}
+                                        onChange={(e) => handleChange("telemetryBeta", e.target.checked)}
+                                    />
+                                    <span>Beta: send flight telemetry to the service</span>
+                                </label>
+                                <span className="setting-hint">
+                                    Helps test the new flight analysis. The app also sends your
+                                    flight's recorded telemetry, which the service analyses
+                                    alongside the app. Your flights are logged and shared as before.
+                                </span>
+                            </div>
+                        )}
                         <p className="auth-note">
                             We use Discord to login to not make you create yet another account.
                         </p>
