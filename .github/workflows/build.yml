@@ -1,0 +1,180 @@
+# Builds and tests the app on macOS (universal: x86_64 + arm64) and Linux on every push and
+# pull request, and uploads the installers: a .dmg and .app on macOS, a .deb, .rpm and
+# AppImage on Linux. Windows releases are still built by hand with tools/build-signed.ps1.
+# These builds have no MSFS support (SimConnect is Windows only; see src-tauri/build.rs).
+#
+# Cargo resolves the path dependencies even where it doesn't build them, so the sibling
+# repos are checked out next to the app, as in the workspace:
+#
+#   butterlog-app/  simplesimconnect/  simplesimconnect-sys/  butterlog-service/wire/
+#
+# Optional secrets; each step that needs one is skipped (with a notice) when it's missing:
+#
+#   XP_PLUGIN_TOKEN             a token that can read butterlog_xp_plugin (private) and its
+#                               Actions artifacts. Bundles the plugin from its latest green
+#                               master build; without it the app ships without the plugin.
+#   TAURI_SIGNING_PRIVATE_KEY   the updater key (C:\Users\arnau\butterlog.key, no password).
+#                               Without it no updater artifacts are made.
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
+#                               a "Developer ID Application" .p12 (base64) to sign the app
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
+#                               to notarise it (an app-specific password)
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            target: universal-apple-darwin
+          # The oldest glibc GitHub offers, so the packages run on older distributions too.
+          - os: ubuntu-22.04
+            platform: lin
+            target: ""
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: butterlog-app
+
+      - uses: actions/checkout@v5
+        with:
+          repository: emergencybutter/simplesimconnect
+          path: simplesimconnect
+
+      - uses: actions/checkout@v5
+        with:
+          repository: emergencybutter/simplesimconnect-sys
+          path: simplesimconnect-sys
+
+      - uses: actions/checkout@v5
+        with:
+          repository: emergencybutter/butterlog-service
+          path: butterlog-service
+          sparse-checkout: wire
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'x86_64-apple-darwin, aarch64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: butterlog-app/src-tauri
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: butterlog-app/package-lock.json
+
+      - name: npm ci
+        working-directory: butterlog-app
+        run: npm ci
+
+      - name: Test
+        working-directory: butterlog-app/src-tauri
+        run: cargo test --locked
+
+      # The app installs the plugin into X-Plane from its bundle (src/xp_plugin_install.rs);
+      # only this platform's .xpl is needed.
+      - name: Bundle the X-Plane plugin
+        env:
+          GH_TOKEN: ${{ secrets.XP_PLUGIN_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::No XP_PLUGIN_TOKEN; this build doesn't include the X-Plane plugin."
+            exit 0
+          fi
+          repo=emergencybutter/butterlog_xp_plugin
+          run=$(gh run list -R "$repo" -b master -w build -s success -L 1 --json databaseId -q '.[0].databaseId')
+          if [ -z "$run" ]; then
+            echo "::error::No successful plugin build on master."
+            exit 1
+          fi
+          gh run download "$run" -R "$repo" -n butterlog_xp_plugin -D "$RUNNER_TEMP/plugin"
+          stage=butterlog-app/src-tauri/xp_plugin
+          mkdir -p "$stage/64"
+          cp "$RUNNER_TEMP/plugin/64/${{ matrix.platform }}.xpl" "$stage/64/"
+          cp "$RUNNER_TEMP/plugin/aircraft-characteristics.csv" "$RUNNER_TEMP/plugin/version.txt" "$stage/"
+          echo "Bundling X-Plane plugin $(cat "$stage/version.txt") from run $run"
+
+      # Tauri reads these from the environment. They're only set when present, because an
+      # empty APPLE_CERTIFICATE still makes Tauri try to import it.
+      - name: Signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            {
+              echo "TAURI_SIGNING_PRIVATE_KEY<<KEY_EOF"
+              echo "$TAURI_SIGNING_PRIVATE_KEY"
+              echo "KEY_EOF"
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
+            } >> "$GITHUB_ENV"
+          else
+            echo "::notice::No TAURI_SIGNING_PRIVATE_KEY; no updater artifacts."
+            echo "NO_UPDATER=1" >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = macOS ]; then
+            if [ -n "$APPLE_CERTIFICATE" ]; then
+              {
+                echo "APPLE_CERTIFICATE<<CERT_EOF"
+                echo "$APPLE_CERTIFICATE"
+                echo "CERT_EOF"
+                echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+                echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              } >> "$GITHUB_ENV"
+              if [ -n "$APPLE_ID" ]; then
+                {
+                  echo "APPLE_ID=$APPLE_ID"
+                  echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+                  echo "APPLE_PASSWORD=$APPLE_APP_PASSWORD"
+                } >> "$GITHUB_ENV"
+              else
+                echo "::notice::No APPLE_ID; the app is signed but not notarised."
+              fi
+            else
+              echo "::notice::No Apple signing secrets; the app is unsigned."
+            fi
+          fi
+
+      - name: Build
+        working-directory: butterlog-app
+        run: |
+          args=()
+          if [ -n "${{ matrix.target }}" ]; then args+=(--target "${{ matrix.target }}"); fi
+          if [ -n "$NO_UPDATER" ]; then args+=(--config '{"bundle":{"createUpdaterArtifacts":false}}'); fi
+          npm run tauri build -- "${args[@]}"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: butterlog-${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+          path: |
+            butterlog-app/src-tauri/target/*/release/bundle/dmg/*.dmg
+            butterlog-app/src-tauri/target/*/release/bundle/macos/*.app.tar.gz*
+            butterlog-app/src-tauri/target/release/bundle/deb/*.deb
+            butterlog-app/src-tauri/target/release/bundle/rpm/*.rpm
+            butterlog-app/src-tauri/target/release/bundle/appimage/*.AppImage*
+          if-no-files-found: error
