@@ -42,6 +42,7 @@ use models::FlightMetrics;
 use multiplayer::MultiplayerManager;
 use rusqlite::OptionalExtension;
 use screenshot_manager::ScreenshotManager;
+#[cfg(msfs)]
 use sim_monitor::msfs::SimConnectMonitor;
 use sim_monitor::xplane::XPlaneMonitor;
 use sim_monitor::SimMonitor;
@@ -467,6 +468,7 @@ pub fn run() {
     // child of ourselves. Must run before any other startup work: it opens a
     // SimConnect client, reports the result through its exit code, and exits so
     // the SDK's per-attempt leak dies with the process. See `msfs::run_probe_child`.
+    #[cfg(msfs)]
     if args.iter().any(|a| a == sim_monitor::msfs::PROBE_FLAG) {
         sim_monitor::msfs::run_probe_child();
     }
@@ -729,13 +731,18 @@ pub fn run() {
             let config = app.state::<ConfigManager>().get_config();
             let unified = app.state::<UnifiedMonitor>();
 
-            let msfs_monitor = Arc::new(SimConnectMonitor::new());
+            // MSFS is Windows only (and needs the `msfs` feature); see build.rs.
+            #[cfg(msfs)]
+            {
+                let msfs_monitor = Arc::new(SimConnectMonitor::new());
+                unified.add_monitor(msfs_monitor.clone());
+                let _ = msfs_monitor.start(app.app_handle().clone(), None);
+            }
+            #[cfg(not(msfs))]
+            append_log(app.app_handle(), "MSFS support isn't in this build (Windows only).".into());
+
             let xplane_monitor = Arc::new(XPlaneMonitor::new());
-
-            unified.add_monitor(msfs_monitor.clone());
             unified.add_monitor(xplane_monitor.clone());
-
-            let _ = msfs_monitor.start(app.app_handle().clone(), None);
             let _ = xplane_monitor.start(app.app_handle().clone(), None);
 
             if config.start_minimized {

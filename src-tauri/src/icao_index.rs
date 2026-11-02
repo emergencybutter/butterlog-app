@@ -341,6 +341,7 @@ impl IcaoIndex {
     }
 
     /// Return up to `limit` ICAO candidates for `query`, best score first.
+    #[cfg_attr(not(msfs), allow(dead_code))] // Used by the MSFS monitor only.
     pub fn candidates(&self, query: &str, limit: usize) -> Vec<IcaoMatch> {
         self.ranked(&[(query, 1.0)], limit)
     }
@@ -385,6 +386,7 @@ impl IcaoIndex {
     }
 
     /// Best single ICAO match for `query`, or `None` if nothing matched.
+    #[cfg_attr(not(msfs), allow(dead_code))] // Used by the MSFS monitor only.
     pub fn find(&self, query: &str) -> Option<IcaoMatch> {
         self.candidates(query, 1).into_iter().next()
     }

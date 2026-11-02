@@ -6,6 +6,7 @@
 //! X-Plane, fed by the plugin's link in `xp_plugin.rs` or the Web API, both through `recorder.rs`) and writes a chunk to the spool every
 //! [`CHUNK_MS`]; the uploader sends the spool. Runs beside `live_track.rs`.
 
+#[cfg(msfs)]
 pub mod msfs;
 pub mod recorder;
 pub mod spool;

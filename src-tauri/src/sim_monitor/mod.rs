@@ -2,6 +2,7 @@ use crate::models::FlightMetrics;
 use std::path::PathBuf;
 use tauri::AppHandle;
 
+#[cfg(msfs)]
 pub mod msfs;
 pub mod xplane;
 

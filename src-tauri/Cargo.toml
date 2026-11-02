@@ -14,6 +14,15 @@ edition = "2021"
 name = "butterlog_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["msfs"]
+# MSFS support through SimConnect. Windows only: SimConnect is a Windows SDK (its static
+# library is linked from `C:\MSFS 2024 SDK`, see simplesimconnect-sys/build.rs). On macOS and
+# Linux the feature does nothing, so a plain `cargo build` works everywhere. Build with
+# `--no-default-features` on Windows to leave it out when the SDK isn't installed.
+# build.rs turns "this feature on a Windows target" into `cfg(msfs)`, which the code checks.
+msfs = ["dep:simplesimconnect", "dep:simplesimconnect-sys"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -24,8 +33,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 csv = "1.3"
 rstar = "0.11"
-simplesimconnect = { path = "../../simplesimconnect" }
-simplesimconnect-sys = { path = "../../simplesimconnect-sys" }
 butterlog-wire = { path = "../../butterlog-service/wire" }
 chrono = "0.4"
 anyhow = "1.0"
@@ -54,3 +61,5 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+simplesimconnect = { path = "../../simplesimconnect", optional = true }
+simplesimconnect-sys = { path = "../../simplesimconnect-sys", optional = true }

@@ -133,6 +133,7 @@ fn s<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
 /// Re-validates every parameter rather than trusting the service, so a buggy or
 /// compromised client cannot drive an out-of-range value into a running sim.
 /// Returns `None` for anything unrecognised or out of range.
+#[cfg_attr(not(msfs), allow(dead_code))] // Used by the MSFS monitor only.
 pub fn msfs_event(kind: &str, params: &Value) -> Option<(&'static str, u32)> {
     match kind {
         "pause" => match s(params, "state")? {
