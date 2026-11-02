@@ -8,11 +8,11 @@
 #
 #   butterlog-app/  simplesimconnect/  simplesimconnect-sys/  butterlog-service/wire/
 #
+# The X-Plane plugin is bundled from the latest green master build of butterlog_xp_plugin
+# (public; its artifacts expire after 90 days, so rebuild the plugin if this step fails).
+#
 # Optional secrets; each step that needs one is skipped (with a notice) when it's missing:
 #
-#   XP_PLUGIN_TOKEN             a token that can read butterlog_xp_plugin (private) and its
-#                               Actions artifacts. Bundles the plugin from its latest green
-#                               master build; without it the app ships without the plugin.
 #   TAURI_SIGNING_PRIVATE_KEY   the updater key (C:\Users\arnau\butterlog.key, no password).
 #                               Without it no updater artifacts are made.
 #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
@@ -95,12 +95,8 @@ jobs:
       # only this platform's .xpl is needed.
       - name: Bundle the X-Plane plugin
         env:
-          GH_TOKEN: ${{ secrets.XP_PLUGIN_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::notice::No XP_PLUGIN_TOKEN; this build doesn't include the X-Plane plugin."
-            exit 0
-          fi
           repo=emergencybutter/butterlog_xp_plugin
           run=$(gh run list -R "$repo" -b master -w build -s success -L 1 --json databaseId -q '.[0].databaseId')
           if [ -z "$run" ]; then
