@@ -146,9 +146,13 @@ pub struct Connected {
     pub found: Vec<bool>,
 }
 
+/// How long the plugin may take to answer a subscription: X-Plane loading a flight.
+const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Connects to the plugin and subscribes. `None`, logged, when there is no plugin, or it
-/// isn't one this app understands; the Web API is used then. Blocking: localhost only, and
-/// a missing plugin refuses at once.
+/// isn't one this app understands; the Web API is used then. Blocking: a missing plugin
+/// fails within the 500 ms connect timeout and a silent one within 3 s, but a plugin that
+/// has said hello is waited on while X-Plane loads, up to [`SUBSCRIBE_TIMEOUT`].
 pub fn connect(app: &AppHandle, entries: &[(&str, Option<usize>)]) -> Option<Connected> {
     let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
     let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
@@ -171,6 +175,10 @@ pub fn connect(app: &AppHandle, entries: &[(&str, Option<usize>)]) -> Option<Con
             ));
         }
         stream.write_all(&subscribe(entries))?;
+        // HELLO comes from the plugin's network thread, SUBSCRIBED from X-Plane's flight
+        // loop, which doesn't run while X-Plane is still loading. The Web API answers well
+        // before then, so this can wait for the loading to end.
+        stream.set_read_timeout(Some(SUBSCRIBE_TIMEOUT))?;
         let found = loop {
             match read_message(&mut stream)? {
                 Message::Subscribed(found) if found.len() == entries.len() => break found,
@@ -199,7 +207,7 @@ pub fn connect(app: &AppHandle, entries: &[(&str, Option<usize>)]) -> Option<Con
             Some(c)
         }
         Err(e) => {
-            crate::append_log(app, format!("[Telemetry] X-Plane plugin link refused ({e}); recording through the Web API."));
+            crate::append_log(app, format!("[Telemetry] X-Plane plugin link failed ({e}); recording through the Web API."));
             None
         }
     }

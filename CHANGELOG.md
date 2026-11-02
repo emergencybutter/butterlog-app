@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- X-Plane telemetry fell back to the Web API for the whole flight when the app reached the plugin while X-Plane was still loading: the plugin answers a subscription from X-Plane's flight loop, which doesn't run until loading ends, and the app gave up after 3 seconds. It now waits up to 2 minutes for that answer (a plugin that doesn't say hello within 3 seconds still falls back at once).
+- After a flight ended, live tracking kept uploading to it every 20 seconds ("already ended") until the next flight: the sim monitor's periodic sync read the ended flight's id back from its log and made it current again. Syncs for an ended flight's log are now dropped.
+- X-Plane aircraft with fuel-injected piston engines (such as the C172 SP) were reported as turboprops; X-Plane's turboprops were reported as jets.
+
 ### Changed
 - Shared flight tracks are thinned on a new policy: straight and level keeps one sample per 5 minutes (was 1 per minute), and everything else — climbing, descending, turning — keeps one sample per second (was 1 per 10 seconds). Climbs, descents, turns and pattern work are now recorded at full logger fidelity while cruise costs a fifth of what it did.
 - "Straight and level" is now judged from the aircraft's instantaneous vertical speed and bank angle rather than only from how far it has drifted since the last kept sample. The drift check remains as a backstop, so a slow wander — or a sim reporting an unreliable vertical speed — still forces a sample.

@@ -28,6 +28,10 @@ pub struct WebhookManager {
     /// the live track uploader can find the in-progress flight without either
     /// sim monitor having to know about it.
     current_log_path: Mutex<Option<String>>,
+    /// The log of the last flight ended on the service. Its monitor keeps syncing until the
+    /// session closes, and a sync would read the ended flight's id back from the log and
+    /// make it current again; so syncs for this log are dropped. `reset` leaves it alone.
+    ended_log_path: Mutex<Option<String>>,
     last_update_time: Mutex<Option<std::time::Instant>>,
     is_syncing: Mutex<bool>,
 }
@@ -38,6 +42,7 @@ impl WebhookManager {
             client: Client::new(),
             current_remote_id: Mutex::new(None),
             current_log_path: Mutex::new(None),
+            ended_log_path: Mutex::new(None),
             last_update_time: Mutex::new(None),
             is_syncing: Mutex::new(false),
         }
@@ -58,6 +63,14 @@ impl WebhookManager {
             return None;
         }
         config.api_auth()
+    }
+
+    /// The current flight ended on the service: forget it, and ignore its log from now on.
+    pub fn finish(&self) {
+        if let Some(path) = self.current_log_path.lock().clone() {
+            *self.ended_log_path.lock() = Some(path);
+        }
+        self.reset();
     }
 
     pub fn reset(&self) {
@@ -81,6 +94,10 @@ impl WebhookManager {
             Some(auth) => auth,
             None => return,
         };
+
+        if !summary.log_path.is_empty() && self.ended_log_path.lock().as_deref() == Some(summary.log_path.as_str()) {
+            return;
+        }
 
         {
             let mut syncing = self.is_syncing.lock();

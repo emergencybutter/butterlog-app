@@ -96,6 +96,19 @@ async fn fetch_xplane_dataref_double(client: &reqwest::Client, rest_url: &str, n
     }
 }
 
+/// `sim/aircraft/prop/acf_en_type` in the words the MSFS side uses ("piston", "turboprop",
+/// "jet"). X-Plane's values: 0 carburetted piston, 1 fuel-injected piston, 2 free turbine,
+/// 3 electric, 4 low-bypass jet, 5 high-bypass jet, 6 rocket, 7 tip rockets, 8 fixed turbine.
+fn engine_type_name(acf_en_type: i32) -> &'static str {
+    match acf_en_type {
+        0 | 1 => "piston",
+        2 | 8 => "turboprop",
+        4 | 5 => "jet",
+        3 => "electric",
+        _ => "unknown",
+    }
+}
+
 /// Fetch the aircraft identity (name, livery, type, engines) from X-Plane via REST.
 /// These string/config datarefs aren't subscribable, so each call is a one-shot read.
 /// `title` is empty when no aircraft is loaded yet.
@@ -116,12 +129,7 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
     let num_engines = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/engine/acf_num_engines").await.unwrap_or(1.0) as i32;
 
     let en_type_val = fetch_xplane_dataref_double(client, rest_url, "sim/aircraft/prop/acf_en_type").await.unwrap_or(0.0) as i32;
-    let engine_type = match en_type_val {
-        0 => "piston".to_string(),
-        1 => "turboprop".to_string(),
-        2 => "jet".to_string(),
-        _ => "unknown".to_string(),
-    };
+    let engine_type = engine_type_name(en_type_val).to_string();
 
     AircraftInfo { title, livery, resolved_icao: String::new(), resolved_airline: String::new(), resolved_airline_icao: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
 }
@@ -1489,6 +1497,16 @@ async fn drain_sim_commands(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fuel_injected_pistons_are_pistons() {
+        assert_eq!(engine_type_name(0), "piston");
+        assert_eq!(engine_type_name(1), "piston"); // the C172 SP
+        assert_eq!(engine_type_name(2), "turboprop");
+        assert_eq!(engine_type_name(8), "turboprop");
+        assert_eq!(engine_type_name(5), "jet");
+        assert_eq!(engine_type_name(3), "electric");
+    }
 
     #[test]
     fn attitude_round_trips_between_log_and_xplane_signs() {

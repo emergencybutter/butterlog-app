@@ -367,6 +367,7 @@ impl LiveTrackUploader {
                     format!("[LiveTrack] Flight {} already ended; stopping", remote_id),
                 );
                 *self.state.lock() = None;
+                app.state::<crate::webhook_manager::WebhookManager>().finish();
             }
             Ok(r) => {
                 crate::append_log(
@@ -432,7 +433,7 @@ pub fn spawn_finalize(
         if let Some((_, remote_id)) = wm.current_flight() {
             end_flight(&app, remote_id, reason).await;
         }
-        wm.reset();
+        wm.finish();
     });
 }
 
