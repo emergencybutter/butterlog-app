@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.35] - 2026-11-02
+
 ### Added
 - Settings → ButterLog Service has a beta toggle, "Send flight telemetry to the service", for signed-in users. It does what the hidden `telemetry_beta` file in the app data directory did, which still works: the app records each flight's sim-native telemetry and streams it to the service, which analyses it beside the app. Nothing the user sees changes otherwise.
 

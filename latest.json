@@ -1,11 +1,11 @@
 {
-  "version": "0.3.34",
-  "notes": "Butterlog v0.3.34 Release\nX-Plane: ButterLog now installs and updates its plugin (Settings > X-Plane Plugin), and logs pitch, roll, heading, frequencies, engine data and aircraft type correctly. Arrival airports come from the runway, not the approach. Daily log files (Backend Logs > Open Log File).",
-  "pub_date": "2026-11-02T12:21:19Z",
+  "version": "0.3.35",
+  "notes": "Butterlog v0.3.35 Release\nBeta toggle for flight telemetry in Settings; better airline matching (ATR, Voyager Aviation, MSFS 'Dynamic' liveries); smaller traffic packets between ButterLog pilots",
+  "pub_date": "2026-11-03T02:56:37Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG4zMCt0b3dwMWczNHpyOGJDR0JsMTlOaW1GK2l0c1BRUUVpUkpDR2g3Wis2SWZhTEZFY3NadGR0Q2kvTlhXYk1uRFlnU2loaHp1RjR1VlFtY3dKb2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjIyMDc5CWZpbGU6YnV0dGVybG9nXzAuMy4zNF94NjQtc2V0dXAuZXhlCjh0YnRTOHdscFptS3JZSFJCMFhtY1NZZVZUTUhrTk9FSUJBbkN4NytxVjBLcU1TbHd6TzhjVmtXWFk4Nmt0c3VnbGNIMHJKYkxSVFVZdjlFa2FUVEJ3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.34_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG1GQldKeUt1bklIUS8wQmpDUlBEQmNTR0pJTUt2Q296YVJQVHpDMjVIaEhUOVBqbDA2VG8wVTdaTno0VTRNRWVjYkpKbVVVQkthODY3MGt1MEVhbEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjc0NTk2CWZpbGU6YnV0dGVybG9nXzAuMy4zNV94NjQtc2V0dXAuZXhlClEzR0xmcHZ0dGh4VnpMVzdLL2h0aU1OQlI5RmZSOVE5RnFPOUxwS0dWNW83Z3A4cklpQlVjMDhieHdJb0dKTGZrcjlIZVNVOFdPZGRXaGN3eUxpMEN3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.35_x64-setup.exe"
     }
   }
 }
