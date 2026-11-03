@@ -371,15 +371,16 @@ export function Settings() {
                                 <label>
                                     <input
                                         type="checkbox"
-                                        checked={config.telemetryBeta}
-                                        onChange={(e) => handleChange("telemetryBeta", e.target.checked)}
+                                        checked={!config.telemetryOff}
+                                        onChange={(e) => handleChange("telemetryOff", !e.target.checked)}
                                     />
-                                    <span>Beta: send flight telemetry to the service</span>
+                                    <span>Send flight telemetry to the service (beta)</span>
                                 </label>
                                 <span className="setting-hint">
-                                    Helps test the new flight analysis. The app also sends your
+                                    Helps test the new flight analysis: the app also sends your
                                     flight's recorded telemetry, which the service analyses
-                                    alongside the app. Your flights are logged and shared as before.
+                                    alongside the app. Your flights are logged and shared as before
+                                    either way.
                                 </span>
                             </div>
                         )}

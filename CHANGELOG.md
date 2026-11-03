@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Flight telemetry is on by default for signed-in users: Settings → ButterLog Service → "Send flight telemetry to the service (beta)" now turns it off rather than on. The setting is a new field, `telemetry_off`, since 0.3.35 saved `telemetry_beta: false` in every config; `telemetry_beta` and the hidden `telemetry_beta` file are no longer read.
+
 ## [0.3.35] - 2026-11-02
 
 ### Added

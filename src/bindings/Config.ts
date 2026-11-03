@@ -2,6 +2,8 @@
 
 export type Config = { logDirectory: string | null, screenshotDirectories: Array<string>, screenshotRegexEnabled: boolean, screenshotRegex: string, autoUploadScreenshots: boolean, enableWebhook: boolean, serviceUrl: string, apiToken: string, openAtLogin: boolean, startMinimized: boolean, injectButterlogTraffic: boolean, 
 /**
- * Streams each flight's telemetry to the service while the new pipeline is in beta.
+ * Stops streaming each flight's telemetry to the service, which a signed-in app does
+ * by default. A new field rather than `telemetry_beta` turned around: 0.3.35 saved
+ * `telemetry_beta: false` in every config, opted in or not.
  */
-telemetryBeta: boolean, };
+telemetryOff: boolean, };

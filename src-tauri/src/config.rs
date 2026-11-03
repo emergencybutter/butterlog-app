@@ -33,9 +33,11 @@ pub struct Config {
     pub open_at_login: bool,
     pub start_minimized: bool,
     pub inject_butterlog_traffic: bool,
-    /// Streams each flight's telemetry to the service while the new pipeline is in beta.
+    /// Stops streaming each flight's telemetry to the service, which a signed-in app does
+    /// by default. A new field rather than `telemetry_beta` turned around: 0.3.35 saved
+    /// `telemetry_beta: false` in every config, opted in or not.
     #[serde(default)]
-    pub telemetry_beta: bool,
+    pub telemetry_off: bool,
 }
 
 pub fn default_service_url() -> String {
@@ -164,7 +166,7 @@ impl Config {
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            telemetry_beta: false,
+            telemetry_off: false,
         }
     }
 }
@@ -186,7 +188,7 @@ impl Default for Config {
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            telemetry_beta: false,
+            telemetry_off: false,
         }
     }
 }

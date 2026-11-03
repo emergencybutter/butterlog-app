@@ -1,4 +1,4 @@
-//! What every capture path shares (`msfs.rs`, `xplane.rs`): the hidden switch, sessions
+//! What every capture path shares (`msfs.rs`, `xplane.rs`): whether to record, sessions
 //! keyed by the aircraft loaded, and ticks from the shared [`Sampler`] into [`Telemetry`].
 
 use super::{RecordError, Telemetry};
@@ -6,16 +6,11 @@ use crate::models::AircraftInfo;
 use butterlog_wire::{Aircraft, Channel, Event, PhaseInputs, Sampler, SessionOpen};
 use tauri::{AppHandle, Manager};
 
-/// While the pipeline is in beta, recording is opt-in: the Settings toggle, or this file in
-/// the app's data directory (how the first beta installs were switched on).
-pub const SWITCH_FILE: &str = "telemetry_beta";
-
-/// Whether to record: opted in, a signed-in app, and a spool.
+/// Whether to record: a signed-in app that hasn't turned telemetry off in Settings, and a
+/// spool.
 pub fn enabled(app: &AppHandle) -> bool {
     let config = app.state::<crate::config::ConfigManager>().get_config();
-    let opted_in = config.telemetry_beta
-        || app.path().app_data_dir().is_ok_and(|d| d.join(SWITCH_FILE).exists());
-    opted_in && config.is_logged_in() && app.try_state::<Telemetry>().is_some()
+    !config.telemetry_off && config.is_logged_in() && app.try_state::<Telemetry>().is_some()
 }
 
 /// The session header's aircraft, from what the monitor identified.
