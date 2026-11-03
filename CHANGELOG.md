@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- MSFS aircraft no longer show to X-Plane pilots with their gear up. The app read `GEAR TOTAL PCT EXTENDED` in "percent over 100", which for this variable gives 0.01 with the gear down; it now reads it in "percent", 0 to 1 as X-Plane's gear ratio is. Telemetry keeps the old unit, with a finer quantum, and the service scales it.
+
 ## [0.3.36] - 2026-11-03
 
 ### Changed

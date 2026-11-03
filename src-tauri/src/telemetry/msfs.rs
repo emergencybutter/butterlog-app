@@ -104,7 +104,10 @@ const SIMVARS: &[(&str, &str, f64, RateClass, DeltaOrder)] = &[
     ("PRESSURE ALTITUDE", "feet", 1.0, Frame, DeltaOfDelta),
     ("DENSITY ALTITUDE", "feet", 1.0, OnChange, DeltaOfDelta),
     ("PRESSURIZATION CABIN ALTITUDE", "feet", 1.0, OnChange, DeltaOfDelta),
-    ("GEAR TOTAL PCT EXTENDED", "percent over 100", 0.01, OnChange, Delta),
+    // The variable is already a fraction: in "percent over 100" the gear down reads 0.01
+    // (the service scales it). The unit is kept for the sessions already stored; the
+    // quantum is fine enough for the gear in transit.
+    ("GEAR TOTAL PCT EXTENDED", "percent over 100", 0.0001, OnChange, Delta),
     ("BRAKE PARKING POSITION", "bool", 1.0, OnChange, Delta),
     ("LIGHT NAV", "bool", 1.0, OnChange, Delta),
     ("LIGHT BEACON", "bool", 1.0, OnChange, Delta),

@@ -218,8 +218,10 @@ impl SimConnectMonitor {
 
         sc.add_to_data_definition::<f64>(define_id, "G FORCE", "gforce")?; // dummy for xp_prop_rpm
         // Real landing-gear extension (0..1) into the xp_gear_ratio slot so it
-        // propagates to peers; "percent over 100" yields a 0..1 fraction.
-        sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent over 100")?;
+        // propagates to peers. In "percent", not "percent over 100": the variable is
+        // already a fraction, and "percent over 100" read 0.01 with the gear down, which
+        // X-Plane peers drew as up.
+        sc.add_to_data_definition::<f64>(define_id, "GEAR TOTAL PCT EXTENDED", "percent")?;
         sc.add_to_data_definition::<f64>(define_id, "BRAKE PARKING POSITION", "bool")?;
         // Exterior light states (match the trailing FlightMetrics fields).
         sc.add_to_data_definition::<f64>(define_id, "LIGHT NAV", "bool")?;
