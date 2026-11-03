@@ -4,6 +4,15 @@ use crate::runways::{Runway, RunwaysDatabase};
 use rusqlite::{Connection, Row, params};
 use std::collections::{HashMap, VecDeque};
 
+/// What a resumed log gives the monitor back, for the statistics it uploads.
+#[derive(Default)]
+pub struct Restored {
+    /// Each metric's maximum over the log so far.
+    pub max_entries: Option<FlightMetrics>,
+    /// The frame the takeoff was taken at, the start of the feed's distance.
+    pub takeoff: Option<FlightMetrics>,
+}
+
 pub struct FlightAnalyzer {
     start_coords: Vec<(f64, f64)>,
     /// The latest stretch on the ground: from a touchdown through the rollout
@@ -418,9 +427,13 @@ impl FlightAnalyzer {
             .unwrap_or_else(|| "XXXX".to_string())
     }
 
-    pub fn restore(&mut self, conn: &Connection) -> anyhow::Result<()> {
+    /// Replays a log the monitor is resuming, and gives back what the monitor keeps of it
+    /// besides this state. A KTEB-LFPB Falcon 8X resumed on 2026-11-03 uploaded a max
+    /// altitude of 6,786 ft, the descent after the restart, from a FL415 cruise.
+    pub fn restore(&mut self, conn: &Connection) -> anyhow::Result<Restored> {
         self.reset();
-        
+        let mut restored = Restored::default();
+
         let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")?;
         let rows = stmt.query_map([], |row: &Row| {
             Ok(crate::flight_log_manager::FlightLogRow {
@@ -431,10 +444,18 @@ impl FlightAnalyzer {
 
         for row in rows {
             let row = row?;
+            let before = self.takeoff_timestamp.is_some();
             self.update(&row.metrics, &row.timestamp);
+            if !before && self.takeoff_timestamp.is_some() {
+                restored.takeoff = Some(row.metrics);
+            }
+            match restored.max_entries {
+                Some(ref mut max) => max.update_max(&row.metrics),
+                None => restored.max_entries = Some(row.metrics),
+            }
         }
 
-        Ok(())
+        Ok(restored)
     }
 
     // Refactored to be called by the monitor which has all DBs
@@ -899,6 +920,34 @@ mod tests {
             analyzer.update(&metrics, &format!("2026-04-30 12:40:{:02}", i));
         }
         assert_eq!(analyzer.find_end_icao(&db), "A3");
+    }
+
+    #[test]
+    fn a_resumed_log_keeps_its_maxima_and_takeoff() {
+        use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
+        let conn = Connection::open_in_memory().unwrap();
+        init_sqlite_db(&conn).unwrap();
+        let mut metrics = mock_metrics();
+        metrics.ground_speed = 5.0;
+        insert_sqlite_row(&conn, "2026-11-03 02:14:33.000", &metrics).unwrap();
+        metrics.indicated_airspeed = 140.0;
+        insert_sqlite_row(&conn, "2026-11-03 02:19:50.000", &metrics).unwrap();
+        metrics.is_on_ground = 0.0;
+        metrics.latitude = 40.85;
+        insert_sqlite_row(&conn, "2026-11-03 02:19:53.000", &metrics).unwrap();
+        // Cruise at FL415, then the descent the app was restarted in.
+        metrics.latitude = 45.0;
+        metrics.gps_altitude_msl = 41_800.0;
+        insert_sqlite_row(&conn, "2026-11-03 05:00:00.000", &metrics).unwrap();
+        metrics.gps_altitude_msl = 6_786.0;
+        insert_sqlite_row(&conn, "2026-11-03 14:25:00.000", &metrics).unwrap();
+
+        let mut analyzer = FlightAnalyzer::new();
+        let restored = analyzer.restore(&conn).unwrap();
+        assert_eq!(restored.max_entries.unwrap().gps_altitude_msl, 41_800.0);
+        let takeoff = restored.takeoff.unwrap();
+        assert_eq!(takeoff.latitude, 40.85);
+        assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-11-03 02:19:53.000"));
     }
 
     #[test]

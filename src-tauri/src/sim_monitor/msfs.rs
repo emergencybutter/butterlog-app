@@ -586,11 +586,14 @@ impl SimConnectMonitor {
 
                             // Restore analyzer state if resuming
                             if current_log_path.as_ref().map(|p| p.to_string_lossy().contains("butterlog_")).unwrap_or(false) && resumed_path.is_some() {
-                            if let Err(e) = analyzer.restore(&conn) {
-                                crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
-                            } else {
-                                start_time = analyzer.first_timestamp.clone();
-                                takeoff_time = analyzer.takeoff_timestamp.clone();
+                            match analyzer.restore(&conn) {
+                                Err(e) => crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e)),
+                                Ok(restored) => {
+                                    start_time = analyzer.first_timestamp.clone();
+                                    takeoff_time = analyzer.takeoff_timestamp.clone();
+                                    max_metrics = restored.max_entries;
+                                    takeoff_snapshot = restored.takeoff;
+                                }
                             }
                             }
                             // The departure isn't identified here: at SimStart the position is still
@@ -958,11 +961,14 @@ impl SimConnectMonitor {
                                 departure_set = has_dep.is_ok();
 
                                 if resumed_path.is_some() {
-                                    if let Err(e) = analyzer.restore(&conn) {
-                                        crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e));
-                                    } else {
-                                        start_time = analyzer.first_timestamp.clone().or(start_time);
-                                        takeoff_time = analyzer.takeoff_timestamp.clone();
+                                    match analyzer.restore(&conn) {
+                                        Err(e) => crate::append_log(app, format!("[MSFS] Error restoring analyzer: {}", e)),
+                                        Ok(restored) => {
+                                            start_time = analyzer.first_timestamp.clone().or(start_time);
+                                            takeoff_time = analyzer.takeoff_timestamp.clone();
+                                            max_metrics = restored.max_entries;
+                                            takeoff_snapshot = restored.takeoff;
+                                        }
                                     }
                                 }
 

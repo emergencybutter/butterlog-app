@@ -770,11 +770,14 @@ impl XPlaneMonitor {
 
                                 // Restore analyzer state if resuming
                                 if resumed_path.is_some() {
-                                    if let Err(e) = analyzer.restore(&conn) {
-                                        crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e));
-                                    } else {
-                                        start_time = analyzer.first_timestamp.clone();
-                                        takeoff_time = analyzer.takeoff_timestamp.clone();
+                                    match analyzer.restore(&conn) {
+                                        Err(e) => crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e)),
+                                        Ok(restored) => {
+                                            start_time = analyzer.first_timestamp.clone();
+                                            takeoff_time = analyzer.takeoff_timestamp.clone();
+                                            max_metrics = restored.max_entries;
+                                            takeoff_snapshot = restored.takeoff;
+                                        }
                                     }
                                 }
 
