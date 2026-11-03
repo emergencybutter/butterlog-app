@@ -1,11 +1,11 @@
 {
-  "version": "0.3.35",
-  "notes": "Butterlog v0.3.35 Release\nBeta toggle for flight telemetry in Settings; better airline matching (ATR, Voyager Aviation, MSFS 'Dynamic' liveries); smaller traffic packets between ButterLog pilots",
-  "pub_date": "2026-11-03T02:56:37Z",
+  "version": "0.3.36",
+  "notes": "Butterlog v0.3.36 Release\nFlight telemetry is now on by default for signed-in pilots (beta); turn it off in Settings under ButterLog Service",
+  "pub_date": "2026-11-03T13:31:16Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG1GQldKeUt1bklIUS8wQmpDUlBEQmNTR0pJTUt2Q296YVJQVHpDMjVIaEhUOVBqbDA2VG8wVTdaTno0VTRNRWVjYkpKbVVVQkthODY3MGt1MEVhbEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjc0NTk2CWZpbGU6YnV0dGVybG9nXzAuMy4zNV94NjQtc2V0dXAuZXhlClEzR0xmcHZ0dGh4VnpMVzdLL2h0aU1OQlI5RmZSOVE5RnFPOUxwS0dWNW83Z3A4cklpQlVjMDhieHdJb0dKTGZrcjlIZVNVOFdPZGRXaGN3eUxpMEN3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.35_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGlCQ01OeFgwenJjWmE3bmJTc2U4enBwdUNIRTBaaDBkcjM2N1hmcDFZWHc4M0Rmd2pta1N6T0pCVDhUNjIwUUhmd3lWcnZGMXhUQTdQR0Jqb0pNaUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzEyNjc2CWZpbGU6YnV0dGVybG9nXzAuMy4zNl94NjQtc2V0dXAuZXhlCnpJdmRuWjZ1NlVWTnNIRVlWRjh5cTZSVk1DUWwrSHJOd3AxMUIvMEFtckJpd0ptRXBmWXRMOHJOZWZHN0tabGdHbkxVby9uZi9qWWw1R3JyNEQ3d0FRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.36_x64-setup.exe"
     }
   }
 }
