@@ -29,6 +29,35 @@ static CUSTOM_SERVICE_URL: OnceLock<Option<String>> = OnceLock::new();
 pub fn get_custom_service_url() -> Option<String> {
     CUSTOM_SERVICE_URL.get().cloned().flatten()
 }
+
+/// Waits between attempts to load a bundled data file, longer each time.
+const RESOURCE_RETRY_SECS: [u64; 5] = [2, 5, 10, 20, 30];
+
+/// Loads a bundled data file, trying again a few times when it fails. A dev build can
+/// start while its build is still copying the file, and read it half written. Without the
+/// airports the app syncs no flight, so one bad read must not last the whole run.
+fn load_resource_with_retry<T>(
+    app: &AppHandle,
+    path: &std::path::Path,
+    load: impl Fn(&std::path::Path) -> Result<T, Box<dyn std::error::Error>>,
+) -> Option<T> {
+    let mut waits = RESOURCE_RETRY_SECS.iter();
+    loop {
+        match load(path) {
+            Ok(v) => return Some(v),
+            Err(err) => match waits.next() {
+                Some(&secs) => {
+                    append_log(app, format!("Failed to load {:?}, trying again in {}s: {}", path, secs, err));
+                    std::thread::sleep(std::time::Duration::from_secs(secs));
+                }
+                None => {
+                    append_log(app, format!("Failed to load {:?}, giving up: {}", path, err));
+                    return None;
+                }
+            },
+        }
+    }
+}
 use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
@@ -627,23 +656,14 @@ pub fn run() {
                     .resolve("../public/airports.csv", BaseDirectory::Resource)
                     .expect("Failed to resolve airports.csv resource");
 
-                match airports::AirportsDatabase::load_from_csv(&airports_path) {
-                    Ok(db) => {
-                        append_log(
-                            &airports_app_handle,
-                            format!(
-                                "Successfully loaded {} airports into backend memory.",
-                                db.airports.len()
-                            ),
-                        );
-                        airports_app_handle.manage(db);
-                    }
-                    Err(err) => {
-                        append_log(
-                            &airports_app_handle,
-                            format!("Failed to load airports.csv at {:?}: {}", airports_path, err),
-                        );
-                    }
+                if let Some(db) = load_resource_with_retry(&airports_app_handle, &airports_path, |p| {
+                    airports::AirportsDatabase::load_from_csv(p)
+                }) {
+                    append_log(
+                        &airports_app_handle,
+                        format!("Successfully loaded {} airports into backend memory.", db.airports.len()),
+                    );
+                    airports_app_handle.manage(db);
                 }
             });
 
@@ -655,23 +675,14 @@ pub fn run() {
                     .resolve("../public/runways.csv", BaseDirectory::Resource)
                     .expect("Failed to resolve runways.csv resource");
 
-                match runways::RunwaysDatabase::load_from_csv(&runways_path) {
-                    Ok(db) => {
-                        append_log(
-                            &runways_app_handle,
-                            format!(
-                                "Successfully loaded {} runways into backend memory.",
-                                db.runways.len()
-                            ),
-                        );
-                        runways_app_handle.manage(db);
-                    }
-                    Err(err) => {
-                        append_log(
-                            &runways_app_handle,
-                            format!("Failed to load runways.csv at {:?}: {}", runways_path, err),
-                        );
-                    }
+                if let Some(db) = load_resource_with_retry(&runways_app_handle, &runways_path, |p| {
+                    runways::RunwaysDatabase::load_from_csv(p)
+                }) {
+                    append_log(
+                        &runways_app_handle,
+                        format!("Successfully loaded {} runways into backend memory.", db.runways.len()),
+                    );
+                    runways_app_handle.manage(db);
                 }
             });
 

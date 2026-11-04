@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - When creating a flight, the app offers it to the service (`service_may_make`). For a user the service makes the flights of, from the flight's telemetry, it answers 202 and the app syncs nothing for that log: no flight, live track or screenshot upload, the service posting once the flight ends. For everyone else, and whenever the telemetry isn't arriving, the app makes the flight as before.
 
+### Fixed
+- The airport and runway tables are loaded again, a few times over a minute, when the first read fails. A dev build that started while its build was still copying `airports.csv` read it half written, and ran without airports, which leaves every flight unsynced: a KAST pattern flown with it never reached the service.
+
 ## [0.3.38] - 2026-11-04
 
 ### Fixed
