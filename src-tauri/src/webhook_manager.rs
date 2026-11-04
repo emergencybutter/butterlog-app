@@ -32,6 +32,9 @@ pub struct WebhookManager {
     /// session closes, and a sync would read the ended flight's id back from the log and
     /// make it current again; so syncs for this log are dropped. `reset` leaves it alone.
     ended_log_path: Mutex<Option<String>>,
+    /// The log of a flight the service makes from its telemetry: it said so when asked to
+    /// create it, so this log syncs nothing.
+    service_log_path: Mutex<Option<String>>,
     last_update_time: Mutex<Option<std::time::Instant>>,
     is_syncing: Mutex<bool>,
 }
@@ -43,6 +46,7 @@ impl WebhookManager {
             current_remote_id: Mutex::new(None),
             current_log_path: Mutex::new(None),
             ended_log_path: Mutex::new(None),
+            service_log_path: Mutex::new(None),
             last_update_time: Mutex::new(None),
             is_syncing: Mutex::new(false),
         }
@@ -96,6 +100,9 @@ impl WebhookManager {
         };
 
         if !summary.log_path.is_empty() && self.ended_log_path.lock().as_deref() == Some(summary.log_path.as_str()) {
+            return;
+        }
+        if !summary.log_path.is_empty() && self.service_log_path.lock().as_deref() == Some(summary.log_path.as_str()) {
             return;
         }
 
@@ -227,7 +234,8 @@ impl WebhookManager {
                 }
             }
             None => {
-                // Create
+                // Create. The service may make the flight from the telemetry instead, for
+                // a user it does that for, and answers 202 with no flight.
                 let url = format!("{}/flights", base_url);
                 let body = serde_json::json!({
                     "departure": summary.departure.icao,
@@ -235,12 +243,16 @@ impl WebhookManager {
                     "multiplayer_enabled": inject_traffic,
                     "udp_address": udp_address,
                     "latitude": latitude,
-                    "longitude": longitude
+                    "longitude": longitude,
+                    "service_may_make": true
                 });
 
                 match self.client.post(&url).bearer_auth(&api_token).json(&body).send().await {
                     Ok(res) => {
-                        if res.status().is_success() {
+                        if res.status() == reqwest::StatusCode::ACCEPTED {
+                            *self.service_log_path.lock() = Some(summary.log_path.clone());
+                            crate::append_log(app, "[Webhook] The service makes this flight from its telemetry".to_string());
+                        } else if res.status().is_success() {
                             if let Ok(data) = res.json::<WebhookFlightResponse>().await {
                                 *self.current_remote_id.lock() = Some(data.id);
                                 *self.last_update_time.lock() = Some(now);
