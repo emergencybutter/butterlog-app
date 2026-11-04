@@ -1,11 +1,11 @@
 {
-  "version": "0.3.37",
-  "notes": "Butterlog v0.3.37 Release\nMSFS aircraft no longer show with their gear up. Flights resumed after an app restart in the air keep their max altitude and takeoff position.",
-  "pub_date": "2026-11-04T00:36:43Z",
+  "version": "0.3.38",
+  "notes": "Butterlog v0.3.38 Release\nA flight resumed after an app restart in the air keeps its takeoff time at the takeoff roll, not the liftoff.",
+  "pub_date": "2026-11-04T14:46:48Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGdzZWw5NEUwWWpkNnFCYnJ5SlF4THZlQzFIWlp1YmozVzFwYTkwT01QcUZHN2Zmemp3U210dFlsejU4N2Qrakdudkc5ZkM4d0wrWUZhTnI5NXQ1bmc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzUyNjAyCWZpbGU6YnV0dGVybG9nXzAuMy4zN194NjQtc2V0dXAuZXhlCmpxYnFnQ0pEUDFQa0x0cThDSllJNFl1K1F5Q3ZyWmYxQkZocUk2dEs5dE1Kc1gzenZmcW80eCs0bllzZ0F5Wk5DQkVNeVZrVVhycDFVMkZ5QzRtUEN3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.37_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGlQSmxUblZVbWpOc0NPUHl6MCtLWnZXbzhMNkYrMFRZWVdiV0RKaW5EVC9LbVJnZzV3aDh6cXplNWloU2JHeDVEV1FQZmxhZi9pWElRcGdWTVUxRkFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODAzNjA4CWZpbGU6YnV0dGVybG9nXzAuMy4zOF94NjQtc2V0dXAuZXhlCjBoYUduTUFLdXhjY05tYVdqZ2NQY2lsY1Rxa2IycWVvVnkwQSszMmpVNkRhaGVpMnVoQ24zWUhmTHdFd2phcUY1K1p6THUxRHQvL05oSjBxOU1lQ0RBPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.38_x64-setup.exe"
     }
   }
 }

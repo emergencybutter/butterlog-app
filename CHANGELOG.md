@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.38] - 2026-11-04
+
 ### Fixed
 - A flight resumed after an app restart in the air keeps the takeoff time and position it would have had: the roll passing 45 kt, as in flight, not the liftoff. Resumed KTEB-LFPB and EGJJ-EGPH flights uploaded a takeoff about 20 s late, so the flight page and the feed counted their flight time short; 0.3.37's takeoff position for a resumed flight was the liftoff's too.
 
