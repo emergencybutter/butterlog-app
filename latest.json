@@ -1,11 +1,11 @@
 {
-  "version": "0.3.36",
-  "notes": "Butterlog v0.3.36 Release\nFlight telemetry is now on by default for signed-in pilots (beta); turn it off in Settings under ButterLog Service",
-  "pub_date": "2026-11-03T13:31:16Z",
+  "version": "0.3.37",
+  "notes": "Butterlog v0.3.37 Release\nMSFS aircraft no longer show with their gear up. Flights resumed after an app restart in the air keep their max altitude and takeoff position.",
+  "pub_date": "2026-11-04T00:36:43Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGlCQ01OeFgwenJjWmE3bmJTc2U4enBwdUNIRTBaaDBkcjM2N1hmcDFZWHc4M0Rmd2pta1N6T0pCVDhUNjIwUUhmd3lWcnZGMXhUQTdQR0Jqb0pNaUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzEyNjc2CWZpbGU6YnV0dGVybG9nXzAuMy4zNl94NjQtc2V0dXAuZXhlCnpJdmRuWjZ1NlVWTnNIRVlWRjh5cTZSVk1DUWwrSHJOd3AxMUIvMEFtckJpd0ptRXBmWXRMOHJOZWZHN0tabGdHbkxVby9uZi9qWWw1R3JyNEQ3d0FRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.36_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGdzZWw5NEUwWWpkNnFCYnJ5SlF4THZlQzFIWlp1YmozVzFwYTkwT01QcUZHN2Zmemp3U210dFlsejU4N2Qrakdudkc5ZkM4d0wrWUZhTnI5NXQ1bmc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzUyNjAyCWZpbGU6YnV0dGVybG9nXzAuMy4zN194NjQtc2V0dXAuZXhlCmpxYnFnQ0pEUDFQa0x0cThDSllJNFl1K1F5Q3ZyWmYxQkZocUk2dEs5dE1Kc1gzenZmcW80eCs0bllzZ0F5Wk5DQkVNeVZrVVhycDFVMkZ5QzRtUEN3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.37_x64-setup.exe"
     }
   }
 }

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.37] - 2026-11-03
+
 ### Fixed
 - MSFS aircraft no longer show to X-Plane pilots with their gear up. The app read `GEAR TOTAL PCT EXTENDED` in "percent over 100", which for this variable gives 0.01 with the gear down; it now reads it in "percent", 0 to 1 as X-Plane's gear ratio is. Telemetry keeps the old unit, with a finer quantum, and the service scales it.
 - A flight resumed after an app restart in the air uploads its maxima over the whole log, not only since the restart, and keeps its takeoff position. A KTEB-LFPB Falcon 8X resumed during its descent had uploaded a max altitude of 6,786 ft from a FL415 cruise, and no takeoff position, which the feed measures distance from.
