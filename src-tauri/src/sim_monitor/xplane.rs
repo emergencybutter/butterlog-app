@@ -774,7 +774,7 @@ impl XPlaneMonitor {
                                         Err(e) => crate::append_log(&app, format!("[X-Plane] Error restoring analyzer: {}", e)),
                                         Ok(restored) => {
                                             start_time = analyzer.first_timestamp.clone();
-                                            takeoff_time = analyzer.takeoff_timestamp.clone();
+                                            takeoff_time = restored.takeoff_time;
                                             max_metrics = restored.max_entries;
                                             takeoff_snapshot = restored.takeoff;
                                         }

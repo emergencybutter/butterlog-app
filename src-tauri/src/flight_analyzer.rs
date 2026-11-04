@@ -9,7 +9,11 @@ use std::collections::{HashMap, VecDeque};
 pub struct Restored {
     /// Each metric's maximum over the log so far.
     pub max_entries: Option<FlightMetrics>,
-    /// The frame the takeoff was taken at, the start of the feed's distance.
+    /// The takeoff as the monitor takes it in flight: the roll passing 45 kt, the first
+    /// time. A log with no roll in it, one that started in the air, falls back to the
+    /// liftoff.
+    pub takeoff_time: Option<String>,
+    /// The frame at `takeoff_time`, the start of the feed's distance.
     pub takeoff: Option<FlightMetrics>,
 }
 
@@ -442,17 +446,26 @@ impl FlightAnalyzer {
             })
         })?;
 
+        let mut liftoff = None;
         for row in rows {
             let row = row?;
-            let before = self.takeoff_timestamp.is_some();
-            self.update(&row.metrics, &row.timestamp);
-            if !before && self.takeoff_timestamp.is_some() {
+            let airborne = self.takeoff_timestamp.is_some();
+            let phase = self.update(&row.metrics, &row.timestamp);
+            if phase == Some(FlightPhase::Takeoff) && restored.takeoff_time.is_none() {
+                restored.takeoff_time = Some(row.timestamp.clone());
                 restored.takeoff = Some(row.metrics);
+            }
+            if !airborne && self.takeoff_timestamp.is_some() {
+                liftoff = Some(row.metrics);
             }
             match restored.max_entries {
                 Some(ref mut max) => max.update_max(&row.metrics),
                 None => restored.max_entries = Some(row.metrics),
             }
+        }
+        if restored.takeoff_time.is_none() {
+            restored.takeoff_time = self.takeoff_timestamp.clone();
+            restored.takeoff = liftoff;
         }
 
         Ok(restored)
@@ -930,11 +943,15 @@ mod tests {
         let mut metrics = mock_metrics();
         metrics.ground_speed = 5.0;
         insert_sqlite_row(&conn, "2026-11-03 02:14:33.000", &metrics).unwrap();
-        metrics.indicated_airspeed = 140.0;
-        insert_sqlite_row(&conn, "2026-11-03 02:19:50.000", &metrics).unwrap();
-        metrics.is_on_ground = 0.0;
-        metrics.latitude = 40.85;
+        // The roll passes 45 kt here, and lifts off 22 s and a runway's length on.
+        metrics.indicated_airspeed = 50.0;
+        metrics.latitude = 40.8566;
         insert_sqlite_row(&conn, "2026-11-03 02:19:53.000", &metrics).unwrap();
+        metrics.indicated_airspeed = 140.0;
+        metrics.latitude = 40.85;
+        insert_sqlite_row(&conn, "2026-11-03 02:20:10.000", &metrics).unwrap();
+        metrics.is_on_ground = 0.0;
+        insert_sqlite_row(&conn, "2026-11-03 02:20:15.000", &metrics).unwrap();
         // Cruise at FL415, then the descent the app was restarted in.
         metrics.latitude = 45.0;
         metrics.gps_altitude_msl = 41_800.0;
@@ -945,9 +962,29 @@ mod tests {
         let mut analyzer = FlightAnalyzer::new();
         let restored = analyzer.restore(&conn).unwrap();
         assert_eq!(restored.max_entries.unwrap().gps_altitude_msl, 41_800.0);
-        let takeoff = restored.takeoff.unwrap();
-        assert_eq!(takeoff.latitude, 40.85);
-        assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-11-03 02:19:53.000"));
+        // The takeoff the monitor takes in flight, the roll, not the liftoff: resumed
+        // KTEB-LFPB and EGJJ-EGPH flights uploaded theirs about 20 s late.
+        assert_eq!(restored.takeoff_time.as_deref(), Some("2026-11-03 02:19:53.000"));
+        assert_eq!(restored.takeoff.unwrap().latitude, 40.8566);
+        assert_eq!(analyzer.takeoff_timestamp.as_deref(), Some("2026-11-03 02:20:15.000"));
+    }
+
+    #[test]
+    fn a_log_that_started_in_the_air_takes_off_at_its_start() {
+        use crate::flight_log_manager::{init_sqlite_db, insert_sqlite_row};
+        let conn = Connection::open_in_memory().unwrap();
+        init_sqlite_db(&conn).unwrap();
+        let mut metrics = mock_metrics();
+        metrics.is_on_ground = 0.0;
+        metrics.indicated_airspeed = 250.0;
+        metrics.latitude = 49.0;
+        insert_sqlite_row(&conn, "2026-11-03 00:51:14.000", &metrics).unwrap();
+        metrics.latitude = 49.1;
+        insert_sqlite_row(&conn, "2026-11-03 00:52:14.000", &metrics).unwrap();
+
+        let restored = FlightAnalyzer::new().restore(&conn).unwrap();
+        assert_eq!(restored.takeoff_time.as_deref(), Some("2026-11-03 00:51:14.000"));
+        assert_eq!(restored.takeoff.unwrap().latitude, 49.0);
     }
 
     #[test]
