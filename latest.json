@@ -1,11 +1,11 @@
 {
-  "version": "0.3.38",
-  "notes": "Butterlog v0.3.38 Release\nA flight resumed after an app restart in the air keeps its takeoff time at the takeoff roll, not the liftoff.",
-  "pub_date": "2026-11-04T14:46:48Z",
+  "version": "0.3.39",
+  "notes": "Butterlog v0.3.39 Release\nLandings are scored against the runways your sim draws; screenshots land on the right flight",
+  "pub_date": "2026-11-05T19:10:45Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGlQSmxUblZVbWpOc0NPUHl6MCtLWnZXbzhMNkYrMFRZWVdiV0RKaW5EVC9LbVJnZzV3aDh6cXplNWloU2JHeDVEV1FQZmxhZi9pWElRcGdWTVUxRkFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODAzNjA4CWZpbGU6YnV0dGVybG9nXzAuMy4zOF94NjQtc2V0dXAuZXhlCjBoYUduTUFLdXhjY05tYVdqZ2NQY2lsY1Rxa2IycWVvVnkwQSszMmpVNkRhaGVpMnVoQ24zWUhmTHdFd2phcUY1K1p6THUxRHQvL05oSjBxOU1lQ0RBPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.38_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGszV25LM0MwUmdMTmV2SkdxZ2tSdkJCcFUxQVE1bEI5S0Zvblg3NFdyN1pqSlNwS2JhWitPWXRnbTROajBpNEZCWFMzUG90aTVQRG9EMU9yRk5UcXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTA1ODQ1CWZpbGU6YnV0dGVybG9nXzAuMy4zOV94NjQtc2V0dXAuZXhlCitqd2g3KzdEdE9TcjA4MHliaUVRc3Zpem91cU1VMnpUNlhBdW1lUmZuamJJK1pESDlza3R6Z1VMRXA4aVNVMnorZ2gxVEl4VUQvT2FOTWlzM3MreEJ3PT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.39_x64-setup.exe"
     }
   }
 }
