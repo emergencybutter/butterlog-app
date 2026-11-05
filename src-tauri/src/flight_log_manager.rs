@@ -930,6 +930,11 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
     let csv_filename = filename.replace(".db", ".csv");
     let csv_path = export_dir.join(&csv_filename);
 
+    // A flight the service made is exported from its telemetry.
+    if export_service_flight(&app, &db_path, &csv_path).await {
+        return Ok(csv_path.to_string_lossy().to_string());
+    }
+
     // Get aircraft info from summary table
     let conn = Connection::open(&db_path).map_err(|e| {
         let err = e.to_string();
@@ -1560,6 +1565,106 @@ fn read_remote_id(path: &std::path::Path) -> Option<i64> {
     ).ok()?.parse().ok()
 }
 
+/// The flight the service made from this log's telemetry, which the app has no id for.
+#[derive(Debug, serde::Deserialize)]
+struct ServiceFlight {
+    id: i64,
+    share_url: Option<String>,
+    export_url: String,
+}
+
+/// Asks the service for the flight it made over this log's span (`GET /flights/covering`).
+/// `None` when it made none, the app's own then being the flight, or it can't be reached.
+async fn service_flight(app: &AppHandle, path: &std::path::Path) -> Option<ServiceFlight> {
+    let (base_url, api_token) = app.state::<crate::config::ConfigManager>().get_config().api_auth()?;
+    let (from, to) = {
+        let conn = Connection::open(path).ok()?;
+        let (lo, hi): (Option<String>, Option<String>) = conn
+            .query_row("SELECT MIN(timestamp), MAX(timestamp) FROM metrics", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .ok()?;
+        (ts_to_epoch(&lo?), ts_to_epoch(&hi?))
+    };
+    if from <= 0 || to <= from {
+        return None;
+    }
+    let res = reqwest::Client::new()
+        .get(format!("{}/flights/covering", base_url))
+        .query(&[("from", from), ("to", to)])
+        .bearer_auth(&api_token)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await;
+    match res {
+        Ok(res) if res.status().is_success() => res.json::<ServiceFlight>().await.ok(),
+        Ok(res) if res.status() == reqwest::StatusCode::NOT_FOUND => None,
+        Ok(res) => {
+            crate::append_log(app, format!("[Service] Finding the service's flight failed: {}", res.status()));
+            None
+        }
+        Err(e) => {
+            crate::append_log(app, format!("[Service] Finding the service's flight failed: {}", e));
+            None
+        }
+    }
+}
+
+/// Shares the flight the service made, from the service's own document. `None` to share
+/// the app's instead.
+async fn share_service_flight(app: &AppHandle, path: &std::path::Path) -> Option<String> {
+    let flight = service_flight(app, path).await?;
+    if let Some(url) = flight.share_url {
+        return Some(url);
+    }
+    let (base_url, api_token) = app.state::<crate::config::ConfigManager>().get_config().api_auth()?;
+    let res = reqwest::Client::new()
+        .post(format!("{}/flights/{}/share", base_url, flight.id))
+        .bearer_auth(&api_token)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await;
+    #[derive(serde::Deserialize)]
+    struct ShareResponse { url: String }
+    match res {
+        Ok(res) if res.status().is_success() => res.json::<ShareResponse>().await.ok().map(|r| r.url),
+        Ok(res) => {
+            crate::append_log(app, format!("[Share] The service could not share flight {}: {}", flight.id, res.status()));
+            None
+        }
+        Err(e) => {
+            crate::append_log(app, format!("[Share] The service could not share flight {}: {}", flight.id, e));
+            None
+        }
+    }
+}
+
+/// Writes the service's FlySto export of the flight it made to `csv_path`. `false` to
+/// export the app's log instead.
+async fn export_service_flight(app: &AppHandle, path: &std::path::Path, csv_path: &std::path::Path) -> bool {
+    let Some(flight) = service_flight(app, path).await else { return false };
+    let Some((_, api_token)) = app.state::<crate::config::ConfigManager>().get_config().api_auth() else { return false };
+    let res = reqwest::Client::new()
+        .get(&flight.export_url)
+        .bearer_auth(&api_token)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await;
+    let body = match res {
+        Ok(res) if res.status().is_success() => res.bytes().await.map_err(|e| e.to_string()),
+        Ok(res) => Err(res.status().to_string()),
+        Err(e) => Err(e.to_string()),
+    };
+    match body.and_then(|b| fs::write(csv_path, &b).map_err(|e| e.to_string())) {
+        Ok(()) => {
+            crate::append_log(app, format!("[Export] Exported flight {} from the service", flight.id));
+            true
+        }
+        Err(e) => {
+            crate::append_log(app, format!("[Export] The service's export of flight {} failed, exporting the log: {}", flight.id, e));
+            false
+        }
+    }
+}
+
 pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<String, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
@@ -1583,6 +1688,18 @@ pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<Str
     let config = app.state::<crate::config::ConfigManager>().get_config();
     let (base_url, api_token) = config.api_auth()
         .ok_or("Not connected to ButterLog service. Log in first.")?;
+
+    // A flight the service made is shared from the service's own document.
+    if let Some(url) = share_service_flight(app, &path).await {
+        if let Ok(conn) = Connection::open(&path) {
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO summary (key, value) VALUES ('share_url', ?1)",
+                rusqlite::params![&url],
+            );
+        }
+        crate::append_log(app, format!("[Share] Flight shared by the service: {}", url));
+        return Ok(url);
+    }
 
     // Parse flight summary
     let summary = parse_db_file(app, &path).ok_or("Failed to parse flight summary")?;
