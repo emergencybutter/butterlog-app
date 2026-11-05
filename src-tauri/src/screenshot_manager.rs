@@ -56,6 +56,9 @@ impl ScreenshotManager {
         // Migrations for existing databases
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_hash TEXT", []);
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_url TEXT", []);
+        // The telemetry session recording when it was taken: a flight the service makes has
+        // no remote id here, so the screenshot is uploaded against the session instead.
+        let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN session_id TEXT", []);
 
         Self { db_path }
     }
@@ -64,17 +67,18 @@ impl ScreenshotManager {
         Connection::open(&self.db_path).map_err(|e| e.to_string())
     }
 
-    pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64) -> Result<i64, String> {
+    pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64, session_id: Option<&str>) -> Result<i64, String> {
         let conn = self.get_connection()?;
         // Insert only when this path is new. Re-scans (e.g. after a flight
         // completes) must keep the existing row so its id and upload state
         // (remote_hash/remote_url) are preserved — REPLACE would delete the row,
         // wiping the uploaded markers and assigning a new id.
+        // A re-scan knows no session; the one recorded first stays.
         conn.execute(
-            "INSERT INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(path) DO NOTHING",
-            params![flight_id, aircraft_title, path, timestamp, lat, lon],
+            "INSERT INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude, session_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(path) DO UPDATE SET session_id = COALESCE(screenshots.session_id, excluded.session_id)",
+            params![flight_id, aircraft_title, path, timestamp, lat, lon, session_id],
         ).map_err(|e| e.to_string())?;
         // Return the id for this path, whether just inserted or pre-existing.
         let id = conn.query_row(
@@ -279,6 +283,10 @@ fn handle_new_file(app: &AppHandle, path: PathBuf) {
             if !flight_id.is_empty() {
                 let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let manager = app.state::<ScreenshotManager>();
+                let session = app
+                    .try_state::<crate::telemetry::Telemetry>()
+                    .and_then(|t| t.current_session())
+                    .map(|id| id.to_string());
                 
                 match manager.record_screenshot(
                     &flight_id,
@@ -286,7 +294,8 @@ fn handle_new_file(app: &AppHandle, path: PathBuf) {
                     path.to_str().unwrap_or(""),
                     &timestamp,
                     metrics.latitude,
-                    metrics.longitude
+                    metrics.longitude,
+                    session.as_deref(),
                 ) {
                     Err(e) => crate::append_log(app, format!("Failed to record screenshot: {}", e)),
                     Ok(screenshot_id) => {
@@ -342,7 +351,7 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
 
             let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
             let timestamp = chrono::DateTime::<chrono::Utc>::from(created).format("%Y-%m-%d %H:%M:%S").to_string();
-            match manager.record_screenshot(flight_id, aircraft_title, path.to_str().unwrap_or(""), &timestamp, lat, lon) {
+            match manager.record_screenshot(flight_id, aircraft_title, path.to_str().unwrap_or(""), &timestamp, lat, lon, None) {
                 Ok(_) => total += 1,
                 Err(e) => crate::append_log(app, format!("Failed to record scanned screenshot: {}", e)),
             }
@@ -351,6 +360,14 @@ pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_ti
 
     crate::append_log(app, format!("Screenshot scan complete. Imported {} screenshots.", total));
     Ok(())
+}
+
+/// A screenshot's recorded time, UTC "YYYY-MM-DD HH:MM:SS", as the RFC 3339 the service
+/// takes.
+fn taken_at(timestamp: &str) -> Result<String, String> {
+    parse_ts(timestamp)
+        .and_then(|t| chrono::DateTime::from_timestamp(t, 0).ok_or_else(|| "Invalid timestamp".to_string()))
+        .map(|t| t.to_rfc3339())
 }
 
 fn parse_ts(ts: &str) -> Result<i64, String> {
@@ -492,7 +509,9 @@ pub async fn perform_screenshot_upload(
     screenshot_id: i64,
     flight_id: String,
 ) -> Result<String, String> {
-    let remote_id = get_remote_id_internal(&app, &flight_id).await?.ok_or("Flight not synced with remote server (no remote ID)")?;
+    // The flight the app made on the service, or else the telemetry session it was taken
+    // in: the service makes that flight and places the screenshot on it by its time.
+    let remote_id = get_remote_id_internal(&app, &flight_id).await?;
 
     let config = app.state::<ConfigManager>().get_config();
     if !config.enable_webhook {
@@ -504,14 +523,13 @@ pub async fn perform_screenshot_upload(
     // Reading, decoding, and WebP-encoding a 4K screenshot is heavy blocking
     // work; run it off the async runtime threads.
     let db_path = app.state::<ScreenshotManager>().db_path.clone();
-    let (webp_vec, file_name) = tauri::async_runtime::spawn_blocking(move || -> Result<(Vec<u8>, String), String> {
-        // Get screenshot path
-        let screenshot = {
+    let (webp_vec, file_name, session_id, timestamp) = tauri::async_runtime::spawn_blocking(move || -> Result<(Vec<u8>, String, Option<String>, String), String> {
+        let (screenshot, session_id, timestamp) = {
             let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
             conn.query_row(
-                "SELECT path FROM screenshots WHERE id = ?1",
+                "SELECT path, session_id, timestamp FROM screenshots WHERE id = ?1",
                 rusqlite::params![screenshot_id],
-                |r| r.get::<_, String>(0)
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?))
             ).map_err(|e| format!("Screenshot not found in database: {}", e))?
         };
 
@@ -544,20 +562,30 @@ pub async fn perform_screenshot_upload(
         path_webp.set_extension("webp");
         let file_name = path_webp.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot.webp").to_string();
 
-        Ok((webp_vec, file_name))
+        Ok((webp_vec, file_name, session_id, timestamp))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;
 
     let client = reqwest::Client::new();
-    let url = format!("{}/flights/{}/screenshots", base_url, remote_id);
-
     let part = reqwest::multipart::Part::bytes(webp_vec)
         .file_name(file_name)
         .mime_str("image/webp")
         .map_err(|e| e.to_string())?;
-
     let form = reqwest::multipart::Form::new().part("screenshot", part);
+    let (url, form, target) = match (remote_id, session_id) {
+        (Some(remote_id), _) => (
+            format!("{}/flights/{}/screenshots", base_url, remote_id),
+            form,
+            format!("remote flight {}", remote_id),
+        ),
+        (None, Some(session)) => (
+            format!("{}/sessions/{}/screenshots", base_url, session),
+            form.text("taken_at", taken_at(&timestamp)?),
+            format!("telemetry session {}", session),
+        ),
+        (None, None) => return Err("Flight not synced with remote server (no remote ID)".to_string()),
+    };
 
     let res = client.post(&url)
         .bearer_auth(&api_token)
@@ -587,10 +615,21 @@ pub async fn perform_screenshot_upload(
     let url = data.url.as_deref().unwrap_or("");
     app.state::<ScreenshotManager>().mark_as_uploaded(screenshot_id, &data.hash, url)?;
 
-    crate::append_log(&app, format!("Successfully uploaded screenshot {} to remote flight {}", screenshot_id, remote_id));
+    crate::append_log(&app, format!("Successfully uploaded screenshot {} to {}", screenshot_id, target));
 
     // Notify UI
     let _ = app.emit("screenshot-uploaded", screenshot_id);
 
     Ok(data.hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recorded_time_goes_up_as_rfc3339_utc() {
+        assert_eq!(taken_at("2026-11-05 01:57:58").unwrap(), "2026-11-05T01:57:58+00:00");
+        assert!(taken_at("not a time").is_err());
+    }
 }

@@ -74,6 +74,11 @@ impl Telemetry {
         &self.spool
     }
 
+    /// The session being recorded, if any: a screenshot taken now is uploaded against it.
+    pub fn current_session(&self) -> Option<Uuid> {
+        self.live.lock().as_ref().map(|r| r.id)
+    }
+
     /// Starts a session, ending the one being recorded first.
     pub fn start(&self, open: &SessionOpen) -> Result<Uuid, SpoolError> {
         let mut live = self.live.lock();
