@@ -22,7 +22,9 @@ use butterlog_wire::{
     SessionOpen, PROTOCOL_VERSION,
 };
 use serde_json::Value;
+use butterlog_wire::SimRunways;
 use std::collections::HashMap;
+use std::sync::mpsc;
 use tauri::AppHandle;
 
 use DeltaOrder::{Delta, DeltaOfDelta};
@@ -212,6 +214,8 @@ pub struct XplaneSampler {
     /// The latest groundspeed, m/s; see [`HPATH_MIN_GROUNDSPEED`].
     groundspeed: f64,
     ids: StateIds,
+    /// The runways of a touchdown being looked up in X-Plane's scenery.
+    runways: Option<mpsc::Receiver<Vec<SimRunways>>>,
 }
 
 /// The channels that carry sim state.
@@ -261,8 +265,14 @@ impl XplaneSampler {
             id("sim/flightmodel/position/vh_ind"),
             id("sim/flightmodel/position/phi"),
         );
+        let mut recorder = Recorder::new(app, &channels(), phase);
+        recorder.watch_touchdowns(
+            id("sim/flightmodel/failures/onground_any"),
+            id("sim/flightmodel/position/latitude"),
+            id("sim/flightmodel/position/longitude"),
+        );
         Some(Self {
-            recorder: Recorder::new(app, &channels(), phase),
+            recorder,
             capture,
             info: None,
             by_id,
@@ -283,7 +293,30 @@ impl XplaneSampler {
                 groundspeed: id(GROUNDSPEED),
                 hpath: id(HPATH),
             },
+            runways: None,
         })
+    }
+
+    /// Looks up the runways of a touchdown in X-Plane's scenery, off this thread, and
+    /// records those found.
+    fn runways(&mut self) {
+        if let Some(rx) = &self.runways {
+            match rx.try_recv() {
+                Ok(found) => {
+                    found.iter().for_each(|r| self.recorder.runways(r));
+                    self.runways = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => self.runways = None,
+            }
+        }
+        let Some(at) = self.recorder.take_touchdown() else { return };
+        let (tx, rx) = mpsc::channel();
+        let installs = crate::xp_plugin_install::installs();
+        std::thread::spawn(move || {
+            let _ = tx.send(super::runways::xplane_near(&installs, at));
+        });
+        self.runways = Some(rx);
     }
 
     fn flags(&self) -> u8 {
@@ -356,6 +389,7 @@ impl XplaneSampler {
                 }
             }
         }
+        self.runways();
         let flags = self.flags();
         self.recorder.tick(flags);
     }
@@ -373,6 +407,7 @@ impl XplaneSampler {
         }
         self.recorder.set_sim_time(sim_time);
         self.recorder.set_wall_time(wall_ms);
+        self.runways();
         let flags = self.flags();
         self.recorder.tick(flags);
     }

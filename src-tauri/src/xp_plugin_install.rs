@@ -88,7 +88,7 @@ pub fn parse_install_list(text: &str) -> Vec<PathBuf> {
     installs
 }
 
-fn installs() -> Vec<PathBuf> {
+pub(crate) fn installs() -> Vec<PathBuf> {
     install_list().and_then(|p| fs::read_to_string(p).ok()).map_or_else(Vec::new, |t| parse_install_list(&t))
 }
 

@@ -1,9 +1,10 @@
 //! What every capture path shares (`msfs.rs`, `xplane.rs`): whether to record, sessions
 //! keyed by the aircraft loaded, and ticks from the shared [`Sampler`] into [`Telemetry`].
 
+use super::runways::TouchdownWatch;
 use super::{RecordError, Telemetry};
 use crate::models::AircraftInfo;
-use butterlog_wire::{Aircraft, Channel, Event, PhaseInputs, Sampler, SessionOpen};
+use butterlog_wire::{Aircraft, Channel, Event, EventKind, PhaseInputs, Sampler, SessionOpen, SimRunways};
 use tauri::{AppHandle, Manager};
 
 /// Whether to record: a signed-in app that hasn't turned telemetry off in Settings, and a
@@ -33,11 +34,23 @@ pub struct Recorder {
     wall_ms: Option<i64>,
     /// Title and livery of the aircraft being recorded.
     recording: Option<(String, String)>,
+    touchdowns: Option<TouchdownWatch>,
 }
 
 impl Recorder {
     pub fn new(app: &AppHandle, channels: &[Channel], phase: PhaseInputs) -> Self {
-        Self { app: app.clone(), sampler: Sampler::new(channels, phase), sim_time: None, wall_ms: None, recording: None }
+        Self {
+            app: app.clone(),
+            sampler: Sampler::new(channels, phase),
+            sim_time: None,
+            wall_ms: None,
+            recording: None,
+            touchdowns: None,
+        }
+    }
+
+    pub fn log(&self, message: String) {
+        crate::append_log(&self.app, message);
     }
 
     /// For the session header.
@@ -47,6 +60,30 @@ impl Recorder {
 
     pub fn set(&mut self, channel: u16, value: f64) {
         self.sampler.set(channel, value);
+        if let Some(watch) = self.touchdowns.as_mut() {
+            watch.set(channel, value, chrono::Utc::now().timestamp_millis());
+        }
+    }
+
+    /// Notices touchdowns from these channels: the on-ground flag and the position.
+    pub fn watch_touchdowns(&mut self, on_ground: u16, latitude: u16, longitude: u16) {
+        self.touchdowns = Some(TouchdownWatch::new(on_ground, latitude, longitude));
+    }
+
+    /// Where the aircraft touched down, once per touchdown, while a session records.
+    pub fn take_touchdown(&mut self) -> Option<(f64, f64)> {
+        let at = self.touchdowns.as_mut()?.take()?;
+        self.recording.as_ref().map(|_| at)
+    }
+
+    /// The runways the sim draws around a touchdown, for the service to measure it
+    /// against. Goes with the next tick.
+    pub fn runways(&mut self, found: &SimRunways) {
+        crate::append_log(
+            &self.app,
+            format!("[Telemetry] {} runway(s) of {} from the sim.", found.runways.len(), found.airport),
+        );
+        self.sampler.event(Event { kind: EventKind::Runways, detail: found.encode() });
     }
 
     pub fn set_sim_time(&mut self, sim_time: f64) {

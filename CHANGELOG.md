@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- At each touchdown, the telemetry session carries the runways the sim draws around it (a `Runways` event), for the service to score the landing against: MSFS's from SimConnect's facilities (the nearest airport loaded, its runways and displaced thresholds), X-Plane's from the `apt.dat` of the scenery pack that has the airport, in `scenery_packs.ini` order. The public runway data scored PHJH landings 70 ft off a 100 ft runway, twice, and a KAST landing 3 ft from X-Plane's centreline at 92% of the half-width.
+
 ### Changed
 - When creating a flight, the app offers it to the service (`service_may_make`). For a user the service makes the flights of, from the flight's telemetry, it answers 202 and the app syncs nothing for that log: no flight or live track, the service posting as the flight flies. For everyone else, and whenever the telemetry isn't arriving, the app makes the flight as before.
 - Each screenshot records the telemetry session recording when it was taken. For a flight the service makes, which has no remote id in the app, the upload goes to that session (`POST /sessions/{id}/screenshots`, with when it was taken), and the service puts it on the flight at that time. Flights the app makes upload to the flight as before.

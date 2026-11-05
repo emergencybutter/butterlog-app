@@ -8,7 +8,10 @@
 
 #[cfg(msfs)]
 pub mod msfs;
+#[cfg(msfs)]
+pub mod msfs_runways;
 pub mod recorder;
+pub mod runways;
 pub mod spool;
 pub mod uploader;
 pub mod xp_plugin;

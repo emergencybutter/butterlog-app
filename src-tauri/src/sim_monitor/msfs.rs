@@ -431,8 +431,11 @@ impl SimConnectMonitor {
                     // shorter messages aren't.
                     if msg.request_id() == Some(crate::telemetry::msfs::REQUEST_ID) {
                         if let Some(data) = msg.as_tagged_f64() {
-                            ts.on_data(&data);
+                            ts.on_data(&sc, &data);
                         }
+                        continue;
+                    }
+                    if ts.on_message(&sc, &msg) {
                         continue;
                     }
                     if let Some(event) = msg.as_event() {

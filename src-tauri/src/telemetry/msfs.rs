@@ -12,6 +12,7 @@
 //!
 //! Behind the hidden switch of [`super::recorder::enabled`].
 
+use super::msfs_runways::RunwayLookup;
 use super::recorder::{aircraft, enabled, Recorder};
 use crate::models::AircraftInfo;
 use butterlog_wire::{
@@ -19,8 +20,8 @@ use butterlog_wire::{
     SessionOpen, PROTOCOL_VERSION,
 };
 use simplesimconnect::{
-    SimConnect, SimInfo, DATA_REQUEST_FLAG_CHANGED, DATA_REQUEST_FLAG_TAGGED, DWORD,
-    OBJECT_ID_USER, PERIOD_SIM_FRAME,
+    DispatchMessage, SimConnect, SimInfo, DATA_REQUEST_FLAG_CHANGED, DATA_REQUEST_FLAG_TAGGED,
+    DWORD, OBJECT_ID_USER, PERIOD_SIM_FRAME,
 };
 use tauri::AppHandle;
 
@@ -153,6 +154,8 @@ pub struct MsfsSampler {
     paused: bool,
     slew: bool,
     sim_rate: f64,
+    /// `None` when the sim refused the facility definition: no runways then.
+    runways: Option<RunwayLookup>,
 }
 
 impl MsfsSampler {
@@ -184,12 +187,22 @@ impl MsfsSampler {
             id("VERTICAL SPEED"),
             id("PLANE BANK DEGREES"),
         );
+        let mut recorder = Recorder::new(app, &channels(), phase);
+        recorder.watch_touchdowns(id("SIM ON GROUND"), id("PLANE LATITUDE"), id("PLANE LONGITUDE"));
+        let runways = match super::msfs_runways::register(sc) {
+            Ok(()) => Some(RunwayLookup::default()),
+            Err(e) => {
+                crate::append_log(app, format!("[Telemetry] No runways from the sim: {e}"));
+                None
+            }
+        };
         Ok(Some(Self {
-            recorder: Recorder::new(app, &channels(), phase),
+            recorder,
             sim: None,
             paused: false,
             slew: false,
             sim_rate: 1.0,
+            runways,
         }))
     }
 
@@ -216,8 +229,9 @@ impl MsfsSampler {
         self.recorder.tick(flags);
     }
 
-    /// One SimConnect message: the datums that changed this frame.
-    pub fn on_data(&mut self, data: &[(DWORD, f64)]) {
+    /// One SimConnect message: the datums that changed this frame. A touchdown starts
+    /// looking up the runways around it on `sc`.
+    pub fn on_data(&mut self, sc: &SimConnect, data: &[(DWORD, f64)]) {
         let (slew, rate) = (id("IS SLEW ACTIVE") as DWORD, id("SIMULATION RATE") as DWORD);
         for (datum, value) in data {
             match *datum {
@@ -231,6 +245,27 @@ impl MsfsSampler {
             }
         }
         self.tick();
+        if let (Some(at), Some(lookup)) = (self.recorder.take_touchdown(), self.runways.as_mut()) {
+            if let Err(e) = lookup.start(sc, at) {
+                self.recorder.log(format!("[Telemetry] Could not look up the runways: {e}"));
+            }
+        }
+    }
+
+    /// Any message: those answering a runway lookup are taken; the runways found go in the
+    /// session. Returns whether it was one.
+    pub fn on_message(&mut self, sc: &SimConnect, msg: &DispatchMessage) -> bool {
+        let Some(lookup) = self.runways.as_mut() else { return false };
+        lookup.expire();
+        let answers = msg.as_airport_list().is_some()
+            || msg.as_facility_data().is_some()
+            || msg.as_facility_data_end().is_some();
+        match lookup.on_message(sc, msg) {
+            Some(Ok(found)) => self.recorder.runways(&found),
+            Some(Err(e)) => self.recorder.log(format!("[Telemetry] No runways from the sim: {e}")),
+            None => {}
+        }
+        answers
     }
 
     /// A system event, if it is one of ours: `data` is the event's value, `file` the path a
