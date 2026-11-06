@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - The operating airline is no longer read from a livery's registration or a plain word: Icelandair's TF-ISN was Interisland Airlines, "US Airways (New)" Northeastern Aviation, and "Atlas Air" Atlas Airlines. An airline named in full now wins over one matched by its call sign.
+- Fokker jets (F27, F28, F50, F70, F100) get their type instead of the F.VIIa, and Boeing short names ("732 TwinJet", "[762 GE]") theirs: the 767-200ER was a 777-200.
 
 ### Removed
 - Sharing a flight at the end of each flight, and the share upload (`POST /flights/share`), with the share document it built.
