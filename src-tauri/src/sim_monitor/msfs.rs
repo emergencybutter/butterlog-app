@@ -1338,20 +1338,6 @@ impl SimConnectMonitor {
                                                 };
                                                 crate::live_track::spawn_finalize(&app, summary.clone(), "landed");
 
-                                                let app_share = app.clone();
-                                                let fname_share = current_log_path.as_ref()
-                                                    .and_then(|p| p.file_name())
-                                                    .map(|n| n.to_string_lossy().to_string())
-                                                    .unwrap_or_default();
-                                                tauri::async_runtime::spawn(async move {
-                                                    let cfg = app_share.state::<crate::config::ConfigManager>().get_config();
-                                                    if cfg.is_logged_in() && !fname_share.is_empty() {
-                                                        match crate::flight_log_manager::perform_share_flight(&app_share, &fname_share).await {
-                                                            Ok(url) => crate::append_log(&app_share, format!("[AutoShare] {}", url)),
-                                                            Err(e) => crate::append_log(&app_share, format!("[AutoShare] Failed: {}", e)),
-                                                        }
-                                                    }
-                                                });
                                             }
 
                                             let start_name = db.get_by_ident(&start_icao).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());

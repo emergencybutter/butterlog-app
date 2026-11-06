@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, memo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import 'leaflet/dist/leaflet.css';
 import { Config, FlightLogRow, FlightSummary, Runway, Screenshot } from "./models";
 import { RunwayMap, TrajectoryPoint } from "./flight-details/RunwayMap";
@@ -27,8 +27,7 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
     const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
-    const [sharing, setSharing] = useState(false);
-    const [shareUrl, setShareUrl] = useState<string | null>(null);
+    const [opening, setOpening] = useState(false);
     const [shareToast, setShareToast] = useState<string | null>(null);
     const [remoteId, setRemoteId] = useState<number | null>(null);
     const [webhookEnabled, setWebhookEnabled] = useState(false);
@@ -335,33 +334,24 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
         }
     };
 
-    useEffect(() => {
-        invoke<string | null>("get_share_url", { filename: flight.filename })
-            .then(url => { if (url) setShareUrl(url); })
-            .catch(() => {});
-    }, [flight.filename]);
-
     const showToast = (msg: string) => {
         setShareToast(msg);
         setTimeout(() => setShareToast(null), 3000);
     };
 
-    const handleShare = async () => {
-        if (shareUrl) {
-            await navigator.clipboard.writeText(shareUrl).catch(() => {});
-            showToast("URL copied to clipboard");
-            return;
-        }
-        setSharing(true);
+    // The flight's page on the service shows all of it, to everyone: open it, and copy
+    // its link to pass on.
+    const handleOpenWeb = async () => {
+        setOpening(true);
         try {
-            const url = await invoke<string>("share_flight", { filename: flight.filename });
-            setShareUrl(url);
+            const url = await invoke<string>("flight_web_url", { filename: flight.filename });
             await navigator.clipboard.writeText(url).catch(() => {});
-            showToast("Flight shared — URL copied to clipboard");
+            await openUrl(url);
+            showToast("Opened in your browser - link copied");
         } catch (e) {
-            showToast(`Share failed: ${e}`);
+            showToast(`${e}`);
         } finally {
-            setSharing(false);
+            setOpening(false);
         }
     };
 
@@ -419,16 +409,14 @@ function FlightDetailsComponent({ flight: initialFlight, currentFlightId }: { fl
                     <p style={{ color: "#888", margin: "5px 0" }}>{flight.startTime} ({flight.durationMinutes} min)</p>
                 </div>
                 <div>
-                    {!isCurrentFlight && (
-                        <button
-                            onClick={handleShare}
-                            disabled={sharing}
-                            style={{ marginRight: "10px", backgroundColor: shareUrl ? "#36e3c6" : "#ffb000", color: "#11111b" }}
-                            title={shareUrl ? "Click to copy share URL" : "Upload and share this flight"}
-                        >
-                            {sharing ? "Sharing..." : shareUrl ? "Copy Share URL" : "Share"}
-                        </button>
-                    )}
+                    <button
+                        onClick={handleOpenWeb}
+                        disabled={opening}
+                        style={{ marginRight: "10px", backgroundColor: "#36e3c6", color: "#11111b" }}
+                        title="Open this flight's page on the web and copy its link"
+                    >
+                        {opening ? "Opening..." : "Open on web"}
+                    </button>
                     <button
                         onClick={handleExport}
                         disabled={exporting}

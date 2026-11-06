@@ -61,7 +61,7 @@ impl Config {
     /// saved service URL.
     /// Whether the app is linked to the service.
     ///
-    /// Sharing finished flights, streaming them live, and accepting sim
+    /// Putting flights on the web, streaming them live, and accepting sim
     /// commands from the pilot's own flight page all follow from this rather
     /// than from switches of their own: they are the point of signing in, and
     /// the service only ever offers the controls to the flight's owner.

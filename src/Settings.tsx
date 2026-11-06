@@ -362,8 +362,9 @@ export function Settings() {
                         </div>
                         {isLoggedIn && (
                             <span className="setting-hint">
-                                Signing in shares each completed flight, streams it live while you
-                                fly, and lets you drive your own simulator from its flight page.
+                                Signing in puts each flight on the web, live while you fly and in
+                                full once you land, and lets you drive your own simulator from its
+                                flight page.
                             </span>
                         )}
                         {isLoggedIn && (
@@ -379,7 +380,7 @@ export function Settings() {
                                 <span className="setting-hint">
                                     Helps test the new flight analysis: the app also sends your
                                     flight's recorded telemetry, which the service analyses
-                                    alongside the app. Your flights are logged and shared as before
+                                    alongside the app. Your flights are logged and on the web as before
                                     either way.
                                 </span>
                             </div>

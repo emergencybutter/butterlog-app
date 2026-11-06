@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
-- Share and Export for a flight the service made come from the service. The app asks it which of its flights the log's span covers (`GET /flights/covering`); Share then gives back that flight's share or has the service make one from its own document (`POST /flights/{id}/share`), so the share page shows what the flight page and the Discord post show, and Export saves the service's FlySto CSV, built from the telemetry, to the same file. Auto-share at the end of a flight goes the same way. For a flight the app made, or when the service can't be reached, both work from the local log as before.
+- No more shares: every flight's page on the service shows all of it, its track, 3D view, maps and graphs. The Share button is now **Open on web**, which opens the flight's page and copies its link: the flight the app made, by its id, or the one the service made from the log's telemetry, which the app finds by the log's span (`GET /flights/covering`). A flight shared by an older version opens its share link, which leads to the flight.
+- Export for a flight the service made saves the service's FlySto CSV, built from the telemetry, to the same file. For a flight the app made, or when the service can't be reached, it exports the local log as before.
+
+### Removed
+- Sharing a flight at the end of each flight, and the share upload (`POST /flights/share`), with the share document it built.
 
 ## [0.3.39] - 2026-11-05
 

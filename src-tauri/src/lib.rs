@@ -66,7 +66,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use config::{Config, ConfigManager};
 use flight_log_manager::{
     export_flight_to_csv, get_flight_data, get_flight_data_since, import_flight_from_csv,
-    scan_logs, share_flight, get_share_url, rescan_flight_screenshots, set_flight_notes, FlightSummary,
+    scan_logs, flight_web_url, rescan_flight_screenshots, set_flight_notes, FlightSummary,
 };
 use models::FlightMetrics;
 use multiplayer::MultiplayerManager;
@@ -751,8 +751,7 @@ pub fn run() {
             export_flight_to_csv,
             set_flight_notes,
             import_flight_from_csv,
-            share_flight,
-            get_share_url,
+            flight_web_url,
             rescan_flight_screenshots,
             get_runways,
             flight_log_manager::get_aircraft_stats,

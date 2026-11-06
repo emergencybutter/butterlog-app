@@ -1397,70 +1397,7 @@ fn save_imported_flight(
         .ok_or_else(|| anyhow::anyhow!("Failed to parse the imported flight summary"))
 }
 
-// ── Share feature ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TransposedFlightData {
-    pub timestamps: Vec<i64>,
-    pub latitudes: Vec<f32>,
-    pub longitudes: Vec<f32>,
-    pub altitudes: Vec<f32>,
-    pub ias: Vec<f32>,
-    pub vspeed: Vec<f32>,
-    pub pitch: Vec<f32>,
-    pub roll: Vec<f32>,
-    #[serde(default)]
-    pub heading: Vec<f32>,
-    #[serde(default)]
-    pub track: Vec<f32>,
-    #[serde(default)]
-    pub ground_speed: Vec<f32>,
-    #[serde(default)]
-    pub true_airspeed: Vec<f32>,
-    #[serde(default)]
-    pub baro: Vec<f32>,
-    #[serde(default)]
-    pub magvar: Vec<f32>,
-    #[serde(default)]
-    pub g_load: Vec<f32>,
-    #[serde(default)]
-    pub oat: Vec<f32>,
-    #[serde(default)]
-    pub wind_speed: Vec<f32>,
-    #[serde(default)]
-    pub wind_dir: Vec<f32>,
-    #[serde(default)]
-    pub fuel_flow: Vec<f32>,
-    #[serde(default)]
-    pub fuel_left: Vec<f32>,
-    #[serde(default)]
-    pub fuel_right: Vec<f32>,
-    #[serde(default)]
-    pub rpm: Vec<f32>,
-    #[serde(default)]
-    pub pct_power: Vec<f32>,
-    #[serde(default)]
-    pub manifold: Vec<f32>,
-    #[serde(default)]
-    pub oil_temp: Vec<f32>,
-    #[serde(default)]
-    pub oil_press: Vec<f32>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShareScreenshot {
-    pub timestamp: i64,
-    pub url: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FlightDetailShare {
-    pub transposed_data: TransposedFlightData,
-    pub summary: FlightSummary,
-    pub screenshots: Vec<ShareScreenshot>,
-    pub remote_flight_id: Option<i64>,
-}
+// ── Track thinning, for the live track upload ─────────────────────────────────
 
 pub fn ts_to_epoch(ts: &str) -> i64 {
     NaiveDateTime::parse_from_str(ts.split('.').next().unwrap_or(ts), "%Y-%m-%d %H:%M:%S")
@@ -1502,9 +1439,9 @@ fn hdg_diff(a: f64, b: f64) -> f64 {
 
 /// The thinning policy as resumable state.
 ///
-/// Sharing one policy between the share document (which sees the whole flight at
-/// once) and the live uploader (which sees it 20 seconds at a time) matters: the
-/// decision depends on the last *kept* sample, so an uploader that restarted the
+/// The live uploader sees the flight 20 seconds at a time and keeps one policy
+/// across its batches, which matters: the decision depends on the last *kept*
+/// sample, so an uploader that restarted the
 /// policy on every batch would keep the first sample of every batch and hold
 /// cruise at one sample per flush instead of one per STEADY_SECS.
 #[derive(Default)]
@@ -1548,6 +1485,7 @@ impl Downsampler {
     }
 }
 
+#[cfg(test)]
 fn downsample(rows: &[FlightLogRow], event_epochs: &[i64]) -> Vec<usize> {
     let mut policy = Downsampler::new();
     rows.iter()
@@ -1569,7 +1507,7 @@ fn read_remote_id(path: &std::path::Path) -> Option<i64> {
 #[derive(Debug, serde::Deserialize)]
 struct ServiceFlight {
     id: i64,
-    share_url: Option<String>,
+    url: String,
     export_url: String,
 }
 
@@ -1608,35 +1546,6 @@ async fn service_flight(app: &AppHandle, path: &std::path::Path) -> Option<Servi
     }
 }
 
-/// Shares the flight the service made, from the service's own document. `None` to share
-/// the app's instead.
-async fn share_service_flight(app: &AppHandle, path: &std::path::Path) -> Option<String> {
-    let flight = service_flight(app, path).await?;
-    if let Some(url) = flight.share_url {
-        return Some(url);
-    }
-    let (base_url, api_token) = app.state::<crate::config::ConfigManager>().get_config().api_auth()?;
-    let res = reqwest::Client::new()
-        .post(format!("{}/flights/{}/share", base_url, flight.id))
-        .bearer_auth(&api_token)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await;
-    #[derive(serde::Deserialize)]
-    struct ShareResponse { url: String }
-    match res {
-        Ok(res) if res.status().is_success() => res.json::<ShareResponse>().await.ok().map(|r| r.url),
-        Ok(res) => {
-            crate::append_log(app, format!("[Share] The service could not share flight {}: {}", flight.id, res.status()));
-            None
-        }
-        Err(e) => {
-            crate::append_log(app, format!("[Share] The service could not share flight {}: {}", flight.id, e));
-            None
-        }
-    }
-}
-
 /// Writes the service's FlySto export of the flight it made to `csv_path`. `false` to
 /// export the app's log instead.
 async fn export_service_flight(app: &AppHandle, path: &std::path::Path, csv_path: &std::path::Path) -> bool {
@@ -1663,199 +1572,6 @@ async fn export_service_flight(app: &AppHandle, path: &std::path::Path, csv_path
             false
         }
     }
-}
-
-pub async fn perform_share_flight(app: &AppHandle, filename: &str) -> Result<String, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(filename);
-
-    if !path.exists() {
-        return Err("Flight log not found".to_string());
-    }
-
-    // Return existing share URL if already shared
-    if let Ok(conn) = Connection::open(&path) {
-        if let Ok(Some(url)) = conn.query_row(
-            "SELECT value FROM summary WHERE key = 'share_url'",
-            [],
-            |r| r.get::<_, String>(0),
-        ).optional() {
-            return Ok(url);
-        }
-    }
-
-    let config = app.state::<crate::config::ConfigManager>().get_config();
-    let (base_url, api_token) = config.api_auth()
-        .ok_or("Not connected to ButterLog service. Log in first.")?;
-
-    // A flight the service made is shared from the service's own document.
-    if let Some(url) = share_service_flight(app, &path).await {
-        if let Ok(conn) = Connection::open(&path) {
-            let _ = conn.execute(
-                "INSERT OR REPLACE INTO summary (key, value) VALUES ('share_url', ?1)",
-                rusqlite::params![&url],
-            );
-        }
-        crate::append_log(app, format!("[Share] Flight shared by the service: {}", url));
-        return Ok(url);
-    }
-
-    // Parse flight summary
-    let summary = parse_db_file(app, &path).ok_or("Failed to parse flight summary")?;
-
-    let event_epochs: Vec<i64> = summary.events.iter()
-        .filter(|e| e.event_type == "takeoff" || e.event_type == "landing")
-        .map(|e| ts_to_epoch(&e.timestamp))
-        .filter(|&t| t > 0)
-        .collect();
-
-    // Read flight rows directly from DB
-    let all_rows: Vec<FlightLogRow> = {
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        let mut stmt = conn.prepare("SELECT * FROM metrics ORDER BY timestamp ASC")
-            .map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| Ok(FlightLogRow {
-            timestamp: row.get(0)?,
-            metrics: map_row_to_metrics(row)?,
-        })).map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
-
-    let indices = downsample(&all_rows, &event_epochs);
-
-    let n = indices.len();
-    let mut timestamps = Vec::with_capacity(n);
-    let mut latitudes = Vec::with_capacity(n);
-    let mut longitudes = Vec::with_capacity(n);
-    let mut altitudes = Vec::with_capacity(n);
-    let mut ias = Vec::with_capacity(n);
-    let mut vspeed = Vec::with_capacity(n);
-    let mut pitch = Vec::with_capacity(n);
-    let mut roll = Vec::with_capacity(n);
-    let mut heading = Vec::with_capacity(n);
-    let mut track = Vec::with_capacity(n);
-    let mut ground_speed = Vec::with_capacity(n);
-    let mut true_airspeed = Vec::with_capacity(n);
-    let mut baro = Vec::with_capacity(n);
-    let mut magvar = Vec::with_capacity(n);
-    let mut g_load = Vec::with_capacity(n);
-    let mut oat = Vec::with_capacity(n);
-    let mut wind_speed = Vec::with_capacity(n);
-    let mut wind_dir = Vec::with_capacity(n);
-    let mut fuel_flow = Vec::with_capacity(n);
-    let mut fuel_left = Vec::with_capacity(n);
-    let mut fuel_right = Vec::with_capacity(n);
-    let mut rpm = Vec::with_capacity(n);
-    let mut pct_power = Vec::with_capacity(n);
-    let mut manifold = Vec::with_capacity(n);
-    let mut oil_temp = Vec::with_capacity(n);
-    let mut oil_press = Vec::with_capacity(n);
-
-    let mut prev_epoch = 0i64;
-    for (pos, &i) in indices.iter().enumerate() {
-        let row = &all_rows[i];
-        let epoch = ts_to_epoch(&row.timestamp);
-        timestamps.push(if pos == 0 { prev_epoch = epoch; epoch } else { let d = epoch - prev_epoch; prev_epoch = epoch; d });
-        latitudes.push(row.metrics.latitude as f32);
-        longitudes.push(row.metrics.longitude as f32);
-        altitudes.push(row.metrics.indicated_altitude as f32);
-        ias.push(row.metrics.indicated_airspeed as f32);
-        vspeed.push(row.metrics.vertical_speed as f32);
-        pitch.push(row.metrics.pitch_angle as f32);
-        roll.push(row.metrics.roll_angle as f32);
-        heading.push(row.metrics.heading as f32);
-        track.push(row.metrics.track as f32);
-        ground_speed.push(row.metrics.ground_speed as f32);
-        true_airspeed.push(row.metrics.true_airspeed as f32);
-        baro.push(row.metrics.altimeter_setting as f32);
-        magvar.push(row.metrics.magnetic_variation as f32);
-        g_load.push(row.metrics.normal_acceleration as f32);
-        oat.push(row.metrics.outside_air_temp as f32);
-        wind_speed.push(row.metrics.wind_speed as f32);
-        wind_dir.push(row.metrics.wind_direction as f32);
-        fuel_flow.push(row.metrics.engine_1_fuel_flow as f32);
-        fuel_left.push(row.metrics.fuel_quantity_left as f32);
-        fuel_right.push(row.metrics.fuel_quantity_right as f32);
-        rpm.push(row.metrics.engine_1_rpm as f32);
-        pct_power.push(row.metrics.engine_1_percent_power as f32);
-        manifold.push(row.metrics.engine_1_manifold_pressure as f32);
-        oil_temp.push(row.metrics.engine_1_oil_temp as f32);
-        oil_press.push(row.metrics.engine_1_oil_pressure as f32);
-    }
-
-    let remote_flight_id = read_remote_id(&path);
-
-    // Include screenshots that have already been uploaded (have a public URL)
-    let flight_id = filename.replace(".db", "");
-    let screenshots: Vec<ShareScreenshot> = if let Some(mgr) = app.try_state::<crate::screenshot_manager::ScreenshotManager>() {
-        mgr.get_screenshots_for_flight(&flight_id)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| {
-                let url = s.remote_url.filter(|u| !u.is_empty())?;
-                Some(ShareScreenshot {
-                    timestamp: ts_to_epoch(&s.timestamp),
-                    url,
-                })
-            })
-            .collect()
-    } else {
-        vec![]
-    };
-
-    let share = FlightDetailShare {
-        transposed_data: TransposedFlightData { timestamps, latitudes, longitudes, altitudes, ias, vspeed, pitch, roll, heading, track, ground_speed, true_airspeed, baro, magvar, g_load, oat, wind_speed, wind_dir, fuel_flow, fuel_left, fuel_right, rpm, pct_power, manifold, oil_temp, oil_press },
-        summary,
-        screenshots,
-        remote_flight_id,
-    };
-
-    let json = serde_json::to_string(&share).map_err(|e| e.to_string())?;
-
-    use flate2::write::GzEncoder;
-    use flate2::Compression;
-    use std::io::Write;
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
-    let compressed = encoder.finish().map_err(|e| e.to_string())?;
-
-    let upload_url = format!("{}/flights/share", base_url);
-    let client = reqwest::Client::new();
-    let res = client.post(&upload_url)
-        .bearer_auth(&api_token)
-        .header("Content-Type", "application/octet-stream")
-        .body(compressed)
-        .send()
-        .await
-        .map_err(|e| format!("Upload failed: {}", e))?;
-
-    if !res.status().is_success() {
-        let status = res.status();
-        if status.as_u16() == 401 {
-            crate::force_logout(app, "service rejected token during share upload");
-        }
-        let text = res.text().await.unwrap_or_default();
-        let msg = format!("Share failed ({}): {}", status, text);
-        crate::append_log(app, format!("[Share] {}", msg));
-        return Err(msg);
-    }
-
-    #[derive(serde::Deserialize)]
-    struct ShareResponse { url: String }
-    let data = res.json::<ShareResponse>().await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    // Persist share URL locally
-    if let Ok(conn) = Connection::open(&path) {
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO summary (key, value) VALUES ('share_url', ?1)",
-            rusqlite::params![&data.url],
-        );
-    }
-
-    crate::append_log(app, format!("[Share] Flight shared: {}", data.url));
-    Ok(data.url)
 }
 
 #[tauri::command]
@@ -1897,111 +1613,29 @@ pub async fn rescan_flight_screenshots(app: AppHandle, filename: String) -> Resu
     Ok(after.saturating_sub(before))
 }
 
+/// The flight's page on the service, which shows all of it: the flight the app made, by
+/// the id it was given, or the one the service made from the log's telemetry.
 #[tauri::command]
-pub async fn share_flight(app: AppHandle, filename: String) -> Result<String, String> {
-    perform_share_flight(&app, &filename).await
-}
-
-#[tauri::command]
-pub async fn get_share_url(app: AppHandle, filename: String) -> Result<Option<String>, String> {
+pub async fn flight_web_url(app: AppHandle, filename: String) -> Result<String, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(&filename);
-    if !path.exists() { return Ok(None); }
-
-    let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    let share_url: Option<String> = conn.query_row(
-        "SELECT value FROM summary WHERE key = 'share_url'",
-        [],
-        |r| r.get::<_, String>(0),
-    ).optional().map_err(|e| e.to_string())?;
-
-    let share_url = match share_url {
-        None => return Ok(None),
-        Some(u) => u,
-    };
-
-    // Derive the JSON API URL from the share URL to verify it still exists
-    // share_url: .../content/flights/share/{id}  →  .../api/v0/flights/share/{id}
-    let share_id = share_url.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
-    let mut base = share_url.trim_end_matches('/').to_string();
-    // strip path down to origin
-    if let Some(custom_url) = crate::get_custom_service_url() {
-        base = base.replace("https://butterlog.flyvoyager.net", &custom_url);
+    let path = app_data_dir.join(crate::config::get_flightlogs_dir_name()).join(&filename);
+    if !path.exists() {
+        return Err("Flight log not found".to_string());
     }
-    let origin = if let Some(idx) = base.find("/content") { base[..idx].to_string() }
-                 else if let Some(idx) = base.find("/flights") { base[..idx].to_string() }
-                 else { "https://butterlog.flyvoyager.net".to_string() };
-    let check_url = format!("{}/api/v0/flights/share/{}", origin, share_id);
-
-    let status = reqwest::Client::new()
-        .head(&check_url)
-        .send()
-        .await
-        .map(|r| r.status().as_u16())
-        .unwrap_or(200); // if request fails (offline etc.), assume still valid
-
-    if status == 404 {
-        // Share was deleted remotely — clear local record
-        let _ = conn.execute("DELETE FROM summary WHERE key = 'share_url'", []);
-        crate::append_log(&app, format!("[Share] Cleared stale share URL for {}", filename));
-        return Ok(None);
+    let (base_url, _) = app.state::<crate::config::ConfigManager>().get_config().api_auth()
+        .ok_or("Not connected to ButterLog service. Log in first.")?;
+    let site = base_url.trim_end_matches("/api/v0").to_string();
+    if let Some(id) = read_remote_id(&path) {
+        return Ok(format!("{}/content/flights/{}", site, id));
     }
-
-    Ok(Some(share_url))
-}
-
-#[tauri::command]
-pub async fn delete_flight_share(app: AppHandle, filename: String) -> Result<(), String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(&filename);
-
-    let share_url = {
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.query_row(
-            "SELECT value FROM summary WHERE key = 'share_url'",
-            [],
-            |r| r.get::<_, String>(0),
-        ).optional().map_err(|e| e.to_string())?
-    };
-
-    let share_url = share_url.ok_or("This flight has no share URL")?;
-
-    // Extract share ID from URL (last path segment)
-    let share_id = share_url.trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .ok_or("Invalid share URL")?
-        .to_string();
-
-    let config = app.state::<crate::config::ConfigManager>().get_config();
-    let (base_url, api_token) = config.api_auth()
-        .ok_or("Not connected to ButterLog service")?;
-
-    let delete_url = format!("{}/flights/share/{}", base_url, share_id);
-    let res = reqwest::Client::new()
-        .delete(&delete_url)
-        .bearer_auth(&api_token)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-
-    if res.status().as_u16() == 401 {
-        crate::force_logout(&app, "service rejected token during share deletion");
+    if let Some(flight) = service_flight(&app, &path).await {
+        return Ok(flight.url);
     }
-    if !res.status().is_success() && res.status().as_u16() != 404 {
-        let text = res.text().await.unwrap_or_default();
-        return Err(format!("Delete failed: {}", text));
-    }
-
-    // Clear share URL from local DB
-    let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM summary WHERE key = 'share_url'", [])
-        .map_err(|e| e.to_string())?;
-
-    crate::append_log(&app, format!("[Share] Deleted share {}", share_id));
-    Ok(())
+    // A share an older app made, whose link leads to its flight.
+    let share_url: Option<String> = Connection::open(&path).ok().and_then(|conn| {
+        conn.query_row("SELECT value FROM summary WHERE key = 'share_url'", [], |r| r.get::<_, String>(0)).ok()
+    });
+    share_url.ok_or_else(|| "This flight isn't on the web yet.".to_string())
 }
 
 #[cfg(test)]
