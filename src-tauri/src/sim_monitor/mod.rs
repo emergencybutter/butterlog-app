@@ -39,6 +39,11 @@ pub trait SimMonitor: Send + Sync {
     fn start(&self, app: AppHandle, log_path: Option<PathBuf>) -> anyhow::Result<()>;
     fn stop(&self);
     fn get_metrics(&self) -> FlightMetrics;
+    /// Our metrics as peers take them. `get_metrics` holds what the sim reports; traffic
+    /// carries MSFS's attitude signs whichever sim sends it.
+    fn traffic_metrics(&self) -> FlightMetrics {
+        self.get_metrics()
+    }
     fn get_aircraft_info(&self) -> crate::models::AircraftInfo;
     fn get_current_flight_id(&self) -> String;
     fn is_connected(&self) -> bool;

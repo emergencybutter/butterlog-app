@@ -905,6 +905,28 @@ pub async fn set_flight_notes(app: AppHandle, filename: String, notes: String) -
     Ok(())
 }
 
+/// Which sim made a log, as `record_simulator` noted it; empty for a log from before that.
+fn logged_simulator(conn: &Connection) -> String {
+    conn.query_row("SELECT value FROM summary WHERE key = 'simulator'", [], |r| r.get(0))
+        .unwrap_or_default()
+}
+
+/// Notes which sim is writing a log, since its metrics are in that sim's signs.
+pub fn record_simulator(conn: &Connection, simulator: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO summary (key, value) VALUES ('simulator', ?1)",
+        params![simulator],
+    )
+    .map(|_| ())
+}
+
+/// What takes a logged pitch or roll to the CSV's nose up and right wing down positive.
+/// Metrics are in the sim's signs, and only X-Plane's already match. Imported logs and
+/// those with no sim noted hold MSFS's.
+fn export_attitude_sign(simulator: &str) -> f64 {
+    if simulator == "X-Plane" { 1.0 } else { -1.0 }
+}
+
 #[tauri::command]
 pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<String, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
@@ -954,6 +976,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
             e
         })
         .unwrap_or_else(|_| "Simulated Aircraft".to_string());
+    let attitude = export_attitude_sign(&logged_simulator(&conn));
 
     let data = get_flight_data(app.clone(), filename, app.state::<crate::RegenerateSummaryFlag>()).await?;
 
@@ -979,7 +1002,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
 
         writeln!(file, "{}, {}, {}, {}, {:.6}, {:.6}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.3}, {:.3}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.2}, {:.2}, {:.1}, {:.1}, {:.1}, {:.2}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}, {}, {:.0}, {:.3}, {:.3}, {:.3}, {:.3}, {:.2}, {:.2}, {:.1}, {:.1}, {:.2}, {:.1}, {:.2}, {}, {}, {}, {:.1}, {:.1}, {:.1}, {}, {:.1}, {:.1}, {:.1}, {:.1}, {:.1}",
             date, time, utc_offset, "", m.latitude, m.longitude, m.indicated_altitude, m.altimeter_setting, m.gps_altitude_msl, m.outside_air_temp,
-            m.indicated_airspeed, m.ground_speed, m.vertical_speed, -m.pitch_angle, -m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
+            m.indicated_airspeed, m.ground_speed, m.vertical_speed, attitude * m.pitch_angle, attitude * m.roll_angle, m.lateral_acceleration, m.normal_acceleration,
             m.heading, m.track, m.volts_1, m.volts_2, m.amps_1, m.fuel_quantity_left, m.fuel_quantity_right,
             m.engine_1_fuel_flow, m.engine_1_oil_temp, m.engine_1_oil_pressure, m.engine_1_manifold_pressure, m.engine_1_rpm, m.engine_1_percent_power,
             m.engine_1_cht_1, m.engine_1_cht_2, m.engine_1_cht_3, m.engine_1_cht_4, m.engine_1_cht_5, m.engine_1_cht_6,
@@ -987,7 +1010,7 @@ pub async fn export_flight_to_csv(app: AppHandle, filename: String) -> Result<St
             m.engine_1_tit_1, m.engine_1_tit_2, m.gps_altitude_wgs84, m.true_airspeed, "GPS", m.selected_course,
             m.nav_1_frequency, m.nav_2_frequency, m.com_1_frequency, m.com_2_frequency, m.horizontal_cdi, m.vertical_cdi, m.wind_speed, m.wind_direction,
             m.waypoint_distance, m.waypoint_bearing, m.magnetic_variation, if m.autopilot_active > 0.5 { "1" } else { "0" },
-            "NONE", "NONE", -m.roll_command, -m.pitch_command, m.vertical_speed_target, "3DDiff",
+            "NONE", "NONE", attitude * m.roll_command, attitude * m.pitch_command, m.vertical_speed_target, "3DDiff",
             "", "", "", "", ""
         ).map_err(|e| e.to_string())?;
     }

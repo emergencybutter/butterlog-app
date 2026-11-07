@@ -134,10 +134,18 @@ async fn fetch_xplane_aircraft_identity(client: &reqwest::Client, rest_url: &str
     AircraftInfo { title, livery, resolved_icao: String::new(), resolved_airline: String::new(), resolved_airline_icao: String::new(), atc_model, atc_id, object_class, category, num_engines, engine_type }
 }
 
-/// A pitch or roll from the logs' MSFS signs (nose down, left wing down positive) to
-/// X-Plane's (nose up, right wing down positive), for traffic drawn by the plugin.
+/// A pitch or roll between the MSFS signs traffic travels in (nose down, left wing down
+/// positive) and X-Plane's (nose up, right wing down positive). The conversion is its own
+/// inverse. Logs are not converted: they hold what the sim reports.
 fn to_xplane_attitude(degrees: f64) -> f64 {
     -degrees
+}
+
+/// Our metrics with the attitude in the signs traffic travels in.
+fn traffic_attitude(mut m: FlightMetrics) -> FlightMetrics {
+    m.pitch_angle = to_xplane_attitude(m.pitch_angle);
+    m.roll_angle = to_xplane_attitude(m.roll_angle);
+    m
 }
 
 /// Resolve the ICAO type and operating airline from the title + livery, as the service
@@ -539,10 +547,10 @@ impl XPlaneMonitor {
                         if let Some(v) = get_path_double("sim/cockpit2/gauges/indicators/altitude_ft_pilot") { m.indicated_altitude = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit/misc/barometer_setting") { m.altimeter_setting = v; updated = true; }
                         if let Some(v) = get_path_double("sim/weather/temperature_ambient_c") { m.outside_air_temp = v; updated = true; }
-                        // Logs use MSFS's signs, nose down and left wing down positive; X-Plane's are the
-                        // opposite. See `to_xplane_attitude` for traffic going the other way.
-                        if let Some(v) = get_path_double("sim/flightmodel/position/theta") { m.pitch_angle = -v; updated = true; }
-                        if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = -v; updated = true; }
+                        // As the sim reports them, nose up and right wing down positive: the service
+                        // applies each sim's signs. See `traffic_metrics` for what peers are sent.
+                        if let Some(v) = get_path_double("sim/flightmodel/position/theta") { m.pitch_angle = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/flightmodel/position/phi") { m.roll_angle = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/forces/g_side") { m.lateral_acceleration = v; updated = true; }
                         if let Some(v) = get_path_double("sim/flightmodel/position/hpath") { m.track = v; updated = true; }
 
@@ -587,8 +595,8 @@ impl XPlaneMonitor {
                             m.autopilot_active = if v > 0.5 { 1.0 } else { 0.0 };
                             updated = true;
                         }
-                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = -v; updated = true; }
-                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = -v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_pitch_deg") { m.pitch_command = v; updated = true; }
+                        if let Some(v) = get_path_double("sim/cockpit2/autopilot/sync_hold_roll_deg") { m.roll_command = v; updated = true; }
                         if let Some(v) = get_path_double("sim/cockpit2/autopilot/vvi_dial_fpm") { m.vertical_speed_target = v; updated = true; }
 
                         // Frequencies
@@ -759,6 +767,9 @@ impl XPlaneMonitor {
                             if let Ok(conn) = Connection::open(&path) {
                                 if let Err(e) = init_sqlite_db(&conn) {
                                     crate::append_log(&app, format!("[X-Plane] Error initializing DB: {}", e));
+                                }
+                                if let Err(e) = crate::flight_log_manager::record_simulator(&conn, "X-Plane") {
+                                    crate::append_log(&app, format!("[X-Plane] Error noting the sim in the log: {}", e));
                                 }
 
                                 let has_dep: Result<String, _> = conn.query_row(
@@ -1333,6 +1344,7 @@ impl SimMonitor for XPlaneMonitor {
     }
     fn stop(&self) { let mut running = self.running.lock(); *running = false; }
     fn get_metrics(&self) -> FlightMetrics { *self.metrics.lock() }
+    fn traffic_metrics(&self) -> FlightMetrics { traffic_attitude(self.get_metrics()) }
     fn get_aircraft_info(&self) -> crate::models::AircraftInfo { self.aircraft_info.lock().clone() }
     fn get_current_flight_id(&self) -> String { self.current_flight_id.lock().clone() }
     fn is_connected(&self) -> bool { *self.connected.lock() }
@@ -1456,9 +1468,17 @@ mod tests {
     }
 
     #[test]
-    fn attitude_round_trips_between_log_and_xplane_signs() {
-        // Climbing at 7° nose up in X-Plane is logged as -7 and drawn at 7 again.
-        let logged = -7.0;
-        assert_eq!(to_xplane_attitude(logged), 7.0);
+    fn attitude_round_trips_between_traffic_and_xplane_signs() {
+        // Climbing at 7° nose up in X-Plane travels as -7 and is drawn at 7 again.
+        let travelling = -7.0;
+        assert_eq!(to_xplane_attitude(travelling), 7.0);
+    }
+
+    #[test]
+    fn peers_get_our_attitude_in_traffic_signs() {
+        // 7° nose up, 20° right wing down, as X-Plane reports and the log keeps them.
+        let ours = FlightMetrics { pitch_angle: 7.0, roll_angle: 20.0, ..Default::default() };
+        let sent = traffic_attitude(ours);
+        assert_eq!((sent.pitch_angle, sent.roll_angle), (-7.0, -20.0));
     }
 }

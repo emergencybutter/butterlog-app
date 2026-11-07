@@ -892,7 +892,7 @@ impl MultiplayerManager {
                 if should_publish {
                     let monitor = app.state::<UnifiedMonitor>();
                     if let Some(m) = monitor.get_connected_monitor() {
-                        let metrics = m.get_metrics();
+                        let metrics = m.traffic_metrics();
                         // The service's type and airline once a session is open.
                         let aircraft = crate::identity::for_peers(&m.get_aircraft_info(), |line| {
                             crate::append_log(&app, line)

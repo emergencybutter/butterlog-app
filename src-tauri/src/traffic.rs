@@ -27,9 +27,9 @@ pub struct Update {
     pub speaks_traffic_state: bool,
 }
 
-/// Our aircraft as a `TrafficState`. `FlightMetrics` attitude carries the MSFS signs
-/// (positive pitch nose down, positive bank left wing down); `TrafficState` carries the
-/// usual ones.
+/// Our aircraft as a `TrafficState`. `m` is `SimMonitor::traffic_metrics`, whose attitude
+/// carries the MSFS signs (positive pitch nose down, positive bank left wing down);
+/// `TrafficState` carries the usual ones.
 pub fn to_state(m: &FlightMetrics, a: &AircraftInfo) -> TrafficState {
     let on = |v: f64, bit: u8| if v > 0.5 { bit } else { 0 };
     TrafficState {

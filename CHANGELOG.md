@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- X-Plane's pitch and roll are logged and uploaded as the sim reports them, nose up and right wing down positive, instead of in MSFS's signs: the app no longer changes a sim's values, and the service reads them by sim. Peers are still sent MSFS's signs, and the CSV export stays nose up and right wing down positive.
+
 ## [0.3.40] - 2026-11-06
 
 ### Changed
