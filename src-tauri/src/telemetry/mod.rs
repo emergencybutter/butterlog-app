@@ -233,6 +233,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn recording_goes_on_when_the_disk_refuses_a_chunk() {
+        let dir = temp_dir("record-refused");
+        let telemetry = Telemetry::new(Spool::open(dir.clone(), SPOOL_MAX_BYTES).unwrap());
+        let id = telemetry.start(&open()).unwrap();
+        // The second chunk's file can't be created.
+        std::fs::create_dir_all(dir.join(id.to_string()).join("0000000001.tmp")).unwrap();
+        for tick in ticks(0, 23) {
+            telemetry.record(tick).unwrap();
+        }
+        telemetry.stop().unwrap();
+        assert!(telemetry.spool().memory_bytes() > 0);
+        assert_eq!(decode_spooled(telemetry.spool(), id), ticks(0, 23));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn a_full_spool_ends_the_session_and_keeps_what_it_has() {
         let dir = temp_dir("record-full");
         let opening = open().encode().len() as u64;

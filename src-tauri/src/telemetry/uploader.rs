@@ -281,6 +281,7 @@ pub fn spawn(app: AppHandle) {
         let client = Client::new();
         let mut state = PassState::default();
         let mut warned = false;
+        let mut held_in_memory = false;
         let mut was_unavailable = false;
         let mut ticker = tokio::time::interval(std::time::Duration::from_secs(PASS_INTERVAL_SECS));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -304,6 +305,19 @@ pub fn spawn(app: AppHandle) {
                 );
             }
             warned = growing;
+
+            // The disk refused chunks: they wait in memory, and a crash would lose them.
+            let in_memory = spool.memory_bytes() > 0;
+            if in_memory && !held_in_memory {
+                crate::append_log(
+                    &app,
+                    format!(
+                        "[Telemetry] The disk refused chunks: {} kB wait in memory until sent",
+                        spool.memory_bytes() / 1024
+                    ),
+                );
+            }
+            held_in_memory = in_memory;
 
             if spool.sessions().is_empty() {
                 continue;
