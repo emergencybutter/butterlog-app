@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { Settings } from "./Settings";
 import { FlightLogs } from "./FlightLogs";
 import { FlightDetails } from "./FlightDetails";
@@ -171,27 +168,7 @@ function App() {
   }, [logs]);
 
   useEffect(() => {
-    // Check for updates on startup
-    const checkForUpdates = async () => {
-      try {
-        const update = await check();
-        if (update) {
-          console.log(`Update available: ${update.version}`);
-          const yes = await ask(`A new version (${update.version}) is available. Would you like to install it now?\n\nRelease notes: ${update.body}`, {
-            title: 'Update Available',
-            kind: 'info'
-          });
-          
-          if (yes) {
-            await update.downloadAndInstall();
-            await relaunch();
-          }
-        }
-      } catch (e) {
-        console.error("Failed to check for updates:", e);
-      }
-    };
-    checkForUpdates();
+    // Updates are checked and installed by the backend (auto_update.rs), window or not.
 
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
 

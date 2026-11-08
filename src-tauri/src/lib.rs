@@ -1,4 +1,5 @@
 mod airports;
+mod auto_update;
 mod identity;
 mod traffic;
 mod legacy_autostart;
@@ -600,6 +601,9 @@ pub fn run() {
 
             // Start screenshot watcher
             screenshot_manager::start_screenshot_watcher(app.handle().clone());
+
+            // Updates, from here rather than the window: it is gone while in the tray.
+            auto_update::start(app.handle().clone());
 
             let pkg_info = app.package_info();
 

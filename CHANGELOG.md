@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- The app updates itself while it sits in the tray. The update check ran in the window, which the app closes when it starts minimized, so an update waited until someone opened it. The app now checks 30 seconds after starting and every 6 hours. With the window open it asks, as before; in the tray it installs and restarts on its own. It never updates during a flight: it waits for the flight to end. The log notes each step.
+
 ## [0.3.41] - 2026-11-08
 
 ### Fixed
