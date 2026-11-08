@@ -591,6 +591,25 @@ pub fn scan_logs(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
     Ok(summaries)
 }
 
+/// How far a log's last sample may be from where the aircraft is now and still be the same
+/// flight: [`RESUME_BASE_NM`] and [`RESUME_BASE_FT`], plus what the aircraft could have
+/// covered at its last ground and vertical speed while the app was away, with a margin.
+/// A 777 at 550 kt flies the 10 NM in 65 s, so a reconnect that took longer used to start a
+/// new log (IronClaw737's KSFO flight, 2026-11-07, split three ways). The time away only
+/// counts up to [`RESUME_MAX_GAP_S`]: past that a flight only resumes where it stopped,
+/// as a paused one does.
+const RESUME_BASE_NM: f64 = 10.0;
+const RESUME_BASE_FT: f64 = 1000.0;
+const RESUME_MARGIN: f64 = 1.5;
+const RESUME_MAX_GAP_S: i64 = 30 * 60;
+
+fn resume_matches(dist_nm: f64, alt_diff_ft: f64, last: &FlightMetrics, elapsed_s: i64) -> bool {
+    let away_s = if elapsed_s <= RESUME_MAX_GAP_S { elapsed_s.max(0) as f64 } else { 0.0 };
+    let reach_nm = last.ground_speed.abs() * away_s / 3600.0 * RESUME_MARGIN;
+    let reach_ft = last.vertical_speed.abs() * away_s / 60.0 * RESUME_MARGIN;
+    dist_nm <= RESUME_BASE_NM + reach_nm && alt_diff_ft <= RESUME_BASE_FT + reach_ft
+}
+
 pub fn try_find_resume_flight(
         app: &AppHandle,
         current_metrics: &FlightMetrics,
@@ -638,10 +657,10 @@ pub fn try_find_resume_flight(
                 let last_metrics_res = conn.query_row(
                     "SELECT * FROM metrics ORDER BY timestamp DESC LIMIT 1",
                     [],
-                    |row| map_row_to_metrics(row)
+                    |row| Ok((row.get::<_, String>(0)?, map_row_to_metrics(row)?))
                 );
 
-                if let Ok(last_m) = last_metrics_res {
+                if let Ok((last_ts, last_m)) = last_metrics_res {
                     let dist = crate::sim_monitor::calculate_distance(
                         current_metrics.latitude,
                         current_metrics.longitude,
@@ -651,13 +670,18 @@ pub fn try_find_resume_flight(
 
                     let alt_diff = (current_metrics.gps_altitude_msl - last_m.gps_altitude_msl).abs();
 
+                    // Unix seconds; an unreadable time counts as no time at all.
+                    let last_epoch = ts_to_epoch(&last_ts);
+                    let elapsed_s = if last_epoch > 0 { Utc::now().timestamp() - last_epoch } else { 0 };
+
                     // No lower bound on dist/alt_diff: a pause freezes the aircraft in
                     // place, so a reconnect at the identical position must still resume the
                     // same flight rather than spawn a new log.
-                    if dist <= 10.0 && alt_diff <= 1000.0 {
-                        crate::append_log(app, format!("[Resumption] Found match: {}. Dist: {:.1}nm, Alt Diff: {:.0}ft", summary.filename, dist, alt_diff));
+                    if resume_matches(dist, alt_diff, &last_m, elapsed_s) {
+                        crate::append_log(app, format!("[Resumption] Found match: {}. Dist: {:.1}nm, Alt Diff: {:.0}ft, {}s since its last sample", summary.filename, dist, alt_diff, elapsed_s));
                         return Some(path);
                     }
+                    crate::append_log(app, format!("[Resumption] No match: {}. Dist: {:.1}nm, Alt Diff: {:.0}ft, {}s since its last sample", summary.filename, dist, alt_diff, elapsed_s));
                 }
             }
         }
@@ -1664,6 +1688,22 @@ pub async fn flight_web_url(app: AppHandle, filename: String) -> Result<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_reconnect_at_cruise_still_resumes() {
+        let cruise = FlightMetrics { ground_speed: 550.0, vertical_speed: 0.0, ..Default::default() };
+        // IronClaw737's 777: 78 s away and 17.6 NM on, level.
+        assert!(resume_matches(17.6, 2.0, &cruise, 78));
+        // Too far for the time away: another flight.
+        assert!(!resume_matches(60.0, 2.0, &cruise, 78));
+        // Paused, or away longer than the gap counts: only where it stopped.
+        assert!(resume_matches(0.0, 0.0, &cruise, 4 * 3600));
+        assert!(!resume_matches(40.0, 0.0, &cruise, 4 * 3600));
+        // Descending at 2000 fpm for a minute: 2000 ft lower is the same flight.
+        let descent = FlightMetrics { ground_speed: 300.0, vertical_speed: -2000.0, ..Default::default() };
+        assert!(resume_matches(5.0, 2000.0, &descent, 60));
+        assert!(!resume_matches(5.0, 6000.0, &descent, 60));
+    }
 
     /// One row per second starting at epoch 0: (altitude ft, heading deg, VS fpm, roll deg).
     fn rows(samples: &[(f64, f64, f64, f64)]) -> Vec<FlightLogRow> {
