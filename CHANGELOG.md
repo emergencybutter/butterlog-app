@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.41] - 2026-11-08
+
 ### Fixed
 - X-Plane's pitch and roll are logged and uploaded as the sim reports them, nose up and right wing down positive, instead of in MSFS's signs: the app no longer changes a sim's values, and the service reads them by sim. Peers are still sent MSFS's signs, and the CSV export stays nose up and right wing down positive.
 - A flight the app reconnects to after a while in the air resumes its log instead of starting a new one. It had to be within 10 NM of where the log stopped, which a jet at cruise passes in about a minute, so a slow reconnect split the flight (a 777 from KSFO on 2026-11-07 came out as three flights). The distance allowed now grows with the time away at the last ground and vertical speed, for up to 30 minutes. The log also says why a log wasn't resumed.
