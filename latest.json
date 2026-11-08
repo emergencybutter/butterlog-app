@@ -1,11 +1,11 @@
 {
-  "version": "0.3.41",
-  "notes": "Butterlog v0.3.41 Release\nFlights resume after a slow reconnect at cruise instead of splitting; telemetry keeps streaming when the disk is full; X-Plane pitch and roll are logged in the sim's own signs.",
-  "pub_date": "2026-11-08T09:08:38Z",
+  "version": "0.3.42",
+  "notes": "Butterlog v0.3.42 Release\nThe app now updates itself while it sits in the tray, and never during a flight.",
+  "pub_date": "2026-11-08T15:12:43Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGtsM1NNOHVnTVgvSnZUUFRleHlLTjFVZXNMTVNoSEN6NFlmUlZQM1pHRTVoR0I0S29nZ3JkU1YrSFUwWUliQW5sMjF6aEtGODJVZ2srS1dYOGZid0E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTI4OTE4CWZpbGU6YnV0dGVybG9nXzAuMy40MV94NjQtc2V0dXAuZXhlCjM3Q25VVC9YdHBROElJb2VhYk9nb05yeDRlWGpXQXZ5MVVPZlNwM2Y1Q0tGdVNFWWxmSGpHOVRtcEVBR2tTbnE3MWxNbTg4OFFpQUlFLy9HTzh3a0J3PT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.41_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG9LMU9ReWl2cmZ1NlBPSnRWd3Fwd0IxM2NaSWhsU3ZuUEtIUXd6SnY4QUhjTEV4WmFCV1BRd0pQSDVtZk5YRjVhYUY0aHpaKytUdGpGdWd4Q1VKS2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTUwNzYyCWZpbGU6YnV0dGVybG9nXzAuMy40Ml94NjQtc2V0dXAuZXhlCks3WVZhSWF2U0dTanE3MVMvdE1lV0FWQTl0SmF0WFVoZ1NoY2hWbERWdWVTUlhIdnFkc0lzdE41bEp1dWQyaUJxYXpYL1lDbmtSVjR1NUJnem1Lb0FRPT0K",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.42_x64-setup.exe"
     }
   }
 }
