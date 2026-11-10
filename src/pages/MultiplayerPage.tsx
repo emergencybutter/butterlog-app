@@ -57,7 +57,7 @@ export function MultiplayerPage() {
           <div style={{ background: "#14181a", padding: "2.5rem", borderRadius: "8px", textAlign: "center", border: "1px dashed #444" }}>
             <span style={{ fontSize: "2rem" }}>✈️</span>
             <p style={{ color: "#888", marginTop: "10px", marginBottom: 0 }}>
-              No multiplayer traffic detected. Other players flying with ButterLog will appear here as we receive their live UDP telemetry.
+              No other ButterLog traffic in proximity. Other players flying with ButterLog will appear here as we receive their live UDP telemetry.
             </p>
           </div>
         ) : (
