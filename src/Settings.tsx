@@ -3,14 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { Config, ScreenshotFolder } from "./models";
+import { Config, ScreenshotFolder, ServiceStatus } from "./models";
+import { FlystoSettings } from "./FlystoSettings";
 import { XPlanePluginSettings } from "./XPlanePluginSettings";
 
 function isValidRegex(pattern: string): boolean {
     try { new RegExp(pattern); return true; } catch { return false; }
 }
 
-export function Settings() {
+export function Settings({ serviceStatus }: { serviceStatus: ServiceStatus | null }) {
     const [config, setConfig] = useState<Config | null>(null);
     const [status, setStatus] = useState<string>("");
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -194,6 +195,8 @@ export function Settings() {
                         </div>
                     </div>
                 </section>
+
+                <FlystoSettings status={serviceStatus} />
 
                 <XPlanePluginSettings />
 

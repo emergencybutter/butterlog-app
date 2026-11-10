@@ -567,6 +567,8 @@ pub fn run() {
             set_config_async,
             service::get_service_status,
             service::open_service_page,
+            service::set_flysto_token,
+            service::clear_flysto_token,
             screenshot_manager::get_recent_screenshots,
             screenshot_manager::get_screenshot_thumbnail,
             screenshot_manager::upload_screenshot,

@@ -287,6 +287,56 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// What the service said went wrong: its `{"error": ...}`, or its status.
+fn refusal(status: reqwest::StatusCode, body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string))
+        .filter(|e| !e.is_empty())
+        .unwrap_or_else(|| format!("The service answered {status}"))
+}
+
+/// Sends the pilot's FlySto API token to the service (`PUT /api/v0/me/flysto`), which
+/// checks it with FlySto and keeps it. The app keeps no copy.
+#[tauri::command]
+pub async fn set_flysto_token(app: AppHandle, token: String) -> Result<(), String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Paste your FlySto API token first".into());
+    }
+    flysto(&app, reqwest::Method::PUT, Some(serde_json::json!({ "token": token }))).await
+}
+
+/// Has the service forget the pilot's FlySto token: flights no longer go there.
+#[tauri::command]
+pub async fn clear_flysto_token(app: AppHandle) -> Result<(), String> {
+    flysto(&app, reqwest::Method::DELETE, None).await
+}
+
+async fn flysto(app: &AppHandle, method: reqwest::Method, body: Option<serde_json::Value>) -> Result<(), String> {
+    let config = app.state::<crate::config::ConfigManager>().get_config();
+    let (api, token) = config.api_auth().ok_or("Sign in on the Service page first")?;
+    let mut request = reqwest::Client::new()
+        .request(method, format!("{api}/me/flysto"))
+        .bearer_auth(&token)
+        .timeout(Duration::from_secs(30));
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+    let r = request.send().await.map_err(|e| format!("Couldn't reach the service: {e}"))?;
+    let status = r.status();
+    if status.as_u16() == 401 {
+        crate::force_logout(app, "service rejected token");
+    }
+    if !status.is_success() {
+        return Err(refusal(status, &r.text().await.unwrap_or_default()));
+    }
+    crate::append_log(app, "[FlySto] Connection changed".to_string());
+    // The Service page and Settings show it from the next answer: ask now.
+    app.state::<Service>().poke();
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_service_status(app: AppHandle) -> ServiceStatus {
     status(&app)
@@ -382,6 +432,16 @@ mod tests {
         assert_eq!(service.inner.lock().flight_done.clone(), None);
         // Signed in again: what is there is old news.
         assert_eq!(service.answered(me(Some(2)), 3), None);
+    }
+
+    #[test]
+    fn the_services_reason_is_what_the_pilot_reads() {
+        let bad = reqwest::StatusCode::BAD_REQUEST;
+        assert_eq!(
+            refusal(bad, r#"{"error":"FlySto doesn't recognise this token"}"#),
+            "FlySto doesn't recognise this token"
+        );
+        assert_eq!(refusal(reqwest::StatusCode::BAD_GATEWAY, "<html>"), "The service answered 502 Bad Gateway");
     }
 
     #[test]

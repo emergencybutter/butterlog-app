@@ -70,7 +70,7 @@ function App() {
       case "screenshots": return <ScreenshotsPage signedIn={signedIn} onSettings={() => setPage("settings")} />;
       case "multiplayer": return <MultiplayerPage />;
       case "logs": return <LogsPage logs={logs} />;
-      case "settings": return <Settings />;
+      case "settings": return <Settings serviceStatus={status} />;
     }
   };
 
