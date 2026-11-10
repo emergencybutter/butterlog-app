@@ -45,9 +45,7 @@ pub trait SimMonitor: Send + Sync {
         self.get_metrics()
     }
     fn get_aircraft_info(&self) -> crate::models::AircraftInfo;
-    fn get_current_flight_id(&self) -> String;
     fn is_connected(&self) -> bool;
-    fn is_monitoring(&self) -> bool;
     /// Push an interpolated position for a tracked peer into the sim. `chosen_model` is
     /// the local model the multiplayer layer already resolved for this peer (or `None`
     /// while resolution is still pending): MSFS spawns AI with it directly instead of
@@ -70,21 +68,6 @@ pub trait SimMonitor: Send + Sync {
     ) -> Option<String> {
         None
     }
-}
-
-/// Fewest logged samples a closed flight must hold to be kept. Samples are
-/// written at 1 Hz or faster while moving, so this is about a minute of
-/// movement. Duration alone is not enough: the end time is "now", so a single
-/// loading sample followed by 20 idle minutes passes as a 20-minute flight.
-const MIN_FLIGHT_SAMPLES: i64 = 60;
-
-/// Whether the closed flight log at `path` holds too few samples to keep.
-/// An unreadable log counts as worth keeping.
-pub fn has_too_few_samples(path: &std::path::Path) -> bool {
-    rusqlite::Connection::open(path)
-        .and_then(|conn| conn.query_row("SELECT COUNT(*) FROM metrics", [], |r| r.get::<_, i64>(0)))
-        .map(|n| n < MIN_FLIGHT_SAMPLES)
-        .unwrap_or(false)
 }
 
 pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {

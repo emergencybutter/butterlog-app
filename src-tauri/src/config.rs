@@ -10,7 +10,6 @@ use tauri::Manager;
 #[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    pub log_directory: Option<PathBuf>,
     #[serde(default)]
     pub screenshot_directories: Vec<PathBuf>,
     // Legacy single-dir field kept for migration from old configs
@@ -20,7 +19,6 @@ pub struct Config {
     pub screenshot_regex_enabled: bool,
     pub screenshot_regex: String,
     pub auto_upload_screenshots: bool,
-    pub enable_webhook: bool,
     // Legacy combined field ({service}/api/v0/users/{token}); split into
     // service_url + api_token on load and no longer written back.
     #[serde(default, skip_serializing)]
@@ -33,11 +31,6 @@ pub struct Config {
     pub open_at_login: bool,
     pub start_minimized: bool,
     pub inject_butterlog_traffic: bool,
-    /// Stops streaming each flight's telemetry to the service, which a signed-in app does
-    /// by default. A new field rather than `telemetry_beta` turned around: 0.3.35 saved
-    /// `telemetry_beta: false` in every config, opted in or not.
-    #[serde(default)]
-    pub telemetry_off: bool,
 }
 
 pub fn default_service_url() -> String {
@@ -113,21 +106,7 @@ fn find_steam_screenshot_dirs() -> Vec<PathBuf> {
 }
 
 impl Config {
-    pub fn default_with_app_handle(app: &AppHandle) -> Self {
-        let log_dir = UserDirs::new()
-            .and_then(|dirs| dirs.document_dir().map(|p| p.join("butterlog")))
-            .or_else(|| {
-                // Fallback if Documents is not found
-                UserDirs::new().map(|dirs| dirs.home_dir().join("Documents").join("butterlog"))
-            })
-            .unwrap_or_else(|| {
-                // Final fallback to app data if everything else fails
-                app.path()
-                    .app_data_dir()
-                    .expect("Failed to get app data dir")
-                    .join("logs")
-            });
-
+    pub fn default_with_app_handle(_app: &AppHandle) -> Self {
         let user_dirs = UserDirs::new();
         let home = user_dirs.as_ref().map(|d| d.home_dir().to_path_buf());
 
@@ -153,20 +132,17 @@ impl Config {
         screenshot_directories.extend(find_steam_screenshot_dirs());
 
         Self {
-            log_directory: Some(log_dir),
             screenshot_directories,
             screenshot_directory: None,
             screenshot_regex_enabled: true,
             screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
-            enable_webhook: false,
             webhook_url: "".to_string(),
             service_url: default_service_url(),
             api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            telemetry_off: false,
         }
     }
 }
@@ -175,35 +151,19 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            log_directory: None,
             screenshot_directories: Vec::new(),
             screenshot_directory: None,
             screenshot_regex_enabled: true,
             screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
             auto_upload_screenshots: false,
-            enable_webhook: false,
             webhook_url: "".to_string(),
             service_url: default_service_url(),
             api_token: "".to_string(),
             open_at_login: false,
             start_minimized: false,
             inject_butterlog_traffic: false,
-            telemetry_off: false,
         }
     }
-}
-
-pub fn get_flightlogs_dir_name_from_args(args: &[String]) -> &'static str {
-    if args.contains(&"--dev".to_string()) {
-        "flightlogs-dev"
-    } else {
-        "flightlogs"
-    }
-}
-
-pub fn get_flightlogs_dir_name() -> &'static str {
-    let args: Vec<String> = std::env::args().collect();
-    get_flightlogs_dir_name_from_args(&args)
 }
 
 pub struct ConfigManager {
@@ -254,12 +214,6 @@ impl ConfigManager {
                 let defaults = Config::default_with_app_handle(app);
                 config.screenshot_directories = defaults.screenshot_directories;
             }
-        }
-
-        // Resolve the export log directory so the UI always shows a concrete
-        // path instead of an empty field.
-        if config.log_directory.is_none() {
-            config.log_directory = Config::default_with_app_handle(app).log_directory;
         }
 
         // Migrate the legacy webhook_url ({service}/api/v0/users/{token}) into
@@ -375,23 +329,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_get_flightlogs_dir_name() {
-        assert_eq!(
-            get_flightlogs_dir_name_from_args(&[]),
-            "flightlogs"
-        );
-        assert_eq!(
-            get_flightlogs_dir_name_from_args(&["--dev".to_string()]),
-            "flightlogs-dev"
-        );
-        assert_eq!(
-            get_flightlogs_dir_name_from_args(&["--some-flag".to_string(), "--dev".to_string()]),
-            "flightlogs-dev"
-        );
-        assert_eq!(
-            get_flightlogs_dir_name_from_args(&["--dev-something".to_string()]),
-            "flightlogs"
-        );
-    }
+
 }

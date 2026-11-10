@@ -105,6 +105,8 @@ pub const CATALOG: &[(&str, bool)] = &[
 /// Reported in `statistics.capabilities.commands` so the live page renders only
 /// controls that can actually do something. With remote control off the list is
 /// empty and the page shows no control strip at all.
+// Unused since the app stopped reporting flights: kept for the service to advertise them.
+#[allow(dead_code)]
 pub fn capabilities(allow_remote: bool, allow_beta: bool) -> Vec<&'static str> {
     if !allow_remote {
         return Vec::new();
@@ -375,11 +377,10 @@ pub fn spawn_poller(app: AppHandle) {
 
         loop {
             let config = app.state::<crate::config::ConfigManager>().get_config();
-            let flight = app
-                .state::<crate::webhook_manager::WebhookManager>()
-                .current_flight();
+            // The flight being flown, as the service made it from the telemetry.
+            let flight = crate::service::live_flight_id(&app);
 
-            let (Some((base_url, api_token)), true, Some((_, flight_id))) =
+            let (Some((base_url, api_token)), true, Some(flight_id)) =
                 (config.api_auth(), config.is_logged_in(), flight)
             else {
                 // Nothing to poll for: no flight, logged out, or the user has

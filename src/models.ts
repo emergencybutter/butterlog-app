@@ -4,12 +4,13 @@
 //   cd src-tauri && cargo test export_bindings
 //
 export type { FlightMetrics } from "./bindings/FlightMetrics";
-export type { FlightEvent } from "./bindings/FlightEvent";
-export type { FlightLogRow } from "./bindings/FlightLogRow";
-export type { FlightSummary } from "./bindings/FlightSummary";
 export type { Screenshot } from "./bindings/Screenshot";
-export type { Runway } from "./bindings/Runway";
 export type { Config } from "./bindings/Config";
-export type { AircraftStats } from "./bindings/AircraftStats";
 export type { MultiplayerDebugInfo } from "./bindings/MultiplayerDebugInfo";
 export type { TrackedAircraftDebugInfo } from "./bindings/TrackedAircraftDebugInfo";
+export type { ServiceStatus } from "./bindings/ServiceStatus";
+export type { FlightRef } from "./bindings/FlightRef";
+export type { Me } from "./bindings/Me";
+export type { SimTelemetry } from "./bindings/SimTelemetry";
+export type { LiveTelemetry } from "./bindings/LiveTelemetry";
+export type { LiveChannel } from "./bindings/LiveChannel";

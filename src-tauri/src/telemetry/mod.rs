@@ -4,12 +4,13 @@
 //!
 //! The recorder here takes ticks from a sampler (`msfs.rs` for SimConnect, `xplane.rs` for
 //! X-Plane, fed by the plugin's link in `xp_plugin.rs` or the Web API, both through `recorder.rs`) and writes a chunk to the spool every
-//! [`CHUNK_MS`]; the uploader sends the spool. Runs beside `live_track.rs`.
+//! [`CHUNK_MS`]; the uploader sends the spool.
 
 #[cfg(msfs)]
 pub mod msfs;
 #[cfg(msfs)]
 pub mod msfs_runways;
+pub mod live;
 pub mod recorder;
 pub mod runways;
 pub mod spool;

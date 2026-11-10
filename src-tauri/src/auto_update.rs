@@ -29,9 +29,12 @@ pub fn start(app: AppHandle) {
     });
 }
 
-/// A flight is being logged.
+/// A sim is connected with its aircraft in the air or moving: not the moment to restart.
 fn flying(app: &AppHandle) -> bool {
-    app.state::<UnifiedMonitor>().get_all_monitors().iter().any(|m| m.is_monitoring())
+    app.state::<UnifiedMonitor>().get_all_monitors().iter().any(|m| {
+        let metrics = m.get_metrics();
+        m.is_connected() && metrics.has_position() && (metrics.is_on_ground < 0.5 || metrics.ground_speed > 1.0)
+    })
 }
 
 /// One check; how long until the next.

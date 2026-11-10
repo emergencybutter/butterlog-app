@@ -1,21 +1,17 @@
-mod airports;
 mod auto_update;
 mod identity;
 mod traffic;
 mod legacy_autostart;
 mod config;
-mod flight_analyzer;
-mod flight_log_manager;
-mod live_track;
 mod log_file;
 mod models;
 mod multiplayer;
-mod runways;
 mod screenshot_manager;
+mod service;
 mod sim_commands;
 mod sim_monitor;
 mod telemetry;
-mod webhook_manager;
+mod tray;
 mod xp_plugin_install;
 
 // Type and airline resolution, shared with the service (butterlog-service/identity).
@@ -31,47 +27,11 @@ pub fn get_custom_service_url() -> Option<String> {
     CUSTOM_SERVICE_URL.get().cloned().flatten()
 }
 
-/// Waits between attempts to load a bundled data file, longer each time.
-const RESOURCE_RETRY_SECS: [u64; 5] = [2, 5, 10, 20, 30];
-
-/// Loads a bundled data file, trying again a few times when it fails. A dev build can
-/// start while its build is still copying the file, and read it half written. Without the
-/// airports the app syncs no flight, so one bad read must not last the whole run.
-fn load_resource_with_retry<T>(
-    app: &AppHandle,
-    path: &std::path::Path,
-    load: impl Fn(&std::path::Path) -> Result<T, Box<dyn std::error::Error>>,
-) -> Option<T> {
-    let mut waits = RESOURCE_RETRY_SECS.iter();
-    loop {
-        match load(path) {
-            Ok(v) => return Some(v),
-            Err(err) => match waits.next() {
-                Some(&secs) => {
-                    append_log(app, format!("Failed to load {:?}, trying again in {}s: {}", path, secs, err));
-                    std::thread::sleep(std::time::Duration::from_secs(secs));
-                }
-                None => {
-                    append_log(app, format!("Failed to load {:?}, giving up: {}", path, err));
-                    return None;
-                }
-            },
-        }
-    }
-}
-use tauri::menu::{Menu, MenuItem};
-use tauri::path::BaseDirectory;
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use config::{Config, ConfigManager};
-use flight_log_manager::{
-    export_flight_to_csv, get_flight_data, get_flight_data_since, import_flight_from_csv,
-    scan_logs, flight_web_url, rescan_flight_screenshots, set_flight_notes, FlightSummary,
-};
 use models::FlightMetrics;
 use multiplayer::MultiplayerManager;
-use rusqlite::OptionalExtension;
 use screenshot_manager::ScreenshotManager;
 #[cfg(msfs)]
 use sim_monitor::msfs::SimConnectMonitor;
@@ -80,8 +40,6 @@ use sim_monitor::SimMonitor;
 use std::path::PathBuf;
 
 struct LogState(Mutex<Vec<String>>);
-
-pub struct RegenerateSummaryFlag(pub bool);
 
 pub struct UnifiedMonitor {
     monitors: Mutex<Vec<Arc<dyn SimMonitor>>>,
@@ -142,14 +100,13 @@ pub(crate) fn force_logout(app: &AppHandle, reason: &str) {
 
     // Already logged out — nothing to do (also stops concurrent 401s from
     // emitting repeated events).
-    if config.api_token.is_empty() && !config.enable_webhook {
+    if config.api_token.is_empty() {
         return;
     }
 
     let new_config = Config {
         api_token: String::new(),
         webhook_url: String::new(),
-        enable_webhook: false,
         ..config
     };
 
@@ -158,30 +115,8 @@ pub(crate) fn force_logout(app: &AppHandle, reason: &str) {
         return;
     }
 
-    // Reset the in-flight webhook sync state so a fresh login starts clean.
-    app.state::<webhook_manager::WebhookManager>().reset();
-
     append_log(app, format!("[Auth] Logged out: {}", reason));
     let _ = app.emit("auth-logout", reason.to_string());
-}
-
-#[tauri::command]
-async fn get_flight_summaries(app: AppHandle) -> Result<Vec<FlightSummary>, String> {
-    scan_logs(app)
-}
-
-#[tauri::command]
-async fn get_flight_summary(app: AppHandle, filename: String) -> Result<FlightSummary, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(&filename);
-    
-    if !path.exists() {
-        return Err("Flight log not found".to_string());
-    }
-
-    crate::flight_log_manager::parse_db_file(&app, &path)
-        .ok_or_else(|| "Failed to parse flight summary".to_string())
 }
 
 #[tauri::command]
@@ -190,8 +125,11 @@ fn get_config(state: State<'_, ConfigManager>) -> Config {
 }
 
 #[tauri::command]
-fn set_config(state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
-    state.update_config(config)
+fn set_config(app: AppHandle, state: State<'_, ConfigManager>, config: Config) -> Result<(), String> {
+    state.update_config(config)?;
+    // Signed in or out, say: the Service panel shows it now rather than at the next poll.
+    app.state::<service::Service>().poke();
+    Ok(())
 }
 
 #[tauri::command]
@@ -258,59 +196,10 @@ fn get_connected_sims(state: State<'_, UnifiedMonitor>) -> Vec<String> {
 }
 
 #[tauri::command]
-fn is_flight_ongoing(state: State<'_, UnifiedMonitor>) -> bool {
-    state.get_all_monitors().iter().any(|m| m.is_monitoring())
-}
-
-#[tauri::command]
-fn get_current_flight_id(state: State<'_, UnifiedMonitor>) -> String {
-    if let Some(m) = state.get_connected_monitor() {
-        m.get_current_flight_id()
-    } else {
-        "".to_string()
-    }
-}
-
-#[tauri::command]
 fn get_multiplayer_status(
     multiplayer: State<'_, Arc<MultiplayerManager>>,
 ) -> multiplayer::MultiplayerDebugInfo {
     multiplayer.get_debug_info()
-}
-
-#[tauri::command]
-async fn get_remote_id(app: AppHandle, filename: String) -> Result<Option<i64>, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(&filename);
-
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    // SQLite access is blocking; keep it off the async runtime threads.
-    tauri::async_runtime::spawn_blocking(move || {
-        let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
-        let res: Option<String> = conn.query_row(
-            "SELECT value FROM summary WHERE key = 'remote_id'",
-            [],
-            |r| r.get(0)
-        ).optional().map_err(|e| e.to_string())?;
-
-        Ok(res.and_then(|id_str| id_str.parse::<i64>().ok()))
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
-}
-
-#[tauri::command]
-async fn upload_screenshot(
-    app: AppHandle,
-    screenshot_id: i64,
-    flight_filename: String,
-) -> Result<String, String> {
-    let flight_id = flight_filename.replace(".db", "");
-    screenshot_manager::perform_screenshot_upload(app, screenshot_id, flight_id).await
 }
 
 #[tauri::command]
@@ -406,20 +295,13 @@ async fn start_discord_login(app: AppHandle) -> Result<String, String> {
             let mut current_config = state.get_config();
             current_config.api_token = token.clone();
             current_config.service_url = base_service_url;
-            current_config.enable_webhook = true;
             state.update_config(current_config).map_err(|e| format!("Failed to save config: {}", e))?;
+            app.state::<service::Service>().poke();
             Ok(token)
         }
         Ok(Err(e)) => Err(format!("Login failed: {}", e)),
         Err(_) => Err("Login timed out after 2 minutes. Please try again.".to_string()),
     }
-}
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(app: AppHandle, name: &str) -> String {
-    append_log(&app, format!("Received greet request for name: '{}'", name));
-    format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
 #[tauri::command]
@@ -440,30 +322,41 @@ fn reveal_log_file(app: AppHandle, file: State<'_, log_file::LogFile>) -> Result
     }
 }
 
-#[tauri::command]
-fn find_nearest_airports(
-    lat: f64,
-    lon: f64,
-    state: State<'_, airports::AirportsDatabase>,
-) -> Result<Vec<airports::Airport>, String> {
-    // The find_nearest method returns a Vec<&Airport>, so we clone each item to return an owned Vec<Airport>.
-    let nearest = state.find_nearest(lat, lon, 10);
-    Ok(nearest.into_iter().cloned().collect())
+/// What each connected sim's capture reads, for the window's Telemetry page.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct SimTelemetry {
+    /// `msfs` or `xplane`.
+    pub monitor: String,
+    /// What the session records; absent until the sampler has run.
+    pub live: Option<telemetry::live::LiveTelemetry>,
+    /// What the app reads for multiplayer traffic, in its own units.
+    pub metrics: FlightMetrics,
+    pub aircraft: String,
 }
 
 #[tauri::command]
-fn get_runways(
-    ident: String,
-    state: State<'_, runways::RunwaysDatabase>,
-) -> Result<Vec<runways::Runway>, String> {
-    Ok(state.find_for_ident(&ident))
+fn get_sim_telemetry(app: AppHandle, state: State<'_, UnifiedMonitor>) -> Vec<SimTelemetry> {
+    let view = app.try_state::<telemetry::live::LiveView>();
+    state
+        .get_all_monitors()
+        .iter()
+        .filter(|m| m.is_connected())
+        .map(|m| SimTelemetry {
+            monitor: m.id().to_string(),
+            live: view.as_ref().and_then(|v| v.get(m.id())),
+            metrics: m.get_metrics(),
+            aircraft: m.get_aircraft_info().title,
+        })
+        .collect()
 }
 
 /// Bring the main window to the foreground, rebuilding it first if it was
 /// destroyed on close. We close (not hide) the window so its WebView2 process
 /// is released while the app lives in the tray; reopening recreates it from the
 /// configured window definition in tauri.conf.json.
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -504,8 +397,6 @@ pub fn run() {
         sim_monitor::msfs::run_probe_child();
     }
 
-    let regenerate_summary = args.contains(&"--regenerate_summary".to_string());
-
     let mut custom_url = None;
     for i in 0..args.len() {
         if args[i] == "--service-url" && i + 1 < args.len() {
@@ -532,7 +423,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(LogState(Mutex::new(Vec::new())))
         .manage(UnifiedMonitor::new())
-        .manage(RegenerateSummaryFlag(regenerate_summary))
+        .manage(service::Service::new())
+        .manage(telemetry::live::LiveView::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -565,14 +457,6 @@ pub fn run() {
             // Initialize ScreenshotManager
             let screenshot_manager = ScreenshotManager::new(app.handle());
             app.manage(screenshot_manager);
-
-            // Initialize WebhookManager
-            app.manage(webhook_manager::WebhookManager::new());
-
-            // Streams the in-progress flight's track to the service. Idle until
-            // a flight is being synced and the user has live sharing enabled.
-            app.manage(live_track::LiveTrackUploader::new());
-            live_track::spawn(app.handle().clone());
 
             // Sim-native telemetry: the spool and its uploader. Idle until a sampler
             // records a session, or while a previous run left one unsent.
@@ -624,71 +508,9 @@ pub fn run() {
                 format!("Screenshot directory path: {}", screenshot_dir),
             );
 
-            // Tray menu
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Open Window", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
-
-            // Load the icon from the public folder and create the tray icon
-            let tray_icon =
-                tauri::image::Image::from_bytes(include_bytes!("../../public/icon.png"))
-                    .expect("Failed to load tray icon");
-            TrayIconBuilder::with_id("main")
-                .icon(tray_icon)
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    "show" => {
-                        show_main_window(app);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::DoubleClick { .. } = event {
-                        show_main_window(tray.app_handle());
-                    }
-                })
-                .build(app)?;
-
-            let airports_app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                // Load airports.csv and register into Tauri managed state
-                let airports_path = airports_app_handle
-                    .path()
-                    .resolve("../public/airports.csv", BaseDirectory::Resource)
-                    .expect("Failed to resolve airports.csv resource");
-
-                if let Some(db) = load_resource_with_retry(&airports_app_handle, &airports_path, |p| {
-                    airports::AirportsDatabase::load_from_csv(p)
-                }) {
-                    append_log(
-                        &airports_app_handle,
-                        format!("Successfully loaded {} airports into backend memory.", db.airports.len()),
-                    );
-                    airports_app_handle.manage(db);
-                }
-            });
-
-            let runways_app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                // Load runways.csv and register into Tauri managed state
-                let runways_path = runways_app_handle
-                    .path()
-                    .resolve("../public/runways.csv", BaseDirectory::Resource)
-                    .expect("Failed to resolve runways.csv resource");
-
-                if let Some(db) = load_resource_with_retry(&runways_app_handle, &runways_path, |p| {
-                    runways::RunwaysDatabase::load_from_csv(p)
-                }) {
-                    append_log(
-                        &runways_app_handle,
-                        format!("Successfully loaded {} runways into backend memory.", db.runways.len()),
-                    );
-                    runways_app_handle.manage(db);
-                }
-            });
+            tray::build(app.handle())?;
+            // Who the app is signed in as, and the flights the service made.
+            service::spawn(app.handle().clone());
 
             // The aircraft and airline tables are built in; parsing them and building the
             // type and airline indexes takes a moment, so do it now rather than on the
@@ -727,40 +549,28 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_logs,
             reveal_log_file,
             xp_plugin_install::get_xplane_plugin_status,
             xp_plugin_install::install_xplane_plugin,
-            find_nearest_airports,
             start_monitoring,
             stop_monitoring,
             get_metrics,
             is_sim_connected,
             get_connected_sims,
-            is_flight_ongoing,
-            get_current_flight_id,
+            get_sim_telemetry,
             get_multiplayer_status,
-            get_remote_id,
-            upload_screenshot,
             start_discord_login,
             get_config,
             set_config,
             get_config_async,
             set_config_async,
-            get_flight_summaries,
-            get_flight_summary,
-            get_flight_data,
-            get_flight_data_since,
-            export_flight_to_csv,
-            set_flight_notes,
-            import_flight_from_csv,
-            flight_web_url,
-            rescan_flight_screenshots,
-            get_runways,
-            flight_log_manager::get_aircraft_stats,
-            screenshot_manager::get_screenshots_for_flight,
-            screenshot_manager::get_random_screenshot_for_aircraft
+            service::get_service_status,
+            service::open_service_page,
+            screenshot_manager::get_recent_screenshots,
+            screenshot_manager::get_screenshot_thumbnail,
+            screenshot_manager::upload_screenshot,
+            screenshot_manager::reveal_screenshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

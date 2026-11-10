@@ -265,7 +265,7 @@ impl XplaneSampler {
             id("sim/flightmodel/position/vh_ind"),
             id("sim/flightmodel/position/phi"),
         );
-        let mut recorder = Recorder::new(app, &channels(), phase);
+        let mut recorder = Recorder::new(app, "xplane", &channels(), phase);
         recorder.watch_touchdowns(
             id("sim/flightmodel/failures/onground_any"),
             id("sim/flightmodel/position/latitude"),

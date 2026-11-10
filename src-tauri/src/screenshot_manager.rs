@@ -1,11 +1,23 @@
-use rusqlite::{params, Connection, OptionalExtension};
+//! Screenshots: the watched folders' new pictures, taken while a sim is connected, kept
+//! with the telemetry session recording at the time. The window lists the recent ones; each
+//! goes to the service by itself (Settings) or with a click, and the service puts it on the
+//! flight it made from that session.
+
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Emitter};
 use chrono::Utc;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher, Config as NotifyConfig};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::Duration;
 use crate::config::ConfigManager;
+
+/// How many screenshots the window lists.
+const RECENT_LIMIT: i64 = 60;
+
+/// Thumbnails' longest side, in pixels: a list of 4K pictures would take the window's
+/// memory, so it shows these instead.
+const THUMB_PX: u32 = 360;
 
 #[derive(Debug, Serialize, Deserialize, Clone, ts_rs::TS)]
 #[ts(export, export_to = "../../src/bindings/")]
@@ -14,18 +26,21 @@ pub struct Screenshot {
     // JSON (and therefore Tauri's invoke) carries this as a plain number
     #[ts(type = "number")]
     pub id: i64,
-    pub flight_id: String,
     pub aircraft_title: String,
     pub path: String,
+    /// When it was taken, UTC `YYYY-MM-DD HH:MM:SS`.
     pub timestamp: String,
     pub latitude: f64,
     pub longitude: f64,
+    /// The telemetry session recording when it was taken; without one it can't go up.
+    pub session_id: Option<String>,
     pub remote_hash: Option<String>,
     pub remote_url: Option<String>,
 }
 
 pub struct ScreenshotManager {
     pub db_path: PathBuf,
+    thumbs: PathBuf,
 }
 
 impl ScreenshotManager {
@@ -56,37 +71,28 @@ impl ScreenshotManager {
         // Migrations for existing databases
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_hash TEXT", []);
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN remote_url TEXT", []);
-        // The telemetry session recording when it was taken: a flight the service makes has
-        // no remote id here, so the screenshot is uploaded against the session instead.
+        // The telemetry session recording when it was taken: what it is uploaded against.
         let _ = conn.execute("ALTER TABLE screenshots ADD COLUMN session_id TEXT", []);
 
-        Self { db_path }
+        Self { db_path, thumbs: app_dir.join("screenshot_thumbs") }
     }
 
     fn get_connection(&self) -> Result<Connection, String> {
         Connection::open(&self.db_path).map_err(|e| e.to_string())
     }
 
-    pub fn record_screenshot(&self, flight_id: &str, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64, session_id: Option<&str>) -> Result<i64, String> {
+    /// Keeps a screenshot, once per path; its id. `flight_id` is a column of the app's own
+    /// flight logs, gone now, so it is left empty.
+    pub fn record_screenshot(&self, aircraft_title: &str, path: &str, timestamp: &str, lat: f64, lon: f64, session_id: Option<&str>) -> Result<i64, String> {
         let conn = self.get_connection()?;
-        // Insert only when this path is new. Re-scans (e.g. after a flight
-        // completes) must keep the existing row so its id and upload state
-        // (remote_hash/remote_url) are preserved — REPLACE would delete the row,
-        // wiping the uploaded markers and assigning a new id.
-        // A re-scan knows no session; the one recorded first stays.
         conn.execute(
             "INSERT INTO screenshots (flight_id, aircraft_title, path, timestamp, latitude, longitude, session_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             VALUES ('', ?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(path) DO UPDATE SET session_id = COALESCE(screenshots.session_id, excluded.session_id)",
-            params![flight_id, aircraft_title, path, timestamp, lat, lon, session_id],
+            params![aircraft_title, path, timestamp, lat, lon, session_id],
         ).map_err(|e| e.to_string())?;
-        // Return the id for this path, whether just inserted or pre-existing.
-        let id = conn.query_row(
-            "SELECT id FROM screenshots WHERE path = ?1",
-            params![path],
-            |r| r.get::<_, i64>(0),
-        ).map_err(|e| e.to_string())?;
-        Ok(id)
+        conn.query_row("SELECT id FROM screenshots WHERE path = ?1", params![path], |r| r.get::<_, i64>(0))
+            .map_err(|e| e.to_string())
     }
 
     pub fn mark_as_uploaded(&self, id: i64, hash: &str, url: &str) -> Result<(), String> {
@@ -98,56 +104,59 @@ impl ScreenshotManager {
         Ok(())
     }
 
-    pub fn get_screenshots_for_flight(&self, flight_id: &str) -> Result<Vec<Screenshot>, String> {
+    /// The newest first, those whose file is still there.
+    pub fn recent(&self, limit: i64) -> Result<Vec<Screenshot>, String> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash, remote_url FROM screenshots WHERE flight_id = ?1")
-            .map_err(|e| e.to_string())?;
-        
-        let rows = stmt.query_map(params![flight_id], |row| {
+        let mut stmt = conn.prepare(
+            "SELECT id, aircraft_title, path, timestamp, latitude, longitude, session_id, remote_hash, remote_url
+               FROM screenshots ORDER BY timestamp DESC, id DESC LIMIT ?1",
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![limit * 2], |row| {
             Ok(Screenshot {
                 id: row.get(0)?,
-                flight_id: row.get(1)?,
-                aircraft_title: row.get(2)?,
-                path: row.get(3)?,
-                timestamp: row.get(4)?,
-                latitude: row.get(5)?,
-                longitude: row.get(6)?,
+                aircraft_title: row.get(1)?,
+                path: row.get(2)?,
+                timestamp: row.get(3)?,
+                latitude: row.get(4)?,
+                longitude: row.get(5)?,
+                session_id: row.get(6)?,
                 remote_hash: row.get(7)?,
                 remote_url: row.get(8)?,
             })
         }).map_err(|e| e.to_string())?;
-
-        let mut result = Vec::new();
+        let mut kept = Vec::new();
         for row in rows {
-            result.push(row.map_err(|e| e.to_string())?);
+            let shot = row.map_err(|e| e.to_string())?;
+            if std::path::Path::new(&shot.path).exists() {
+                kept.push(shot);
+            }
+            if kept.len() as i64 >= limit {
+                break;
+            }
         }
-        Ok(result)
+        Ok(kept)
     }
 
-    pub fn get_random_screenshot_for_aircraft(&self, aircraft_title: &str) -> Result<Option<Screenshot>, String> {
-        let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT id, flight_id, aircraft_title, path, timestamp, latitude, longitude, remote_hash, remote_url FROM screenshots WHERE aircraft_title = ?1 ORDER BY RANDOM() LIMIT 1")
-            .map_err(|e| e.to_string())?;
-        
-        let mut rows = stmt.query_map(params![aircraft_title], |row| {
-            Ok(Screenshot {
-                id: row.get(0)?,
-                flight_id: row.get(1)?,
-                aircraft_title: row.get(2)?,
-                path: row.get(3)?,
-                timestamp: row.get(4)?,
-                latitude: row.get(5)?,
-                longitude: row.get(6)?,
-                remote_hash: row.get(7)?,
-                remote_url: row.get(8)?,
-            })
-        }).map_err(|e| e.to_string())?;
+    fn path_of(&self, id: i64) -> Result<String, String> {
+        self.get_connection()?
+            .query_row("SELECT path FROM screenshots WHERE id = ?1", params![id], |r| r.get(0))
+            .map_err(|e| format!("No such screenshot: {e}"))
+    }
 
-        if let Some(row) = rows.next() {
-            Ok(Some(row.map_err(|e| e.to_string())?))
-        } else {
-            Ok(None)
+    /// A small copy of the screenshot, made the first time it is asked for.
+    pub fn thumbnail(&self, id: i64) -> Result<PathBuf, String> {
+        let thumb = self.thumbs.join(format!("{id}.jpg"));
+        if thumb.exists() {
+            return Ok(thumb);
         }
+        let source = self.path_of(id)?;
+        let img = image::open(&source).map_err(|e| format!("Can't read {source}: {e}"))?;
+        std::fs::create_dir_all(&self.thumbs).map_err(|e| e.to_string())?;
+        img.thumbnail(THUMB_PX, THUMB_PX)
+            .to_rgb8()
+            .save_with_format(&thumb, image::ImageFormat::Jpeg)
+            .map_err(|e| e.to_string())?;
+        Ok(thumb)
     }
 }
 
@@ -270,96 +279,45 @@ fn handle_new_file(app: &AppHandle, path: PathBuf) {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // Check if a flight is ongoing
-    let connected_sims = app.state::<crate::UnifiedMonitor>().get_all_monitors();
-    
-    for monitor in connected_sims {
-        if monitor.is_monitoring() {
-            let flight_id = monitor.get_current_flight_id();
-            let aircraft_info = monitor.get_aircraft_info();
-            let aircraft_title = aircraft_info.title;
-            let metrics = monitor.get_metrics();
-            
-            if !flight_id.is_empty() {
-                let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                let manager = app.state::<ScreenshotManager>();
-                let session = app
-                    .try_state::<crate::telemetry::Telemetry>()
-                    .and_then(|t| t.current_session())
-                    .map(|id| id.to_string());
-                
-                match manager.record_screenshot(
-                    &flight_id,
-                    &aircraft_title,
-                    path.to_str().unwrap_or(""),
-                    &timestamp,
-                    metrics.latitude,
-                    metrics.longitude,
-                    session.as_deref(),
-                ) {
-                    Err(e) => crate::append_log(app, format!("Failed to record screenshot: {}", e)),
-                    Ok(screenshot_id) => {
-                        crate::append_log(app, format!("Captured screenshot for flight {}: {:?}", flight_id, file_name));
-                        let _ = app.emit("new-screenshot", ());
-
-                        // Auto-upload if enabled. The screenshot regex, when
-                        // enabled, acts purely as an auto-upload filter.
-                        let config = app.state::<ConfigManager>().get_config();
-                        if config.auto_upload_screenshots && passes_upload_filter(&config, file_name) {
-                            let app_clone = app.clone();
-                            let flight_id_clone = flight_id.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) = perform_screenshot_upload(app_clone.clone(), screenshot_id, flight_id_clone).await {
-                                    crate::append_log(&app_clone, format!("Auto-upload failed for screenshot {}: {}", screenshot_id, e));
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub fn scan_screenshots_for_flight(app: &AppHandle, flight_id: &str, aircraft_title: &str, start_ts: &str, end_ts: &str) -> Result<(), String> {
-    let config = app.state::<crate::config::ConfigManager>().get_config();
-
-    if config.screenshot_directories.is_empty() {
-        crate::append_log(app, "Screenshot scan skipped: No screenshot directories configured.".to_string());
-        return Ok(());
-    }
+    // Only while a sim is connected: these folders hold the desktop's screenshots too.
+    let monitors = app.state::<crate::UnifiedMonitor>().get_all_monitors();
+    let Some(monitor) = monitors.iter().find(|m| m.is_connected()) else {
+        return;
+    };
+    let aircraft_title = monitor.get_aircraft_info().title;
+    let metrics = monitor.get_metrics();
+    let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let session = app
+        .try_state::<crate::telemetry::Telemetry>()
+        .and_then(|t| t.current_session())
+        .map(|id| id.to_string());
 
     let manager = app.state::<ScreenshotManager>();
-    let start_time = parse_ts(start_ts)?;
-    let end_time = parse_ts(end_ts)?;
+    match manager.record_screenshot(
+        &aircraft_title,
+        path.to_str().unwrap_or(""),
+        &timestamp,
+        metrics.latitude,
+        metrics.longitude,
+        session.as_deref(),
+    ) {
+        Err(e) => crate::append_log(app, format!("Failed to record screenshot: {}", e)),
+        Ok(screenshot_id) => {
+            crate::append_log(app, format!("Captured screenshot {:?}", file_name));
+            let _ = app.emit("new-screenshot", screenshot_id);
 
-    let mut total = 0;
-    for screenshot_dir in &config.screenshot_directories {
-        if !screenshot_dir.exists() { continue; }
-
-        crate::append_log(app, format!("Scanning {:?} for screenshots between {} and {}", screenshot_dir, start_ts, end_ts));
-
-        let Ok(entries) = std::fs::read_dir(screenshot_dir) else { continue };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() { continue; }
-            let Ok(metadata) = entry.metadata() else { continue };
-            let created_res = metadata.created().or_else(|_| metadata.modified());
-            let Ok(created) = created_res else { continue };
-            let created_ts = created.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-            if created_ts < start_time || created_ts > end_time { continue; }
-
-            let (lat, lon) = find_closest_metrics(app, flight_id, created_ts).unwrap_or((0.0, 0.0));
-            let timestamp = chrono::DateTime::<chrono::Utc>::from(created).format("%Y-%m-%d %H:%M:%S").to_string();
-            match manager.record_screenshot(flight_id, aircraft_title, path.to_str().unwrap_or(""), &timestamp, lat, lon, None) {
-                Ok(_) => total += 1,
-                Err(e) => crate::append_log(app, format!("Failed to record scanned screenshot: {}", e)),
+            // The screenshot regex, when enabled, only filters what goes up by itself.
+            let config = app.state::<ConfigManager>().get_config();
+            if config.auto_upload_screenshots && session.is_some() && passes_upload_filter(&config, file_name) {
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = perform_screenshot_upload(app_clone.clone(), screenshot_id).await {
+                        crate::append_log(&app_clone, format!("Auto-upload failed for screenshot {}: {}", screenshot_id, e));
+                    }
+                });
             }
         }
     }
-
-    crate::append_log(app, format!("Screenshot scan complete. Imported {} screenshots.", total));
-    Ok(())
 }
 
 /// A screenshot's recorded time, UTC "YYYY-MM-DD HH:MM:SS", as the RFC 3339 the service
@@ -376,147 +334,43 @@ fn parse_ts(ts: &str) -> Result<i64, String> {
         .map_err(|e| e.to_string())
 }
 
-fn find_closest_metrics(app: &AppHandle, flight_id: &str, timestamp: i64) -> Result<(f64, f64), String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let db_path = log_dir.join(format!("{}.db", flight_id));
-    
-    if !db_path.exists() {
-        crate::append_log(app, format!("[Debug] Coordinate lookup failed: DB not found at {:?}", db_path));
-        return Err("Flight DB not found".to_string());
-    }
+#[tauri::command]
+pub async fn get_recent_screenshots(app: AppHandle) -> Result<Vec<Screenshot>, String> {
+    let db_path = app.state::<ScreenshotManager>().db_path.clone();
+    let thumbs = app.state::<ScreenshotManager>().thumbs.clone();
+    tauri::async_runtime::spawn_blocking(move || ScreenshotManager { db_path, thumbs }.recent(RECENT_LIMIT))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-    // Convert target timestamp to string format used in DB
-    let target_ts_str = chrono::DateTime::from_timestamp(timestamp, 0)
-        .ok_or("Invalid timestamp")?
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
-
-    // Debug: Check range of DB
-    let range = conn.query_row(
-        "SELECT MIN(timestamp), MAX(timestamp) FROM metrics",
-        [],
-        |r| Ok((r.get::<usize, String>(0)?, r.get::<usize, String>(1)?))
-    ).map_err(|e| {
-        crate::append_log(app, format!("[Screenshots] Database error (range check): {}", e));
-        e.to_string()
-    });
-    
-    if let Ok((min, max)) = range {
-        crate::append_log(app, format!("[Debug] Linking screenshot at {}. DB Range: {} to {}", target_ts_str, min, max));
-    }
-
-    // Find the closest point by checking one before and one after
-    let mut stmt_before = conn.prepare("
-        SELECT latitude, longitude, timestamp FROM metrics 
-        WHERE timestamp <= ?1 
-        ORDER BY timestamp DESC LIMIT 1
-    ").map_err(|e| {
-        crate::append_log(app, format!("[Screenshots] Database error (prepare before): {}", e));
-        e.to_string()
-    })?;
-
-    let before = stmt_before.query_row(params![target_ts_str], |row| {
-        Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
-    }).optional().map_err(|e: rusqlite::Error| {
-        crate::append_log(app, format!("[Screenshots] Database error (query before): {}", e));
-        e.to_string()
-    })?;
-
-    let mut stmt_after = conn.prepare("
-        SELECT latitude, longitude, timestamp FROM metrics 
-        WHERE timestamp > ?1 
-        ORDER BY timestamp ASC LIMIT 1
-    ").map_err(|e| {
-        crate::append_log(app, format!("[Screenshots] Database error (prepare after): {}", e));
-        e.to_string()
-    })?;
-
-    let after = stmt_after.query_row(params![target_ts_str], |row| {
-        Ok((row.get::<usize, f64>(0)?, row.get::<usize, f64>(1)?, row.get::<usize, String>(2)?))
-    }).optional().map_err(|e: rusqlite::Error| {
-        crate::append_log(app, format!("[Screenshots] Database error (query after): {}", e));
-        e.to_string()
-    })?;
-
-    match (before, after) {
-        (Some((lat1, lon1, ts1)), Some((lat2, lon2, ts2))) => {
-            let d1 = (parse_ts(&ts1).unwrap_or(0) - timestamp).abs();
-            let d2 = (parse_ts(&ts2).unwrap_or(0) - timestamp).abs();
-            if d1 < d2 {
-                Ok((lat1, lon1))
-            } else {
-                Ok((lat2, lon2))
-            }
-        },
-        (Some((lat, lon, _)), None) => Ok((lat, lon)),
-        (None, Some((lat, lon, _))) => Ok((lat, lon)),
-        (None, None) => {
-            crate::append_log(app, format!("[Debug] No metrics found in DB for timestamp {}", target_ts_str));
-            Ok((0.0, 0.0))
-        }
-    }
+/// The path of a screenshot's thumbnail, for the window to show through the asset protocol.
+#[tauri::command]
+pub async fn get_screenshot_thumbnail(app: AppHandle, id: i64) -> Result<String, String> {
+    let db_path = app.state::<ScreenshotManager>().db_path.clone();
+    let thumbs = app.state::<ScreenshotManager>().thumbs.clone();
+    tauri::async_runtime::spawn_blocking(move || ScreenshotManager { db_path, thumbs }.thumbnail(id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-pub async fn get_screenshots_for_flight(app: AppHandle, flight_id: String) -> Result<Vec<Screenshot>, String> {
-    let manager = app.state::<ScreenshotManager>();
-    let res = manager.get_screenshots_for_flight(&flight_id);
-    
-    match &res {
-        Ok(_scrs) => {
-        }
-        Err(e) => {
-            crate::append_log(&app, format!("[Debug] Failed to retrieve screenshots for flight {}: {}", flight_id, e));
-        }
-    }
-    
-    res
+pub async fn upload_screenshot(app: AppHandle, screenshot_id: i64) -> Result<String, String> {
+    perform_screenshot_upload(app, screenshot_id).await
 }
 
+/// Shows the screenshot in the file manager.
 #[tauri::command]
-pub async fn get_random_screenshot_for_aircraft(app: AppHandle, aircraft_title: String) -> Result<Option<Screenshot>, String> {
-    let manager = app.state::<ScreenshotManager>();
-    manager.get_random_screenshot_for_aircraft(&aircraft_title)
+pub fn reveal_screenshot(app: AppHandle, id: i64) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = app.state::<ScreenshotManager>().path_of(id)?;
+    app.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 
-async fn get_remote_id_internal(app: &AppHandle, flight_id: &str) -> Result<Option<i64>, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let log_dir = app_data_dir.join(crate::config::get_flightlogs_dir_name());
-    let path = log_dir.join(format!("{}.db", flight_id));
-    
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let conn = Connection::open(path).map_err(|e| e.to_string())?;
-    let res: Option<String> = conn.query_row(
-        "SELECT value FROM summary WHERE key = 'remote_id'",
-        [],
-        |r| r.get(0)
-    ).optional().map_err(|e| e.to_string())?;
-
-    if let Some(id_str) = res {
-        return Ok(id_str.parse::<i64>().ok());
-    }
-    Ok(None)
-}
-
-pub async fn perform_screenshot_upload(
-    app: AppHandle,
-    screenshot_id: i64,
-    flight_id: String,
-) -> Result<String, String> {
-    // The flight the app made on the service, or else the telemetry session it was taken
-    // in: the service makes that flight and places the screenshot on it by its time.
-    let remote_id = get_remote_id_internal(&app, &flight_id).await?;
-
+/// Sends a screenshot to the service, against the telemetry session it was taken in: the
+/// service puts it on the flight it made from that session, by its time.
+pub async fn perform_screenshot_upload(app: AppHandle, screenshot_id: i64) -> Result<String, String> {
     let config = app.state::<ConfigManager>().get_config();
-    if !config.enable_webhook {
-        return Err("Sync with the ButterLog service is not enabled".to_string());
-    }
     let (base_url, api_token) = config.api_auth()
         .ok_or("Not logged in to the ButterLog service")?;
 
@@ -573,19 +427,12 @@ pub async fn perform_screenshot_upload(
         .mime_str("image/webp")
         .map_err(|e| e.to_string())?;
     let form = reqwest::multipart::Form::new().part("screenshot", part);
-    let (url, form, target) = match (remote_id, session_id) {
-        (Some(remote_id), _) => (
-            format!("{}/flights/{}/screenshots", base_url, remote_id),
-            form,
-            format!("remote flight {}", remote_id),
-        ),
-        (None, Some(session)) => (
-            format!("{}/sessions/{}/screenshots", base_url, session),
-            form.text("taken_at", taken_at(&timestamp)?),
-            format!("telemetry session {}", session),
-        ),
-        (None, None) => return Err("Flight not synced with remote server (no remote ID)".to_string()),
+    let Some(session) = session_id else {
+        return Err("Taken while no telemetry was recorded, so no flight has it".to_string());
     };
+    let url = format!("{}/sessions/{}/screenshots", base_url, session);
+    let form = form.text("taken_at", taken_at(&timestamp)?);
+    let target = format!("telemetry session {}", session);
 
     let res = client.post(&url)
         .bearer_auth(&api_token)
@@ -631,5 +478,37 @@ mod tests {
     fn a_recorded_time_goes_up_as_rfc3339_utc() {
         assert_eq!(taken_at("2026-11-05 01:57:58").unwrap(), "2026-11-05T01:57:58+00:00");
         assert!(taken_at("not a time").is_err());
+    }
+
+    #[test]
+    fn the_recent_ones_come_newest_first_and_only_while_their_file_is_there() {
+        let dir = std::env::temp_dir().join(format!("butterlog-shots-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("screenshots.db");
+        Connection::open(&db_path).unwrap().execute_batch(
+            "CREATE TABLE screenshots (id INTEGER PRIMARY KEY AUTOINCREMENT, flight_id TEXT NOT NULL,
+               aircraft_title TEXT NOT NULL, path TEXT NOT NULL UNIQUE, timestamp TEXT NOT NULL,
+               latitude REAL NOT NULL, longitude REAL NOT NULL, remote_hash TEXT, remote_url TEXT, session_id TEXT)",
+        ).unwrap();
+        let manager = ScreenshotManager { db_path, thumbs: dir.join("thumbs") };
+        let file = |name: &str| {
+            let p = dir.join(name);
+            image::RgbImage::new(800, 450).save(&p).unwrap();
+            p.to_string_lossy().into_owned()
+        };
+        let old = manager.record_screenshot("C172", &file("a.png"), "2026-11-10 08:00:00", 1.0, 2.0, Some("s1")).unwrap();
+        let new = manager.record_screenshot("C172", &file("b.png"), "2026-11-10 09:00:00", 1.0, 2.0, None).unwrap();
+        manager.record_screenshot("C172", &dir.join("gone.png").to_string_lossy(), "2026-11-10 10:00:00", 1.0, 2.0, None).unwrap();
+        // Seen again: the same one, and its session kept.
+        assert_eq!(manager.record_screenshot("C172", &dir.join("a.png").to_string_lossy(), "2026-11-10 08:00:00", 0.0, 0.0, None).unwrap(), old);
+
+        let recent = manager.recent(10).unwrap();
+        assert_eq!(recent.iter().map(|s| s.id).collect::<Vec<_>>(), [new, old]);
+        assert_eq!(recent[1].session_id.as_deref(), Some("s1"));
+
+        let thumb = manager.thumbnail(old).unwrap();
+        let (w, h) = image::image_dimensions(&thumb).unwrap();
+        assert_eq!((w, h), (THUMB_PX, 203));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

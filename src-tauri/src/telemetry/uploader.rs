@@ -334,6 +334,7 @@ pub fn spawn(app: AppHandle) {
             let mut log = |line: String| crate::append_log(&app, line);
             match upload_pass(spool, &service, &mut state, &mut log).await {
                 Ok(()) => {
+                    app.state::<crate::service::Service>().set_upload_error(None);
                     if was_unavailable {
                         crate::append_log(&app, "[Telemetry] Service reachable again".to_string());
                     }
@@ -343,6 +344,7 @@ pub fn spawn(app: AppHandle) {
                     crate::force_logout(&app, "service rejected token during telemetry upload");
                 }
                 Err(Halt::Unavailable(e)) => {
+                    app.state::<crate::service::Service>().set_upload_error(Some(e.clone()));
                     if !was_unavailable {
                         crate::append_log(&app, format!("[Telemetry] Upload paused: {e}"));
                     }

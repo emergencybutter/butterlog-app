@@ -187,7 +187,7 @@ impl MsfsSampler {
             id("VERTICAL SPEED"),
             id("PLANE BANK DEGREES"),
         );
-        let mut recorder = Recorder::new(app, &channels(), phase);
+        let mut recorder = Recorder::new(app, "msfs", &channels(), phase);
         recorder.watch_touchdowns(id("SIM ON GROUND"), id("PLANE LATITUDE"), id("PLANE LONGITUDE"));
         let runways = match super::msfs_runways::register(sc) {
             Ok(()) => Some(RunwayLookup::default()),

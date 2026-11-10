@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { open, ask } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { Config } from "./models";
 import { XPlanePluginSettings } from "./XPlanePluginSettings";
@@ -13,48 +13,9 @@ function isValidRegex(pattern: string): boolean {
 export function Settings() {
     const [config, setConfig] = useState<Config | null>(null);
     const [status, setStatus] = useState<string>("");
-    const [loginLoading, setLoginLoading] = useState<boolean>(false);
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isLoggedIn = !!(config && config.apiToken && config.apiToken.trim().length > 0);
-
-    const handleDiscordLogin = async () => {
-        setLoginLoading(true);
-        setStatus("Opening browser for Discord login...");
-        try {
-            await invoke<string>("start_discord_login");
-            // The backend saved the token and service URL; reload the config
-            // so this view reflects the logged-in state.
-            const cfg = await invoke<Config>("get_config");
-            setConfig(prev => prev ? { ...cfg, openAtLogin: prev.openAtLogin } : cfg);
-            setStatus("Successfully authenticated with ButterLog service!");
-        } catch (err) {
-            setStatus("Authentication failed: " + err);
-        } finally {
-            setLoginLoading(false);
-        }
-    };
-
-    const handleDiscordLogout = async () => {
-        if (!config) return;
-        const confirmed = await ask(
-            "Disconnect your Discord account from the ButterLog service? Your multiplayer and sharing preferences are kept and resume when you reconnect.",
-            { title: "Log Out", kind: "warning" }
-        );
-        if (!confirmed) return;
-        setStatus("Logging out of ButterLog service...");
-        try {
-            // Mirror the backend's force_logout: clear only the credentials and
-            // leave traffic/sharing preferences intact so they resume on re-login.
-            const updatedConfig = { ...config, apiToken: "", enableWebhook: false };
-            setConfig(updatedConfig);
-            await invoke("set_config", { config: updatedConfig });
-            setStatus("Logged out successfully.");
-            setTimeout(() => setStatus(""), 3000);
-        } catch (err) {
-            setStatus("Failed to logout: " + err);
-        }
-    };
 
     useEffect(() => {
         invoke<Config>("get_config")
@@ -134,8 +95,8 @@ export function Settings() {
     if (!config) return <div>Loading settings...</div>;
 
     return (
-        <div className="settings-page page page-narrow">
-            <div className="view-header">
+        <div className="settings-page page" style={{ maxWidth: 760 }}>
+            <div className="page-head">
                 <h2>Settings</h2>
             </div>
 
@@ -167,38 +128,10 @@ export function Settings() {
                 </section>
 
                 <section>
-                    <h4>Directories</h4>
+                    <h4>Screenshot folders</h4>
                     <div className="settings-stack">
                         <div className="setting-input-group">
-                            <label>Exported log directory:</label>
-                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem" }}>
-                                <input
-                                    type="text"
-                                    className="setting-input"
-                                    style={{ flex: 1 }}
-                                    value={config.logDirectory || ""}
-                                    readOnly
-                                    title={config.logDirectory || ""}
-                                    placeholder="Default: Documents/butterlog"
-                                />
-                                <button
-                                    onClick={async () => {
-                                        const dir = await pickDirectory();
-                                        if (dir) handleChange("logDirectory", dir);
-                                    }}
-                                    className="btn-ghost-amber"
-                                >Browse…</button>
-                                {config.logDirectory && (
-                                    <button
-                                        onClick={() => handleChange("logDirectory", null)}
-                                        title="Reset to default"
-                                        className="btn-ghost-red"
-                                    >✕</button>
-                                )}
-                            </div>
-                        </div>
-                        <div className="setting-input-group">
-                            <label>Screenshot Directories:</label>
+                            <label>Watched while a simulator is connected:</label>
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.25rem" }}>
                                 {(config.screenshotDirectories || []).map((dir, i) => (
                                     <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -251,7 +184,7 @@ export function Settings() {
                                     checked={config.autoUploadScreenshots}
                                     onChange={(e) => handleChange("autoUploadScreenshots", e.target.checked)}
                                 />
-                                <span>Auto-upload Screenshots</span>
+                                <span>Upload screenshots by themselves</span>
                             </label>
                         </div>
                         {config.autoUploadScreenshots && (
@@ -263,7 +196,7 @@ export function Settings() {
                                             checked={config.screenshotRegexEnabled}
                                             onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
                                         />
-                                        <span>Enable Screenshot Window Regex</span>
+                                        <span>Only those whose file name matches</span>
                                     </label>
                                 </div>
                                 <input
@@ -301,97 +234,12 @@ export function Settings() {
                             </label>
                             {!isLoggedIn && (
                                 <span className="setting-hint">
-                                    Requires connection to ButterLog service.
+                                    Sign in on the Service page first.
                                 </span>
                             )}
                         </div>
                     </div>
                 </section>
-
-                <section>
-                    <h4>ButterLog Service</h4>
-                    <div className={`auth-card${isLoggedIn ? " connected" : ""}`}>
-                        <div className="auth-head">
-                            <div className="auth-id">
-                                <div className={`auth-badge${isLoggedIn ? " connected" : ""}`}>
-                                    {isLoggedIn ? (
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#36e3c6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="20 6 9 17 4 12"></polyline>
-                                        </svg>
-                                    ) : (
-                                        <svg width="24" height="24" viewBox="0 0 127.14 96.36" fill="#5865F2">
-                                            <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,53.22,6.83,77.19,77.19,0,0,0,49.88,0,105.15,105.15,0,0,0,19.44,8.07C3.66,31.58-1.86,54.65,1,77.53A105.73,105.73,0,0,0,32,96.36a77.7,77.7,0,0,0,6.63-10.85,68.43,68.43,0,0,1-10.4-5c.88-.65,1.72-1.33,2.53-2a75.46,75.46,0,0,0,72.63,0c.81.71,1.65,1.39,2.53,2a68.43,68.43,0,0,1-10.4,5,77.7,77.7,0,0,0,6.63,10.85,105.73,105.73,0,0,0,31-18.83C129,54.65,122.56,31.58,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.83,46,53.83,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.24,60,73.24,53S78.41,40.36,84.69,40.36,96.07,46,96.07,53,91,65.69,84.69,65.69Z"/>
-                                        </svg>
-                                    )}
-                                </div>
-                                <div>
-                                    <div className={`auth-title${isLoggedIn ? " connected" : ""}`}>
-                                        {isLoggedIn ? "Connected" : "Not Connected"}
-                                    </div>
-                                    <div className="auth-sub">
-                                        {isLoggedIn
-                                            ? "Your Discord account is linked to the ButterLog service."
-                                            : "Link your Discord account to sync logs and upload screenshots."}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {isLoggedIn ? (
-                                <button onClick={handleDiscordLogout} className="btn-logout">
-                                    Log Out
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={handleDiscordLogin}
-                                    disabled={loginLoading}
-                                    className="btn-discord"
-                                >
-                                    {loginLoading ? (
-                                        <>
-                                            <svg style={{ animation: "spin 1s linear infinite" }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                                <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)" />
-                                                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" />
-                                            </svg>
-                                            <span>Connecting...</span>
-                                        </>
-                                    ) : (
-                                        "Connect with Discord"
-                                    )}
-                                </button>
-                            )}
-                        </div>
-                        {isLoggedIn && (
-                            <span className="setting-hint">
-                                Signing in puts each flight on the web, live while you fly and in
-                                full once you land, and lets you drive your own simulator from its
-                                flight page.
-                            </span>
-                        )}
-                        {isLoggedIn && (
-                            <div className="setting-control">
-                                <label>
-                                    <input
-                                        type="checkbox"
-                                        checked={!config.telemetryOff}
-                                        onChange={(e) => handleChange("telemetryOff", !e.target.checked)}
-                                    />
-                                    <span>Send flight telemetry to the service (beta)</span>
-                                </label>
-                                <span className="setting-hint">
-                                    Helps test the new flight analysis: the app also sends your
-                                    flight's recorded telemetry, which the service analyses
-                                    alongside the app. Your flights are logged and on the web as before
-                                    either way.
-                                </span>
-                            </div>
-                        )}
-                        <p className="auth-note">
-                            We use Discord to login to not make you create yet another account.
-                        </p>
-                    </div>
-                </section>
-
-
 
                 <div className="settings-status" aria-live="polite" style={{ marginTop: "1rem", minHeight: "1.2rem", fontSize: "0.85rem", fontFamily: "var(--bl-mono)", letterSpacing: "0.04em" }}>
                     {status && <span style={{ color: /^(Error|Failed)/.test(status) ? "var(--bl-caution)" : "var(--bl-teal)" }}>{status}</span>}

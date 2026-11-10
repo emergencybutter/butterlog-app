@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Telemetry is the only way flights are tracked. The app no longer logs, analyses, stores or uploads flights of its own, streams a live track, or keeps aircraft stats: the service makes each flight from the telemetry, which every signed-in app now sends (the Settings switch is gone). Flight logs already on disk are left where they are.
+- The window is rebuilt around that. The flight history, flight details and aircraft stats pages are gone. The left menu starts with **Service** (who the app is signed in as, whether the service answers, the flight being flown and the last one done, sign in and out, and a button for the web), then the old Status tabs as pages of their own, and **Screenshots**.
+- **Simulator telemetry** is per sim: which sim and version, how it is read (SimConnect, the X-Plane plugin or its Web API), whether a session is recording, the sampling rate, and every channel the capture records with its latest value, plus the sim's recent events and what multiplayer peers get.
+- **Screenshots** lists the recent ones taken while a sim is connected, with small thumbnails, and shows whether each went up, by itself or with its Upload button. They go up against the telemetry session they were taken in.
+- The status line shows the connection to the service, whether telemetry is recording, and what is waiting to be sent.
+- A new plain look: system font, flat colours, no animations or shadows. The window renders without the GPU (WebView2 runs with it off), and closes to the tray to free it entirely.
+
+### Added
+- When a flight is done, the tray icon gets a dot. Clicking it opens that flight's page on the web with its debrief open, and clears the dot; otherwise a click opens the window. The right-click menu always offers both, the window and the service in the browser, plus the last flight's debrief. Needs the service's `GET /api/v0/me`.
+
 ## [0.3.42] - 2026-11-08
 
 ### Fixed

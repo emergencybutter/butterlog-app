@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Butterlog flight tracker",
-        "width": 1024,
-        "height": 768
+        "title": "ButterLog",
+        "width": 980,
+        "height": 680,
+        "minWidth": 720,
+        "minHeight": 480,
+        "additionalBrowserArgs": "--disable-gpu --disable-gpu-compositing --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
       }
     ],
     "security": {
@@ -38,8 +41,6 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../public/airports.csv",
-      "../public/runways.csv",
       "xp_plugin/"
     ],
     "icon": [
