@@ -18,7 +18,7 @@ type Page = "service" | "telemetry" | "screenshots" | "multiplayer" | "logs" | "
 const PAGES: { id: Page; label: string }[] = [
   { id: "telemetry", label: "Simulator telemetry" },
   { id: "screenshots", label: "Screenshots" },
-  { id: "multiplayer", label: "Multiplayer debugging" },
+  { id: "multiplayer", label: "Multiplayer" },
   { id: "logs", label: "Backend logs" },
 ];
 
