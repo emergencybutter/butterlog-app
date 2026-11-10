@@ -1,11 +1,11 @@
 {
-  "version": "0.3.42",
-  "notes": "Butterlog v0.3.42 Release\nThe app now updates itself while it sits in the tray, and never during a flight.",
-  "pub_date": "2026-11-08T15:12:43Z",
+  "version": "0.4.0",
+  "notes": "Butterlog v0.4.0 Release\nTelemetry is now the only way flights are tracked: the service makes each flight, and the tray shows a dot with its debrief when one is done. A new, lighter window that renders without the GPU, a Screenshots page, per-folder screenshot settings, and FlySto in Settings.",
+  "pub_date": "2026-11-10T22:30:32Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUG9LMU9ReWl2cmZ1NlBPSnRWd3Fwd0IxM2NaSWhsU3ZuUEtIUXd6SnY4QUhjTEV4WmFCV1BRd0pQSDVtZk5YRjVhYUY0aHpaKytUdGpGdWd4Q1VKS2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTUwNzYyCWZpbGU6YnV0dGVybG9nXzAuMy40Ml94NjQtc2V0dXAuZXhlCks3WVZhSWF2U0dTanE3MVMvdE1lV0FWQTl0SmF0WFVoZ1NoY2hWbERWdWVTUlhIdnFkc0lzdE41bEp1dWQyaUJxYXpYL1lDbmtSVjR1NUJnem1Lb0FRPT0K",
-      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.3.42_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHB1YVQySm53MmQxUG1lM1NKSi9FNWxRNTF1eUNTOGs5V0dNWDMrdGJWamdELzhJWm5nMW5VbnVOWkZ2eTYrQkl4OTgvWFAxS0Z3SDQ2WWhPZkVMa0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzQ5ODMyCWZpbGU6YnV0dGVybG9nXzAuNC4wX3g2NC1zZXR1cC5leGUKemRFdXhRU1o2VmF0N1luUVYySjBab1U4TExUWE5vcVlHT0JTd3phZDlaYlRCSUQ2MmV5MlRHVDVuVlprMHV3em40S1FGYThPdnBBVGhJQmFsc2tKQXc9PQo=",
+      "url": "https://butterlog.flyvoyager.net/downloads/butterlog_0.4.0_x64-setup.exe"
     }
   }
 }

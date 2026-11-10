@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
 ### Changed
 - Telemetry is the only way flights are tracked. The app no longer logs, analyses, stores or uploads flights of its own, streams a live track, or keeps aircraft stats: the service makes each flight from the telemetry, which every signed-in app now sends (the Settings switch is gone). Flight logs already on disk are left where they are.
 - The window is rebuilt around that. The flight history, flight details and aircraft stats pages are gone. The left menu starts with **Service** (who the app is signed in as, whether the service answers, the flight being flown and the last one done, sign in and out, and a button for the web), then the old Status tabs as pages of their own, and **Screenshots**.
