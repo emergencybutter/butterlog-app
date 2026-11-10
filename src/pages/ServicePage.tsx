@@ -116,7 +116,7 @@ export function ServicePage({ status }: { status: ServiceStatus | null }) {
                 {status!.unsentKb > 0 && <span className="warn"> · {status!.unsentKb.toLocaleString()} kB waiting to be sent</span>}
               </dd>
               {status!.uploadError && <><dt>Upload</dt><dd className="bad">Paused: {status!.uploadError}</dd></>}
-              {me && <><dt>FlySto</dt><dd>{me.flystoConnected ? "Connected: flights go there by themselves" : <button className="quiet" onClick={() => open("settings")}>Connect on the web ↗</button>}</dd></>}
+              {me && <><dt>FlySto</dt><dd>{me.flystoConnected ? (me.flystoAuto ? "Connected: flights go there by themselves" : "Connected: you upload the flights you choose") : <button className="quiet" onClick={() => open("settings")}>Connect on the web ↗</button>}</dd></>}
             </dl>
           </div>
         )}

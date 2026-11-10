@@ -4,4 +4,8 @@ import type { FlightRef } from "./FlightRef";
 /**
  * The signed-in account, as `GET /api/v0/me` gives it.
  */
-export type Me = { userId: number, username: string, displayName: string, avatarUrl: string | null, flightsUrl: string, settingsUrl: string, flystoConnected: boolean, live: FlightRef | null, lastEnded: FlightRef | null, };
+export type Me = { userId: number, username: string, displayName: string, avatarUrl: string | null, flightsUrl: string, settingsUrl: string, flystoConnected: boolean, 
+/**
+ * Ended flights go to FlySto by themselves; an older service doesn't say, so on.
+ */
+flystoAuto: boolean, live: FlightRef | null, lastEnded: FlightRef | null, };

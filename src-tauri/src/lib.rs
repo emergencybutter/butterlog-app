@@ -569,6 +569,7 @@ pub fn run() {
             service::open_service_page,
             service::set_flysto_token,
             service::clear_flysto_token,
+            service::set_flysto_auto,
             screenshot_manager::get_recent_screenshots,
             screenshot_manager::get_screenshot_thumbnail,
             screenshot_manager::upload_screenshot,

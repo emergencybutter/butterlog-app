@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ServiceStatus } from "./models";
@@ -15,6 +15,25 @@ export function FlystoSettings({ status }: { status: ServiceStatus | null }) {
 
     const signedIn = !!status && status.link !== "signed_out";
     const connected = !!status?.me?.flystoConnected;
+    // As switched here, until the service's next answer says so too.
+    const [autoPending, setAutoPending] = useState<boolean | null>(null);
+    const auto = autoPending ?? status?.me?.flystoAuto ?? true;
+
+    const setAuto = async (on: boolean) => {
+        setAutoPending(on);
+        setMessage(null);
+        try {
+            await invoke("set_flysto_auto", { auto: on });
+            setMessage({
+                text: on ? "Flights you finish from now on go to FlySto by themselves." : "Flights no longer go by themselves: upload the ones you choose from their page on the web.",
+                bad: false,
+            });
+        } catch (e) {
+            setAutoPending(null);
+            setMessage({ text: String(e), bad: true });
+        }
+    };
+    useEffect(() => { setAutoPending(null); }, [status?.me?.flystoAuto]);
 
     const connect = async () => {
         setBusy(true);
@@ -53,9 +72,22 @@ export function FlystoSettings({ status }: { status: ServiceStatus | null }) {
                     <>
                         <span className="setting-hint">
                             {connected
-                                ? "Connected: each flight you finish goes to your FlySto account by itself, and its Discord post links it. Paste a new token to replace the one kept."
+                                ? "Connected. Paste a new token to replace the one kept."
                                 : "Send each flight you finish to your FlySto account by itself, with a link to it in its Discord post. Flights from before you connect aren't sent."}
                         </span>
+                        {connected && (
+                            <div className="setting-control">
+                                <label>
+                                    <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                                    <span>Upload flights by themselves</span>
+                                </label>
+                                <span className="setting-hint">
+                                    {auto
+                                        ? "Each flight you finish goes to your FlySto account, and its Discord post links it."
+                                        : "Off: send the flights you choose with Upload to FlySto on their page on the web."}
+                                </span>
+                            </div>
+                        )}
                         {!connected && (
                             <ol className="setting-hint steps">
                                 <li>

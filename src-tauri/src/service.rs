@@ -54,6 +54,9 @@ pub struct Me {
     pub flights_url: String,
     pub settings_url: String,
     pub flysto_connected: bool,
+    /// Ended flights go to FlySto by themselves; an older service doesn't say, so on.
+    #[serde(default = "on")]
+    pub flysto_auto: bool,
     pub live: Option<FlightRef>,
     pub last_ended: Option<FlightRef>,
 }
@@ -304,20 +307,31 @@ pub async fn set_flysto_token(app: AppHandle, token: String) -> Result<(), Strin
     if token.is_empty() {
         return Err("Paste your FlySto API token first".into());
     }
-    flysto(&app, reqwest::Method::PUT, Some(serde_json::json!({ "token": token }))).await
+    flysto_call(&app, reqwest::Method::PUT, "me/flysto", Some(serde_json::json!({ "token": token }))).await
+}
+
+/// Whether ended flights go to FlySto by themselves (`PUT /api/v0/me/flysto/auto`). Off,
+/// the flight page's button still sends the ones the pilot chooses.
+#[tauri::command]
+pub async fn set_flysto_auto(app: AppHandle, auto: bool) -> Result<(), String> {
+    flysto_call(&app, reqwest::Method::PUT, "me/flysto/auto", Some(serde_json::json!({ "auto": auto }))).await
 }
 
 /// Has the service forget the pilot's FlySto token: flights no longer go there.
 #[tauri::command]
 pub async fn clear_flysto_token(app: AppHandle) -> Result<(), String> {
-    flysto(&app, reqwest::Method::DELETE, None).await
+    flysto_call(&app, reqwest::Method::DELETE, "me/flysto", None).await
 }
 
-async fn flysto(app: &AppHandle, method: reqwest::Method, body: Option<serde_json::Value>) -> Result<(), String> {
+fn on() -> bool {
+    true
+}
+
+async fn flysto_call(app: &AppHandle, method: reqwest::Method, path: &str, body: Option<serde_json::Value>) -> Result<(), String> {
     let config = app.state::<crate::config::ConfigManager>().get_config();
     let (api, token) = config.api_auth().ok_or("Sign in on the Service page first")?;
     let mut request = reqwest::Client::new()
-        .request(method, format!("{api}/me/flysto"))
+        .request(method, format!("{api}/{path}"))
         .bearer_auth(&token)
         .timeout(Duration::from_secs(30));
     if let Some(body) = body {
@@ -397,6 +411,7 @@ mod tests {
             flights_url: "https://b/content".into(),
             settings_url: "https://b/content/settings".into(),
             flysto_connected: false,
+            flysto_auto: true,
             live: None,
             last_ended: last_ended.map(flight),
         }

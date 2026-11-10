@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 - Each screenshot folder has settings of its own: whether its screenshots go up by themselves, and an optional pattern naming the files it takes (empty for all). They replace the one switch and pattern for every folder, which carry over to each folder. X-Plane 12's `Output/screenshots` is watched by default in each install found, for every file; the desktop's folders (Game Bar, Windows, Steam) only for files named after a sim. A folder that doesn't exist yet is watched once it does.
 
 ### Added
-- FlySto in Settings: paste your FlySto API token, with the steps to make one, and each flight you finish goes to your FlySto account by itself, linked from its Discord post. The service checks the token with FlySto before keeping it, and says why when FlySto refuses it; the app keeps no copy. Replace or disconnect it there too.
+- FlySto in Settings: paste your FlySto API token, with the steps to make one, and each flight you finish goes to your FlySto account by itself, linked from its Discord post. The service checks the token with FlySto before keeping it, and says why when FlySto refuses it; the app keeps no copy. Replace or disconnect it there too. Once connected, **Upload flights by themselves** can be switched off: the flight page's Upload to FlySto still sends the ones you choose.
 - When a flight is done, the tray icon gets a dot. Clicking it opens that flight's page on the web with its debrief open, and clears the dot; otherwise a click opens the window. The right-click menu always offers both, the window and the service in the browser, plus the last flight's debrief. Needs the service's `GET /api/v0/me`.
 
 ## [0.3.42] - 2026-11-08
