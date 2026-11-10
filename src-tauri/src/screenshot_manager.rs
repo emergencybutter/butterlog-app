@@ -163,20 +163,19 @@ impl ScreenshotManager {
 pub fn start_screenshot_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let app_clone = app.clone();
-        let mut last_config: Option<crate::config::Config> = None;
+        let mut last_watched: Option<Vec<PathBuf>> = None;
         let mut _watcher: Option<RecommendedWatcher> = None;
 
         loop {
-            let config = app_clone.state::<crate::config::ConfigManager>().get_config();
+            // The folders that exist: X-Plane makes its own at its first screenshot, so a
+            // folder appearing restarts the watch too.
+            let existing_dirs = existing_folders(&app_clone);
 
-            if last_config.as_ref() != Some(&config) {
+            if last_watched.as_ref() != Some(&existing_dirs) {
                 _watcher = None;
+                last_watched = Some(existing_dirs.clone());
 
-                if !config.screenshot_directories.is_empty() {
-                    let existing_dirs: Vec<PathBuf> = config.screenshot_directories.iter()
-                        .filter(|d| d.exists())
-                        .cloned()
-                        .collect();
+                {
 
                     if !existing_dirs.is_empty() {
                         let app_inner = app_clone.clone();
@@ -193,7 +192,6 @@ pub fn start_screenshot_watcher(app: AppHandle) {
 
                             if !watched.is_empty() {
                                 _watcher = Some(w);
-                                last_config = Some(config.clone());
 
                                 loop {
                                     match rx.recv_timeout(Duration::from_secs(2)) {
@@ -215,19 +213,14 @@ pub fn start_screenshot_watcher(app: AppHandle) {
                                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                                     }
 
-                                    let current = app_inner.state::<crate::config::ConfigManager>().get_config();
-                                    if current.screenshot_directories != config.screenshot_directories {
-                                        crate::append_log(&app_inner, "Screenshot watcher config changed, restarting...".to_string());
+                                    if existing_folders(&app_inner) != existing_dirs {
+                                        crate::append_log(&app_inner, "Screenshot folders changed, watching again...".to_string());
                                         break;
                                     }
                                 }
                             }
                         }
-                    } else {
-                        last_config = Some(config.clone());
                     }
-                } else {
-                    last_config = Some(config.clone());
                 }
             }
             std::thread::sleep(Duration::from_secs(5));
@@ -235,18 +228,22 @@ pub fn start_screenshot_watcher(app: AppHandle) {
     });
 }
 
-/// Returns whether a screenshot file should be auto-uploaded. When the
-/// screenshot regex is enabled it acts purely as an auto-upload filter; an
-/// invalid regex is treated as "match all" so uploads are not silently dropped.
-fn passes_upload_filter(config: &crate::config::Config, file_name: &str) -> bool {
-    if !config.screenshot_regex_enabled {
-        return true;
+/// The configured folders that exist, each once.
+fn existing_folders(app: &AppHandle) -> Vec<PathBuf> {
+    let config = app.state::<ConfigManager>().get_config();
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for folder in config.screenshot_folders {
+        if folder.path.is_dir() && !dirs.contains(&folder.path) {
+            dirs.push(folder.path);
+        }
     }
-    regex::RegexBuilder::new(&config.screenshot_regex)
-        .case_insensitive(true)
-        .build()
-        .map(|re| re.is_match(file_name))
-        .unwrap_or(true)
+    dirs
+}
+
+/// The folder a new file is in, as configured.
+fn folder_of(config: &crate::config::Config, path: &std::path::Path) -> Option<crate::config::ScreenshotFolder> {
+    let parent = path.parent()?;
+    config.screenshot_folders.iter().find(|f| f.path == parent).cloned()
 }
 
 fn handle_new_file(app: &AppHandle, path: PathBuf) {
@@ -254,6 +251,17 @@ fn handle_new_file(app: &AppHandle, path: PathBuf) {
         Some(name) => name,
         None => return,
     };
+    // Only pictures, and only those the folder's pattern takes.
+    let picture = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ["png", "jpg", "jpeg", "bmp", "webp"].contains(&e.to_ascii_lowercase().as_str()));
+    let Some(folder) = folder_of(&app.state::<ConfigManager>().get_config(), &path) else {
+        return;
+    };
+    if !picture || !folder.takes(file_name) {
+        return;
+    }
 
     // Wait until the file size is stable for 500ms and the file can be opened (ensuring write is complete and lock is released)
     let mut last_size = 0;
@@ -306,9 +314,8 @@ fn handle_new_file(app: &AppHandle, path: PathBuf) {
             crate::append_log(app, format!("Captured screenshot {:?}", file_name));
             let _ = app.emit("new-screenshot", screenshot_id);
 
-            // The screenshot regex, when enabled, only filters what goes up by itself.
-            let config = app.state::<ConfigManager>().get_config();
-            if config.auto_upload_screenshots && session.is_some() && passes_upload_filter(&config, file_name) {
+            // Its folder says whether it goes up by itself.
+            if folder.auto_upload && session.is_some() {
                 let app_clone = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = perform_screenshot_upload(app_clone.clone(), screenshot_id).await {

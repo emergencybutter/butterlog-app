@@ -6,6 +6,7 @@
 export type { FlightMetrics } from "./bindings/FlightMetrics";
 export type { Screenshot } from "./bindings/Screenshot";
 export type { Config } from "./bindings/Config";
+export type { ScreenshotFolder } from "./bindings/ScreenshotFolder";
 export type { MultiplayerDebugInfo } from "./bindings/MultiplayerDebugInfo";
 export type { TrackedAircraftDebugInfo } from "./bindings/TrackedAircraftDebugInfo";
 export type { ServiceStatus } from "./bindings/ServiceStatus";

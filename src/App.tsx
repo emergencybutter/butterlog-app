@@ -7,7 +7,7 @@ import { TelemetryPage } from "./pages/TelemetryPage";
 import { ScreenshotsPage } from "./pages/ScreenshotsPage";
 import { MultiplayerPage } from "./pages/MultiplayerPage";
 import { LogsPage } from "./pages/LogsPage";
-import { Config, ServiceStatus } from "./models";
+import { ServiceStatus } from "./models";
 import "./App.css";
 
 // Cap the in-memory log buffer; the app often runs for days in the tray.
@@ -29,12 +29,10 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [sims, setSims] = useState<string[]>([]);
-  const [autoUpload, setAutoUpload] = useState(false);
 
   useEffect(() => {
     invoke<string[]>("get_logs").then(setLogs).catch(console.error);
     invoke<ServiceStatus>("get_service_status").then(setStatus).catch(console.error);
-    invoke<Config>("get_config").then((c) => setAutoUpload(c.autoUploadScreenshots)).catch(console.error);
 
     const unlisten = [
       listen<string>("log-update", (event) => {
@@ -62,13 +60,6 @@ function App() {
     };
   }, []);
 
-  // Settings may have changed whether screenshots go up by themselves.
-  useEffect(() => {
-    if (page === "screenshots") {
-      invoke<Config>("get_config").then((c) => setAutoUpload(c.autoUploadScreenshots)).catch(console.error);
-    }
-  }, [page]);
-
   const link = linkText(status);
   const signedIn = !!status && status.link !== "signed_out";
 
@@ -76,7 +67,7 @@ function App() {
     switch (page) {
       case "service": return <ServicePage status={status} />;
       case "telemetry": return <TelemetryPage signedIn={signedIn} />;
-      case "screenshots": return <ScreenshotsPage signedIn={signedIn} autoUpload={autoUpload} onSettings={() => setPage("settings")} />;
+      case "screenshots": return <ScreenshotsPage signedIn={signedIn} onSettings={() => setPage("settings")} />;
       case "multiplayer": return <MultiplayerPage />;
       case "logs": return <LogsPage logs={logs} />;
       case "settings": return <Settings />;

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { Config } from "./models";
+import { Config, ScreenshotFolder } from "./models";
 import { XPlanePluginSettings } from "./XPlanePluginSettings";
 
 function isValidRegex(pattern: string): boolean {
@@ -60,16 +60,6 @@ export function Settings() {
         persist(next);
     };
 
-    // Text inputs save on a debounce so we don't write the config to disk (and
-    // flash "saved") on every keystroke.
-    const handleTextChange = (key: keyof Config, value: string) => {
-        if (!config) return;
-        const next: Config = { ...config, [key]: value };
-        setConfig(next);
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => persist(next), 400);
-    };
-
     // Autostart is owned by the OS plugin; only persist the flag once the plugin
     // call succeeds so the checkbox can't drift from the real autostart state.
     const handleAutostartChange = async (value: boolean) => {
@@ -86,6 +76,20 @@ export function Settings() {
     };
 
     useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+
+    // Typing a pattern saves on a debounce, like the other text inputs.
+    const setFolders = (folders: ScreenshotFolder[], debounce = false) => {
+        if (!config) return;
+        const next: Config = { ...config, screenshotFolders: folders };
+        setConfig(next);
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        if (debounce) saveTimer.current = setTimeout(() => persist(next), 400);
+        else persist(next);
+    };
+    const setFolder = (i: number, folder: ScreenshotFolder, debounce = false) => {
+        if (!config) return;
+        setFolders(config.screenshotFolders.map((f, j) => (j === i ? folder : f)), debounce);
+    };
 
     const pickDirectory = async (): Promise<string | null> => {
         const selected = await open({ directory: true, multiple: false });
@@ -130,92 +134,66 @@ export function Settings() {
                 <section>
                     <h4>Screenshot folders</h4>
                     <div className="settings-stack">
-                        <div className="setting-input-group">
-                            <label>Watched while a simulator is connected:</label>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.25rem" }}>
-                                {(config.screenshotDirectories || []).map((dir, i) => (
-                                    <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                                        <input
-                                            type="text"
-                                            className="setting-input"
-                                            style={{ flex: 1 }}
-                                            value={dir}
-                                            readOnly
-                                            title={dir}
-                                        />
-                                        <button
-                                            onClick={async () => {
-                                                const picked = await pickDirectory();
-                                                if (picked && !(config.screenshotDirectories || []).some((d, j) => d === picked && j !== i)) {
-                                                    const dirs = [...config.screenshotDirectories];
-                                                    dirs[i] = picked;
-                                                    handleChange("screenshotDirectories", dirs);
-                                                }
-                                            }}
-                                            className="btn-ghost-amber"
-                                        >Browse…</button>
-                                        <button
-                                            onClick={() => handleChange("screenshotDirectories", config.screenshotDirectories.filter((_, j) => j !== i))}
-                                            className="btn-ghost-red"
-                                        >✕</button>
-                                    </div>
-                                ))}
-                                <button
-                                    onClick={async () => {
-                                        const dir = await pickDirectory();
-                                        if (dir && !(config.screenshotDirectories || []).includes(dir)) {
-                                            handleChange("screenshotDirectories", [...(config.screenshotDirectories || []), dir]);
-                                        }
-                                    }}
-                                    className="btn-ghost-amber" style={{ alignSelf: "flex-start" }}
-                                >+ Add directory</button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section>
-                    <h4>Screenshots</h4>
-                    <div className="settings-stack">
-                        <div className="setting-control">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={config.autoUploadScreenshots}
-                                    onChange={(e) => handleChange("autoUploadScreenshots", e.target.checked)}
-                                />
-                                <span>Upload screenshots by themselves</span>
-                            </label>
-                        </div>
-                        {config.autoUploadScreenshots && (
-                            <>
-                                <div className="setting-control">
-                                    <label>
+                        <span className="setting-hint">
+                            Watched while a simulator is connected. Each folder can send its screenshots
+                            up by itself, and take only the files whose name matches a pattern.
+                        </span>
+                        {(config.screenshotFolders || []).map((folder, i) => (
+                            <div key={folder.path} className="folder">
+                                <div className="row">
+                                    <input type="text" className="setting-input" style={{ flex: 1 }} value={folder.path} readOnly title={folder.path} />
+                                    <button
+                                        onClick={async () => {
+                                            const picked = await pickDirectory();
+                                            if (picked && !config.screenshotFolders.some((f, j) => f.path === picked && j !== i)) {
+                                                setFolder(i, { ...folder, path: picked });
+                                            }
+                                        }}
+                                        className="btn-ghost-amber"
+                                    >Browse…</button>
+                                    <button
+                                        title="Stop watching this folder"
+                                        onClick={() => setFolders(config.screenshotFolders.filter((_, j) => j !== i))}
+                                        className="btn-ghost-red"
+                                    >✕</button>
+                                </div>
+                                <div className="row">
+                                    <label className="row" style={{ cursor: "pointer" }}>
                                         <input
                                             type="checkbox"
-                                            checked={config.screenshotRegexEnabled}
-                                            onChange={(e) => handleChange("screenshotRegexEnabled", e.target.checked)}
+                                            checked={folder.autoUpload}
+                                            onChange={(e) => setFolder(i, { ...folder, autoUpload: e.target.checked })}
                                         />
-                                        <span>Only those whose file name matches</span>
+                                        <span>Upload by itself</span>
                                     </label>
+                                    <input
+                                        type="text"
+                                        style={{ flex: 1 }}
+                                        className="mono"
+                                        value={folder.regex}
+                                        onChange={(e) => setFolder(i, { ...folder, regex: e.target.value }, true)}
+                                        placeholder="Every file (optional pattern, e.g. ^X-Plane)"
+                                        title="Only files whose name matches this regular expression, case aside"
+                                    />
                                 </div>
-                                <input
-                                    type="text"
-                                    className="setting-input"
-                                    value={config.screenshotRegex}
-                                    onChange={(e) => handleTextChange("screenshotRegex", e.target.value)}
-                                    disabled={!config.screenshotRegexEnabled}
-                                    placeholder="Only auto-upload files matching this regex"
-                                />
-                                {config.screenshotRegexEnabled && config.screenshotRegex && !isValidRegex(config.screenshotRegex) && (
-                                    <span className="setting-hint">Invalid regular expression — this filter won't match anything.</span>
+                                {folder.regex.trim() && !isValidRegex(folder.regex.trim()) && (
+                                    <span className="setting-hint bad">Not a valid pattern: every file of this folder is taken.</span>
                                 )}
-                            </>
-                        )}
+                            </div>
+                        ))}
+                        <div className="row">
+                            <button
+                                onClick={async () => {
+                                    const dir = await pickDirectory();
+                                    if (dir && !config.screenshotFolders.some((f) => f.path === dir)) {
+                                        setFolders([...config.screenshotFolders, { path: dir, autoUpload: false, regex: "" }]);
+                                    }
+                                }}
+                                className="btn-ghost-amber"
+                            >+ Add folder</button>
+                        </div>
                     </div>
                 </section>
-
-
 
                 <XPlanePluginSettings />
 

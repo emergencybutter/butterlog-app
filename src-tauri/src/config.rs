@@ -6,18 +6,71 @@ use parking_lot::Mutex;
 use tauri::AppHandle;
 use tauri::Manager;
 
+/// A folder screenshots are picked up from, while a sim is connected.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ts_rs::TS)]
+#[ts(export, export_to = "../../src/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotFolder {
+    #[ts(type = "string")]
+    pub path: PathBuf,
+    /// Its screenshots go to the service by themselves.
+    #[serde(default)]
+    pub auto_upload: bool,
+    /// Only files whose name matches, case aside; empty for every file. A pattern that
+    /// doesn't compile matches every file, so nothing is silently dropped.
+    #[serde(default)]
+    pub regex: String,
+}
+
+/// The file names sim screenshots get in the desktop's own folders (Game Bar, Windows).
+pub const SIM_FILE_NAMES: &str = "^(Microsoft Flight Simulator|X-Plane) .*";
+
+impl ScreenshotFolder {
+    pub fn new(path: PathBuf, regex: &str) -> Self {
+        Self { path, auto_upload: false, regex: regex.to_string() }
+    }
+
+    /// Whether a file of this folder is a screenshot to keep.
+    pub fn takes(&self, file_name: &str) -> bool {
+        self.regex.trim().is_empty()
+            || regex::RegexBuilder::new(self.regex.trim())
+                .case_insensitive(true)
+                .build()
+                .map(|re| re.is_match(file_name))
+                .unwrap_or(true)
+    }
+}
+
+/// Where X-Plane 12 saves its screenshots, in each install found.
+pub fn xplane_screenshot_folders() -> Vec<PathBuf> {
+    crate::xp_plugin_install::installs()
+        .into_iter()
+        .map(|install| install.join("Output").join("screenshots"))
+        .collect()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ts_rs::TS)]
 #[ts(export, export_to = "../../src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     #[serde(default)]
+    pub screenshot_folders: Vec<ScreenshotFolder>,
+    // Before folders had settings of their own: one list, and one switch and pattern for
+    // all. Read to migrate, never written back.
+    #[serde(skip_serializing, default)]
+    #[ts(skip)]
     pub screenshot_directories: Vec<PathBuf>,
-    // Legacy single-dir field kept for migration from old configs
     #[serde(skip_serializing, default)]
     #[ts(skip)]
     pub screenshot_directory: Option<PathBuf>,
+    #[serde(skip_serializing, default)]
+    #[ts(skip)]
     pub screenshot_regex_enabled: bool,
+    #[serde(skip_serializing, default)]
+    #[ts(skip)]
     pub screenshot_regex: String,
+    #[serde(skip_serializing, default)]
+    #[ts(skip)]
     pub auto_upload_screenshots: bool,
     // Legacy combined field ({service}/api/v0/users/{token}); split into
     // service_url + api_token on load and no longer written back.
@@ -111,6 +164,10 @@ impl Config {
         let home = user_dirs.as_ref().map(|d| d.home_dir().to_path_buf());
 
         let mut screenshot_directories = Vec::new();
+        let mut screenshot_folders: Vec<ScreenshotFolder> = Vec::new();
+
+        // X-Plane's own folder, in each install: every file in it is a screenshot.
+        screenshot_folders.extend(xplane_screenshot_folders().into_iter().map(|p| ScreenshotFolder::new(p, "")));
 
         // Xbox Game Bar default: Videos/Captures
         if let Some(game_bar) = user_dirs.as_ref()
@@ -130,12 +187,15 @@ impl Config {
 
         // Steam: enumerate existing per-game screenshot dirs
         screenshot_directories.extend(find_steam_screenshot_dirs());
+        // The desktop's folders hold other screenshots too: only the sims' by name.
+        screenshot_folders.extend(screenshot_directories.into_iter().map(|p| ScreenshotFolder::new(p, SIM_FILE_NAMES)));
 
         Self {
-            screenshot_directories,
+            screenshot_folders,
+            screenshot_directories: Vec::new(),
             screenshot_directory: None,
-            screenshot_regex_enabled: true,
-            screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
+            screenshot_regex_enabled: false,
+            screenshot_regex: String::new(),
             auto_upload_screenshots: false,
             webhook_url: "".to_string(),
             service_url: default_service_url(),
@@ -151,10 +211,11 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            screenshot_folders: Vec::new(),
             screenshot_directories: Vec::new(),
             screenshot_directory: None,
-            screenshot_regex_enabled: true,
-            screenshot_regex: "^(Microsoft Flight Simulator|X-Plane) .*".to_string(),
+            screenshot_regex_enabled: false,
+            screenshot_regex: String::new(),
             auto_upload_screenshots: false,
             webhook_url: "".to_string(),
             service_url: default_service_url(),
@@ -164,6 +225,40 @@ impl Default for Config {
             inject_butterlog_traffic: false,
         }
     }
+}
+
+/// Gives a config from before folders had settings of their own its folders: each old one
+/// with the old switch and pattern, and X-Plane's, which weren't offered. A config without
+/// any takes the defaults. Whether it changed.
+fn migrate_screenshot_folders(
+    config: &mut Config,
+    defaults: impl FnOnce() -> Vec<ScreenshotFolder>,
+    xplane: Vec<PathBuf>,
+) -> bool {
+    if !config.screenshot_folders.is_empty() {
+        return false;
+    }
+    let mut old = std::mem::take(&mut config.screenshot_directories);
+    old.extend(config.screenshot_directory.take());
+    if old.is_empty() {
+        config.screenshot_folders = defaults();
+        return true;
+    }
+    let regex = if config.screenshot_regex_enabled { config.screenshot_regex.clone() } else { String::new() };
+    let mut folders: Vec<ScreenshotFolder> = xplane
+        .iter()
+        .cloned()
+        .filter(|p| !old.contains(p))
+        .map(|p| ScreenshotFolder { path: p, auto_upload: config.auto_upload_screenshots, regex: String::new() })
+        .collect();
+    // The old pattern names the desktop's sim screenshots; X-Plane's own aren't named so.
+    folders.extend(old.into_iter().map(|path| ScreenshotFolder {
+        regex: if xplane.contains(&path) { String::new() } else { regex.clone() },
+        path,
+        auto_upload: config.auto_upload_screenshots,
+    }));
+    config.screenshot_folders = folders;
+    true
 }
 
 pub struct ConfigManager {
@@ -205,16 +300,7 @@ impl ConfigManager {
             Config::default_with_app_handle(app)
         };
 
-        // Migrate old single screenshot_directory to the new Vec
-        if config.screenshot_directories.is_empty() {
-            if let Some(old_dir) = config.screenshot_directory.take() {
-                config.screenshot_directories.push(old_dir);
-            } else {
-                // No saved dirs at all — populate with defaults
-                let defaults = Config::default_with_app_handle(app);
-                config.screenshot_directories = defaults.screenshot_directories;
-            }
-        }
+        let folders_migrated = migrate_screenshot_folders(&mut config, || Config::default_with_app_handle(app).screenshot_folders, xplane_screenshot_folders());
 
         // Migrate the legacy webhook_url ({service}/api/v0/users/{token}) into
         // the split service_url + api_token fields.
@@ -239,7 +325,7 @@ impl ConfigManager {
 
         // Save defaults for a new config, and persist the webhook_url migration
         // (webhook_url is skip_serializing, so saving removes it from the file).
-        if !manager.config_path.exists() || migrated {
+        if !manager.config_path.exists() || migrated || folders_migrated {
             let _ = manager.save();
         }
 
@@ -280,6 +366,47 @@ mod tests {
         assert_eq!(config.open_at_login, deserialized.open_at_login);
         // The legacy field is read-only: accepted on load, never written back.
         assert!(!json.contains("webhookUrl"));
+    }
+
+    #[test]
+    fn old_screenshot_settings_become_each_folders() {
+        let old: Config = serde_json::from_str(r#"{
+            "screenshotDirectories": ["C:\\Captures", "C:\\XP\\Output\\screenshots"],
+            "screenshotRegexEnabled": true, "screenshotRegex": "^X-Plane", "autoUploadScreenshots": true,
+            "openAtLogin": false, "startMinimized": false, "injectButterlogTraffic": false
+        }"#).unwrap();
+        let mut config = old.clone();
+        let xplane = vec![PathBuf::from("C:\\XP\\Output\\screenshots"), PathBuf::from("D:\\XP2\\Output\\screenshots")];
+        assert!(migrate_screenshot_folders(&mut config, Vec::new, xplane.clone()));
+        let got: Vec<_> = config.screenshot_folders.iter().map(|f| (f.path.to_string_lossy().into_owned(), f.auto_upload, f.regex.as_str())).collect();
+        assert_eq!(got, [
+            ("D:\\XP2\\Output\\screenshots".to_string(), true, ""),
+            ("C:\\Captures".to_string(), true, "^X-Plane"),
+            ("C:\\XP\\Output\\screenshots".to_string(), true, ""),
+        ]);
+        // Written back, only the folders: once migrated, it stays as set.
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("screenshotDirectories") && !json.contains("autoUploadScreenshots"), "{json}");
+        let mut again: Config = serde_json::from_str(&json).unwrap();
+        assert!(!migrate_screenshot_folders(&mut again, Vec::new, xplane));
+        assert_eq!(again.screenshot_folders, config.screenshot_folders);
+
+        // Nothing saved at all: the defaults.
+        let mut empty = Config::default();
+        assert!(migrate_screenshot_folders(&mut empty, || vec![ScreenshotFolder::new(PathBuf::from("X"), "")], Vec::new()));
+        assert_eq!(empty.screenshot_folders.len(), 1);
+    }
+
+    #[test]
+    fn a_folders_pattern_picks_its_files() {
+        let all = ScreenshotFolder::new(PathBuf::from("X"), " ");
+        assert!(all.takes("anything.png"));
+        let sims = ScreenshotFolder::new(PathBuf::from("X"), SIM_FILE_NAMES);
+        assert!(sims.takes("Microsoft Flight Simulator 2024 2026-11-10 09-12-01.png"));
+        assert!(sims.takes("x-plane 2026.png"));
+        assert!(!sims.takes("Screenshot 2026-11-10 091201.png"));
+        // A pattern that doesn't compile drops nothing.
+        assert!(ScreenshotFolder::new(PathBuf::from("X"), "(").takes("a.png"));
     }
 
     #[test]

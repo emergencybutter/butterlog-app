@@ -34,9 +34,8 @@ function useThumbnails(shots: Screenshot[]) {
   return thumbs;
 }
 
-export function ScreenshotsPage({ signedIn, autoUpload, onSettings }: {
+export function ScreenshotsPage({ signedIn, onSettings }: {
   signedIn: boolean;
-  autoUpload: boolean;
   onSettings: () => void;
 }) {
   const [shots, setShots] = useState<Screenshot[] | null>(null);
@@ -72,7 +71,7 @@ export function ScreenshotsPage({ signedIn, autoUpload, onSettings }: {
     if (s.remoteHash) {
       return (
         <>
-          <span className="ok">{autoUpload ? "Uploaded by itself" : "Uploaded"}</span>
+          <span className="ok">Uploaded</span>
           {s.remoteUrl && <button className="quiet" onClick={() => openUrl(s.remoteUrl!)}>View ↗</button>}
         </>
       );
@@ -94,7 +93,7 @@ export function ScreenshotsPage({ signedIn, autoUpload, onSettings }: {
       <div className="page-head">
         <h2>Screenshots</h2>
         <span className="sub">
-          {autoUpload ? "Taken while flying, they go up by themselves." : "Upload the ones you want on the flight's page."}{" "}
+          Each folder's go up by themselves or with a click, as set in{" "}
           <button className="quiet" onClick={onSettings}>Settings</button>
         </span>
       </div>

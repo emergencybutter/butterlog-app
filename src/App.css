@@ -209,6 +209,8 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .setting-input-group label { color: var(--dim); }
 .setting-input { width: 100%; }
 .setting-hint { color: var(--dim); font-size: 12px; }
+.setting-hint.bad { color: var(--bad); }
+.folder { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--panel); border: 1px solid var(--line); }
 .btn-ghost-amber { color: var(--accent); }
 .btn-ghost-red { color: var(--bad); }
 
