@@ -376,7 +376,7 @@ pub fn page_url(app: &AppHandle, page: &str) -> Option<String> {
             flight.map(|f| f.debrief_url)
         }
         "live" => me.and_then(|m| m.live).map(|f| f.url),
-        "settings" => Some(me.map(|m| m.settings_url).unwrap_or(format!("{base}/content/settings"))),
+        "settings" => Some(me.map(|m| m.settings_url).unwrap_or(format!("{base}/settings"))),
         _ => Some(me.map(|m| m.flights_url).unwrap_or(format!("{base}/"))),
     }
 }
@@ -393,8 +393,8 @@ mod tests {
     fn flight(id: i64) -> FlightRef {
         FlightRef {
             id,
-            url: format!("https://b/content/flights/{id}"),
-            debrief_url: format!("https://b/content/flights/{id}#debrief"),
+            url: format!("https://b/flights/{id}"),
+            debrief_url: format!("https://b/flights/{id}#debrief"),
             departure: "KPAE".into(),
             arrival: Some("KSEA".into()),
             aircraft: None,
@@ -408,8 +408,8 @@ mod tests {
             username: "p".into(),
             display_name: "P".into(),
             avatar_url: None,
-            flights_url: "https://b/content".into(),
-            settings_url: "https://b/content/settings".into(),
+            flights_url: "https://b/".into(),
+            settings_url: "https://b/settings".into(),
             flysto_connected: false,
             flysto_auto: true,
             live: None,
