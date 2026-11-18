@@ -1,11 +1,11 @@
 {
-  "version": "0.4.0",
-  "notes": "Butterlog v0.4.0 Release\nTelemetry is now the only way flights are tracked: the service makes each flight, and the tray shows a dot with its debrief when one is done. A new, lighter window that renders without the GPU, a Screenshots page, per-folder screenshot settings, and FlySto in Settings.",
-  "pub_date": "2026-11-10T22:30:32Z",
+  "version": "0.4.1",
+  "notes": "Butterlog v0.4.1 Release\nButterLog moved to log.butr.cc (flights) and butterlog.butr.cc (website). The app switches over by itself.",
+  "pub_date": "2026-11-18T22:17:24Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUHB1YVQySm53MmQxUG1lM1NKSi9FNWxRNTF1eUNTOGs5V0dNWDMrdGJWamdELzhJWm5nMW5VbnVOWkZ2eTYrQkl4OTgvWFAxS0Z3SDQ2WWhPZkVMa0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzQ5ODMyCWZpbGU6YnV0dGVybG9nXzAuNC4wX3g2NC1zZXR1cC5leGUKemRFdXhRU1o2VmF0N1luUVYySjBab1U4TExUWE5vcVlHT0JTd3phZDlaYlRCSUQ2MmV5MlRHVDVuVlprMHV3em40S1FGYThPdnBBVGhJQmFsc2tKQXc9PQo=",
-      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGh2bGpKZll3VldkMXhZWTZ5TzI4LzJpbGNzRzNiNTBva2Y1RG1sMXpCdHJwZU90K2pOK2xvQXY2VjdrQmlBWXgyZTFHOVZ1K1hteDBBQWN6VHdVbmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDQwMjQzCWZpbGU6YnV0dGVybG9nXzAuNC4xX3g2NC1zZXR1cC5leGUKQ2tXM2RrMnc0VTY1NG9xWjBRWm9BaTJIWTNCL1NudUNTS1hoR2FyL1JhWGxtZ21nYmJoNW5HVXlqZVVyRmZZWUFuWUNJeVNyWnY2d2FHRmRJOUZ4RFE9PQo=",
+      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.1_x64-setup.exe"
     }
   }
 }
