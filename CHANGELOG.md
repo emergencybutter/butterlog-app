@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- The service moved to https://log.butr.cc and the website to https://butterlog.butr.cc. A config still on the old default, `https://butterlog.flyvoyager.net`, is moved to the new one on launch, and updates come from `butterlog.butr.cc/downloads/latest.json`. The old address keeps working for installs that haven't updated.
+
 ## [0.4.0] - 2026-11-10
 
 ### Changed

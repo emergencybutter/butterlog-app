@@ -213,7 +213,7 @@ async fn start_discord_login(app: AppHandle) -> Result<String, String> {
     let port = listener.local_addr().map_err(|e| format!("Failed to get local port: {}", e))?.port();
     
     // 2. Open default browser
-    let base_service_url = get_custom_service_url().unwrap_or_else(|| "https://butterlog.flyvoyager.net".to_string());
+    let base_service_url = get_custom_service_url().unwrap_or_else(config::default_service_url);
     let login_url = format!("{}/api/v0/auth/login?port={}", base_service_url, port);
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_path(&login_url, None::<String>).map_err(|e| format!("Failed to open browser: {}", e))?;

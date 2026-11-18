@@ -79,7 +79,7 @@ pub enum Link {
 #[serde(rename_all = "camelCase")]
 pub struct ServiceStatus {
     pub link: Link,
-    /// The service's web address, e.g. `https://butterlog.flyvoyager.net`.
+    /// The service's web address, e.g. `https://log.butr.cc`.
     pub service_url: String,
     pub me: Option<Me>,
     /// When the service last answered.
@@ -377,7 +377,7 @@ pub fn page_url(app: &AppHandle, page: &str) -> Option<String> {
         }
         "live" => me.and_then(|m| m.live).map(|f| f.url),
         "settings" => Some(me.map(|m| m.settings_url).unwrap_or(format!("{base}/content/settings"))),
-        _ => Some(me.map(|m| m.flights_url).unwrap_or(format!("{base}/content"))),
+        _ => Some(me.map(|m| m.flights_url).unwrap_or(format!("{base}/"))),
     }
 }
 

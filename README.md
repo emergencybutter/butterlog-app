@@ -1,3 +1,3 @@
 # Butterlog
 
-https://butterlog.flyvoyager.net/
+https://butterlog.butr.cc/

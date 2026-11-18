@@ -87,7 +87,15 @@ pub struct Config {
 }
 
 pub fn default_service_url() -> String {
-    "https://butterlog.flyvoyager.net".to_string()
+    "https://log.butr.cc".to_string()
+}
+
+/// Service addresses the app used to default to. A config still pointing at
+/// one of them is moved to the current default on load.
+const OLD_DEFAULT_SERVICE_URLS: &[&str] = &["https://butterlog.flyvoyager.net"];
+
+fn is_old_default_service_url(url: &str) -> bool {
+    OLD_DEFAULT_SERVICE_URLS.contains(&url.trim_end_matches('/'))
 }
 
 /// Split a legacy webhook URL ({service}/api/v0/users/{token}) into
@@ -317,14 +325,20 @@ impl ConfigManager {
         if config.service_url.is_empty() {
             config.service_url = default_service_url();
         }
+        if is_old_default_service_url(&config.service_url) {
+            crate::append_log(app, format!("Moved service URL {} to {}", config.service_url, default_service_url()));
+            config.service_url = default_service_url();
+            migrated = true;
+        }
 
         let manager = Self {
             config: Mutex::new(config),
             config_path,
         };
 
-        // Save defaults for a new config, and persist the webhook_url migration
-        // (webhook_url is skip_serializing, so saving removes it from the file).
+        // Save defaults for a new config, and persist the webhook_url and
+        // service URL migrations (webhook_url is skip_serializing, so saving
+        // removes it from the file).
         if !manager.config_path.exists() || migrated || folders_migrated {
             let _ = manager.save();
         }
@@ -422,6 +436,14 @@ mod tests {
         assert_eq!(split_legacy_webhook_url("https://example.com/api/v0/users/"), None);
         assert_eq!(split_legacy_webhook_url("https://example.com/other"), None);
         assert_eq!(split_legacy_webhook_url(""), None);
+    }
+
+    #[test]
+    fn test_old_default_service_url() {
+        assert!(is_old_default_service_url("https://butterlog.flyvoyager.net"));
+        assert!(is_old_default_service_url("https://butterlog.flyvoyager.net/"));
+        assert!(!is_old_default_service_url("https://log.butr.cc"));
+        assert!(!is_old_default_service_url("http://localhost:8080"));
     }
 
     #[test]

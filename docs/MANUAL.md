@@ -73,7 +73,7 @@ If configured, Butterlog watches your screenshot folder. When you take a screens
 Connect Butterlog to your personal dashboard or community server using Webhooks. Currently only voyager aviation is supported (https://flyvoyager.net/). Contact @emergencybutter on discord if you want to integrate your discord server or other backend.
 
 1. Enable **Webhook Service** in Settings.
-2. go to https://butterlog.flyvoyager.net/api then follow instructions. In particular you will need to copy paste a unique URL back into the settings page.
+2. go to https://log.butr.cc/api then follow instructions. In particular you will need to copy paste a unique URL back into the settings page.
 
 ---
 

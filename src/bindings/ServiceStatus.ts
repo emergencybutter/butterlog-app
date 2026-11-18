@@ -5,7 +5,7 @@ import type { Me } from "./Me";
 
 export type ServiceStatus = { link: Link, 
 /**
- * The service's web address, e.g. `https://butterlog.flyvoyager.net`.
+ * The service's web address, e.g. `https://log.butr.cc`.
  */
 serviceUrl: string, me: Me | null, 
 /**

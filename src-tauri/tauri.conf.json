@@ -31,7 +31,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFQjcxQkE5MjY5QjI5MkIKUldRcktac21xUnUzUGtpYUZRUFpnSTVHOGEyVGxsbHFzaVhMMStOSXp6cDlCMlp3c2hDWXU3VjQK",
-      "endpoints": ["https://butterlog.flyvoyager.net/downloads/latest.json"],
+      "endpoints": ["https://butterlog.butr.cc/downloads/latest.json"],
       "windows": {
         "installMode": "passive"
       }
