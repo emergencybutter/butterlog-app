@@ -1,11 +1,11 @@
 {
-  "version": "0.4.1",
-  "notes": "Butterlog v0.4.1 Release\nButterLog moved to log.butr.cc (flights) and butterlog.butr.cc (website). The app switches over by itself.",
-  "pub_date": "2026-11-18T22:17:24Z",
+  "version": "0.4.2",
+  "notes": "Butterlog v0.4.2 Release\nFixes the busy cursor flashing every couple of seconds on Windows while MSFS isn't running",
+  "pub_date": "2026-11-19T16:33:27Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGh2bGpKZll3VldkMXhZWTZ5TzI4LzJpbGNzRzNiNTBva2Y1RG1sMXpCdHJwZU90K2pOK2xvQXY2VjdrQmlBWXgyZTFHOVZ1K1hteDBBQWN6VHdVbmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDQwMjQzCWZpbGU6YnV0dGVybG9nXzAuNC4xX3g2NC1zZXR1cC5leGUKQ2tXM2RrMnc0VTY1NG9xWjBRWm9BaTJIWTNCL1NudUNTS1hoR2FyL1JhWGxtZ21nYmJoNW5HVXlqZVVyRmZZWUFuWUNJeVNyWnY2d2FHRmRJOUZ4RFE9PQo=",
-      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGllZnprWHVuSlFJajR4V2VjVWtLZUlOUWFwMWJwOW54MElqWHpmQUhaWjlSeUpFZGt2VU5tR0pRMC95aTVuNXp3dW1xTi90U0ZsS29kWkhONHlpaWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTA2MDA3CWZpbGU6YnV0dGVybG9nXzAuNC4yX3g2NC1zZXR1cC5leGUKankyM01tSDJZcjZEZWtuYlQxeUNCZHBuS21ETm1oYTF1aXp1SkNEMVhYb2VuWmovclZzMmRSdkJTMUt5QzJOdncrVXFEaVdPUmFBMW5oUEVEMUF3Qmc9PQo=",
+      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.2_x64-setup.exe"
     }
   }
 }
