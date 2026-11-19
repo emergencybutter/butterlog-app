@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- On Windows the mouse pointer no longer flashes the busy cursor every couple of seconds while MSFS isn't running. The check for the sim's SimConnect pipe read the wrong path, so the app launched its SimConnect probe process on every poll.
+
 ## [0.4.1] - 2026-11-18
 
 ### Changed

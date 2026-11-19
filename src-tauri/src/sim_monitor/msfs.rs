@@ -1012,7 +1012,9 @@ fn find_best_multiplayer_model(
 /// SimConnect_Open connects to); we match on "flight simulator" specifically so
 /// an unrelated `Custom\SimConnect` pipe from another app doesn't read as MSFS.
 fn simconnect_pipe_present() -> bool {
-    match std::fs::read_dir(r"\.\pipe\") {
+    // `\\.\pipe\` — with a single leading backslash the path resolves to
+    // `C:\pipe`, the read fails, and we'd probe on every poll.
+    match std::fs::read_dir(r"\\.\pipe\") {
         Ok(entries) => entries.flatten().any(|entry| {
             entry
                 .file_name()
