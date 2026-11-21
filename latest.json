@@ -1,11 +1,11 @@
 {
-  "version": "0.4.2",
-  "notes": "Butterlog v0.4.2 Release\nFixes the busy cursor flashing every couple of seconds on Windows while MSFS isn't running",
-  "pub_date": "2026-11-19T16:33:27Z",
+  "version": "0.4.3",
+  "notes": "Butterlog v0.4.3 Release\nAn aircraft with 'jet' in its title (iniBuilds' Global Jet) is no longer taken for a Boeing 747",
+  "pub_date": "2026-11-21T11:52:42Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGllZnprWHVuSlFJajR4V2VjVWtLZUlOUWFwMWJwOW54MElqWHpmQUhaWjlSeUpFZGt2VU5tR0pRMC95aTVuNXp3dW1xTi90U0ZsS29kWkhONHlpaWc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTA2MDA3CWZpbGU6YnV0dGVybG9nXzAuNC4yX3g2NC1zZXR1cC5leGUKankyM01tSDJZcjZEZWtuYlQxeUNCZHBuS21ETm1oYTF1aXp1SkNEMVhYb2VuWmovclZzMmRSdkJTMUt5QzJOdncrVXFEaVdPUmFBMW5oUEVEMUF3Qmc9PQo=",
-      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRcktac21xUnUzUGdmK1pDWmZSN2E0aDl2bGVkNTdTdUt5NmtFNkk4ODlqQXhjN0U4RENwZUtWOTdnbWRjZVhtMldodDVmekdad2Rpb25XWWtlTjhYblFteHVIN2daTGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjYxOTYxCWZpbGU6YnV0dGVybG9nXzAuNC4zX3g2NC1zZXR1cC5leGUKYXNaTStPejgxV2tiQ0o5RnhVUWRxVFpnTU5wVFNMY1cvYVpIYm9JMDVZQXRxOEY0NVZOaVhUUlZaWkVHbXhNMGMvNkxmOFlLTncrVC9Kc1ZYN0VBQXc9PQo=",
+      "url": "https://butterlog.butr.cc/downloads/butterlog_0.4.3_x64-setup.exe"
     }
   }
 }

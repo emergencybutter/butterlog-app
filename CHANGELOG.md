@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-21
+
+### Fixed
+- An aircraft whose title has the word "jet" in it (iniBuilds' Global Jet) is no longer taken for a Boeing 747. The 747's "jumbo jet" nickname matched on "jet" alone; it now has to be the whole phrase. The Global Jet is recognised as a Bombardier Global (GLEX).
+
 ## [0.4.2] - 2026-11-19
 
 ### Fixed
